@@ -52,10 +52,11 @@ tokClassesDelimiter = tokClassesWhitespace+makeTokClasses((
         ))
 tokClassesNonWhitespace = tokClassesNonDelimiter+tokClassesDelimiter
 
-class SrcAttr(object):
+class SrcAttr:
     def __init__(self, streamName, srcs, start, end):
         self.streamName = streamName
-        self.srcs = map(str.rstrip, srcs); self.start = start; self.end = end
+        self.srcs = list(map(str.rstrip, srcs))
+        self.start = start; self.end = end
     def location(self):
         if self.start[0] == self.end[0]:
             loc='%d,%d-%d'%(self.start[0], self.start[1], self.end[1])
@@ -78,7 +79,7 @@ class SrcAttr(object):
     def show(self): return self.location()+':\n'+self.highlight('')
     def __repr__(self): return 'SrcAttr(%r, %r)'%(self.location(), self.srcs)
 
-class Token(object):
+class Token:
     def __init__(self, ty, val, attr):
         assert ty in tokenTypes
         self.ty = ty; self.val = val; self.attr = attr
@@ -93,8 +94,8 @@ def matchAgainst(tokClasses, s):
             return (tokenType, tokEval(s[:end])), s[end:], end, tokClass
     return (None, None), s, 0, None
 
-class LexError(StandardError): pass
-def lexErr(msg, attr): raise LexError, (msg, attr)
+class LexError(Exception): pass
+def lexErr(msg, attr): raise LexError(msg, attr)
 
 def tokensInLine(streamName, src, line):
     col = 0
@@ -151,8 +152,8 @@ def tokens(streamName, stream):
                 SrcAttr(streamName, [''], (lineNum+1, 0), (lineNum+1, 0)))
 
 def _test(s):
-    from StringIO import StringIO
-    for t in tokens('lex.test', StringIO(s)): print t
+    from io import StringIO
+    for t in tokens('lex.test', StringIO(s)): print(t)
 
 if __name__ == '__main__':
     _test(r'(f abc 2 - 3 -4 \5\+def)')

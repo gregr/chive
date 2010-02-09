@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # todo: primitive value tags
-class Named(object):
+class Named:
     def __init__(self, name): self.name = name
     def __repr__(self): return '<%s %s>'%(self.__class__.__name__, self.name)
 
@@ -57,18 +57,18 @@ def symbol(n, table=symTable):
     s = table.get(n)
     if s is None: s = symbol_new(n); table[n] = s
     return s
-def nameGen(alphabet=[chr(o) for o in xrange(ord('a'), ord('z')+1)]):
+def nameGen(alphabet=[chr(o) for o in range(ord('a'), ord('z')+1)]):
     rep = 0
     while True:
         repStr = str(rep)
         for s in alphabet: yield s+repStr
         rep += 1
 def alias_new(sym): return symbol_new(symbol_name(sym))
-def gensym(names=nameGen()): return symbol_new(names.next())
+def gensym(names=nameGen()): return symbol_new(next(names))
 
 ################################################################
 # envs
-class Env(object):
+class Env:
     __slots__ = ['p', 'bs']
     def __init__(self, p=None):
         self.p = p
@@ -91,7 +91,7 @@ class Env(object):
         e = self
         while e is not None: yield e; e = e.p
 
-class EnvKey(object):
+class EnvKey:
     __slots__ = ['sym']
     def __init__(self, sym): self.sym = sym
     def __hash__(self): return symbol_id(self.sym)
@@ -216,22 +216,22 @@ def pretty(v):
 
 ################################################################
 # streams
-class Stream(object):
+class Stream:
     def __init__(self, itr):
         self.itr = itr
         self.buffer = []
     def __iter__(self): return self
-    def put(self, x): self.buffer.append(x)
-    def next(self):
+    def __next__(self):
         if self.buffer: return self.buffer.pop()
-        return self.itr.next()
+        return next(self.itr)
+    def put(self, x): self.buffer.append(x)
     def peek(self):
-        x = self.next()
+        x = next(self)
         self.put(x)
         return x
     def empty(self):
         if self.buffer: return False
-        try: self.put(self.itr.next())
+        try: self.put(next(self.itr))
         except StopIteration: return True
         return False
     def compose(self, mkItr): return makeStream(mkItr(self.itr))

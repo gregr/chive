@@ -14,10 +14,10 @@
 
 import lex
 from data import *
-from itertools import ifilter, chain
+from itertools import chain
 
-class ParseError(StandardError): pass # python already claimed SyntaxError
-def parseErr(msg, attr): raise ParseError, (msg, attr)
+class ParseError(Exception): pass
+def parseErr(msg, attr): raise ParseError(msg, attr)
 
 tokToAtomCons = dict(
     ident=(lambda _,tok: symbol(tok.val)),
@@ -39,18 +39,20 @@ def makeApp(terms, attr=None):
         attr = lex.SrcAttr(subs[0][1].streamName, srcs, subs[0][1].start,
                            subs[-1][1].end)
     assert attr is not None
-    tas = zip(*terms)
+    tas = list(zip(*terms))
     if not tas: tas = ([], [])
     attr.subs = toList(tas[1])
     return toList(tas[0]), attr
 
-def maybeMakeApp((terms, hasOp), attr=None):
+def maybeMakeApp(arg, attr=None):
+    terms, hasOp = arg
     terms = list(terms)
     if len(terms) == 1 and hasOp: return terms[0]
     return makeApp(terms, attr)
 
 def makeMacroApp(datum):
-    def _makeMacroApp((terms, hasOp), attr):
+    def _makeMacroApp(arg, attr):
+        terms, hasOp = arg
         datAt = lex.SrcAttr(attr.streamName, attr.srcs, attr.start, attr.start)
         return makeApp(list(chain([(datum, datAt)], terms)), attr)
     return _makeMacroApp
@@ -63,13 +65,13 @@ def tryMakeAtom(*args):
     except ParseError: return None, None
 def isInfixOp(atom): return isinstance(atom[0], (InfixOp, InfixTightOp))
 
-def unindented(ts): return ifilter((lambda t: t.ty != 'indentation'), ts)
-class Datums(object): pass
+def unindented(ts): return (t for t in ts if t.ty != 'indentation')
+class Datums: pass
 openBraces = list('([{')
 openBraces += ['#'+br for br in openBraces]
 closeBraces = list(')]}')
 openToCloseBraces = dict(zip(openBraces, 2*closeBraces))
-class Parser(object):
+class Parser:
     def __init__(self, opsTable, bracketDatums=(), rhsSliceDatum=None):
         self.opsTable = opsTable
         self.brackets = {'(': maybeMakeApp}
@@ -110,7 +112,7 @@ class Parser(object):
                     return
                 else:
                     if subIndent is None: subIndent = tok.val
-                    peek = ts.next()
+                    peek = next(ts)
                     atom = tryMakeAtom(self.opsTable, peek)
                     if isInfixOp(atom): yield atom
                     else:
@@ -148,7 +150,7 @@ def makeOperator(opsTable, name, attr):
     if op is None: op = NullOp(name, False, 0)
     return op
 
-class Operator(object):
+class Operator:
     def __init__(self, sym, assocRight, prec):
         assert isSymbol(sym), sym
         assert type(prec) is int, prec
@@ -165,7 +167,7 @@ class NullOp(Operator): # undeclared op
 class PrefixOp(Operator):
     def parse(self, lhs, attr, ts, dats):
         if ts.empty(): return lhs+[(self.sym, attr)] # slice
-        t, a = ts.next()
+        t, a = next(ts)
         rhs = [(t,a)]
         if isinstance(t, Operator):
             if isinstance(t, PrefixOp): rhs = t.parse([], a, ts, dats)
@@ -186,7 +188,7 @@ def makeInfixApp(sym, lhs, rhs, attr, dats):
 class InfixOp(Operator):
     def parse(self, lhs, attr, ts, dats):
         if ts.empty(): return makeInfixApp(self.sym, lhs, [], attr, dats)
-        t, a = ts.next()
+        t, a = next(ts)
         rhs = [(t,a)]
         if isinstance(t, Operator):
             if isinstance(t, PrefixOp): rhs = t.parse([], a, ts, dats)
@@ -211,13 +213,13 @@ class InfixTightOp(Operator):
             lhs = [lhs[-1]]
         else: rest = []
         if ts.empty(): return rest+makeInfixApp(self.sym, lhs, [], attr, dats)
-        t, a = ts.next()
+        t, a = next(ts)
         rhs = [(t,a)]
         if isinstance(t, Operator):
             if isinstance(t, PrefixOp): rhs = t.parse([], a, ts, dats)
             else: parseErr('unexpected operator while parsing infix op', a)
         if not ts.empty():
-            term = ts.next()
+            term = next(ts)
             t, a = term
             if isinstance(t, InfixTightOp) and self.precLT(t):
                 rhs = t.parse(rhs, a, ts, dats)
@@ -233,10 +235,10 @@ def attrSubs(attr, seen=set()):
     seen.add(attr)
     if not hasattr(attr, 'subs'): return nil
     return attr.subs
-def deepFromList(x): return x, map(deepFromList, fromList(attrSubs(x)))
+def deepFromList(x): return x, list(map(deepFromList, fromList(attrSubs(x))))
 
 def _test(s):
-    from StringIO import StringIO
+    from io import StringIO
     ops = (
         ('$', 'prefix', False, 5),
         ('!', 'prefix', False, 5),
@@ -253,8 +255,8 @@ def _test(s):
         opsTable.add(EnvKey(opName), newOperator(opName, *op[1:]))
     parser = Parser(opsTable, [('[', symbol('list'))])
     for t,a in parser.parse('syntax.test', StringIO(s)):
-        print pretty(t)
-        print deepFromList(a)
+        print(pretty(t))
+        print(deepFromList(a))
 
 if __name__ == '__main__':
     _test('hello world\n  4+ 3\n\n  5 - 6\n  \nf 7-8+9 -10\n## comments\n\n')
