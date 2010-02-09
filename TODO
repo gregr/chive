@@ -20,7 +20,7 @@ disorganized ideas:
 {Macro proc}
 {Proc ...} # hidden?
 
-{Kernel tags modules multimethod-tables?...}
+{Root tags modules multimethod-tables?...}
 {Module path dependencies dependants exports senv env}
 {Context kernel module senv env} # and use unpacking for accessors
 #parser hooks? meta-circular debugging and expansion history? tracer hooks?
