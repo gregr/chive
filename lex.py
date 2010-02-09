@@ -12,25 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from data import *
 import re
 
-tokenTypes = ('whitespace', 'comment', 'meta', 'indentation',
-              'syntax', 'operator', 'ident', 'literal')
+tokenTypes = ('whitespace', 'comment', 'indentation', 'syntax',
+              'operator', 'ident', 'literal')
 ignoredTokenTypes = ('whitespace', 'comment')
 
 def makeIdent(s): # strip escapes
     return "\\".join(ss.replace('\\', '') for ss in s.split('\\\\'))
 def makeIdentOp(s): return makeIdent(s[1:-1])
-def makeInt(s): return ('int', int(s)) # todo: Iu32, Is32, etc.
-def makeFloat(s): return ('float', float(s))
-def makeChar(s): return ('char', eval(s))
-def makeString(s): return ('string', eval(s))
+def makeInt(s): return toInt(int(s)) # todo: Iu32, Is32, etc.
+def makeFloat(s): return toFloat(float(s))
+def makeChar(s): return toChar(eval(s))
+def makeString(s): return toString(eval(s))
 
 def makeTokClass(tokSpec): return (re.compile(tokSpec[0]),)+tokSpec[1:]
 def makeTokClasses(tokSpecs): return [makeTokClass(c) for c in tokSpecs]
-operPat = '[`~!@$%^&*\\=+|;:,.<>/?-]+'
-identPat = r'([a-zA-Z_]|(\\.))([-]?(\w|(\\.)))*[!?]*'
-bracePat = r'[()\[\]{}]'
+operPat = '#?[`~!@$%^&*\\=+|;:,.<>/?-]+'
+identPat = r'#?([a-zA-Z_]|(\\.))([-]?(\w|(\\.)))*[!?]*'
+openBracePat = r'#?[(\[{]'
+closeBracePat = r'[)\]}]'
+bracePat = '(%s|%s)'%(openBracePat, closeBracePat)
 tokClassesWhitespace = makeTokClasses((
         (r'\s+', 'whitespace', len),
         ))
@@ -43,24 +46,37 @@ tokClassesNonDelimiter = makeTokClasses((
         (r'"((\\.)|[^\\"])*"', 'literal', makeString),
         ))
 tokClassesDelimiter = tokClassesWhitespace+makeTokClasses((
-        (operPat, 'operator', str),
         (r'##.*', 'comment', str),
-        ((r'#(('+operPat+')|(((\\.)|\w)+))'), 'meta', str),
+        (operPat, 'operator', str),
         (bracePat, 'syntax', str),
-        ('#'+bracePat, 'metasyntax', str),
         ))
 tokClassesNonWhitespace = tokClassesNonDelimiter+tokClassesDelimiter
 
 class SrcAttr(object):
-    def __init__(self, src, line, col, length):
-        self.src = src; self.line = line; self.col = col; self.length = length
+    def __init__(self, streamName, srcs, start, end):
+        self.streamName = streamName
+        self.srcs = map(str.rstrip, srcs); self.start = start; self.end = end
     def location(self):
-        return '%d,%d-%d'%(self.line, self.col, self.col+self.length)
-    def show(self, prefix):
-        lead = prefix+self.location()+': '
-        highlight = (' '*(len(lead)+self.col))+('^'*self.length)
-        return lead+self.src.rstrip()+'\n'+highlight
-    def __repr__(self): return 'SrcAttr(%r, %r)'%(self.location(), self.src)
+        if self.start[0] == self.end[0]:
+            loc='%d,%d-%d'%(self.start[0], self.start[1], self.end[1])
+        else: loc='%d,%d-%d,%d'%(self.start[0], self.start[1],
+                                 self.end[0], self.end[1])
+        return self.streamName+' '+loc
+    def highlight(self, prefix):
+        lead = prefix
+        margin = ' '*len(lead)
+        def hl(src, pref, col, length):
+            return pref+src+'\n'+margin+(' '*col)+('^'*length)
+        if len(srcs) > 1:
+            return ([hl(self.src[0], lead, self.start[1],
+                        len(self.src[0])-self.start[1])]+
+                    [hl(src, margin, 0, len(src)) for src in self.srcs[1:-1]]+
+                    [hl(self.src[-1], margin, 0,
+                        len(self.src[-1])-self.end[1]-1)])
+        else: return hl(self.src[0], lead, self.start[1],
+                        self.end[1]-self.start[1]+1)
+    def show(self): return self.location()+':\n'+self.highlight('')
+    def __repr__(self): return 'SrcAttr(%r, %r)'%(self.location(), self.srcs)
 
 class Token(object):
     def __init__(self, ty, val, attr):
@@ -80,10 +96,11 @@ def matchAgainst(tokClasses, s):
 class LexError(StandardError): pass
 def lexErr(msg, attr): raise LexError, (msg, attr)
 
-def tokensInLine(src, line):
+def tokensInLine(streamName, src, line):
     col = 0
     cur = src.rstrip()
-    def attr(length): return SrcAttr(src, line, col, length)
+    def attr(length):
+        return SrcAttr(streamName, [src], (line, col), (line, col+length-1))
     if cur:
         (tty, tval), cur, cs, _ = matchAgainst(tokClassesWhitespace, cur)
         if tty is not None:
@@ -101,7 +118,6 @@ def tokensInLine(src, line):
                     if tty is not None:
                         lexErr('expected delimiter; found %s' % tty, attr(cs))
                 lexErr('unknown token type', attr(0))
-            col+=cs
             if tokClass in tokClassesDelimiter:
                 tokClasses = tokClassesNonWhitespace
             else: tokClasses = tokClassesDelimiter
@@ -110,6 +126,7 @@ def tokensInLine(src, line):
                     yield indent
                     firstToken = False
                 yield Token(tty, tval, attr(cs))
+            col+=cs
 
 def logicalLines(stream):
     prevLine = ''
@@ -126,17 +143,18 @@ def logicalLines(stream):
             skippedLines = 0
     if prevLine: yield prevLine, lineNum
 
-def tokens(stream):
+def tokens(streamName, stream):
     lineNum = 0
     for line, lineNum in logicalLines(stream):
-        for token in tokensInLine(line, lineNum): yield token
-    yield Token('indentation', -1, SrcAttr('', lineNum+1, 0, 0))
+        for token in tokensInLine(streamName, line, lineNum): yield token
+    yield Token('indentation', -1,
+                SrcAttr(streamName, [''], (lineNum+1, 0), (lineNum+1, 0)))
 
 def _test(s):
     from StringIO import StringIO
-    for t in tokens(StringIO(s)): print t
+    for t in tokens('lex.test', StringIO(s)): print t
 
 if __name__ == '__main__':
     _test(r'(f abc 2 - 3 -4 \5\+def)')
     _test('hello? world!\n  4+ 3\n\nthis is a hyphen-ident'+
-          '\n  5 - 6\n  \n## comments\n\n')
+          '\n  5 - 6\n  \n## comments\n\n#test #(#+-)\n')

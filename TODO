@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+set attr.subs to nil by default
 parser
 
 disorganized ideas:
@@ -64,10 +65,6 @@ Array? # hidden?
 array-new
 array-length
 array-unpack/pack
-
-?
-True
-False
 
 gensym
 alias
