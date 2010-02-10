@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import lex
-from data import *
+from lex import SrcAttr, tokens
+from data import (isSymbol, symbol, Env, EnvKey, toList, fromList, pretty,
+                  makeStream)
 from itertools import chain
 
 class ParseError(Exception): pass
@@ -36,7 +37,7 @@ def makeApp(terms, attr=None):
         for (_,at) in subs:
             for atsrc in at.srcs:
                 if atsrc not in srcs: srcs.append(atsrc)
-        attr = lex.SrcAttr(subs[0][1].streamName, srcs, subs[0][1].start,
+        attr = SrcAttr(subs[0][1].streamName, srcs, subs[0][1].start,
                            subs[-1][1].end)
     assert attr is not None
     tas = list(zip(*terms))
@@ -53,7 +54,7 @@ def maybeMakeApp(arg, attr=None):
 def makeMacroApp(datum):
     def _makeMacroApp(arg, attr):
         terms, hasOp = arg
-        datAt = lex.SrcAttr(attr.streamName, attr.srcs, attr.start, attr.start)
+        datAt = SrcAttr(attr.streamName, attr.srcs, attr.start, attr.start)
         return makeApp(list(chain([(datum, datAt)], terms)), attr)
     return _makeMacroApp
 
@@ -81,7 +82,7 @@ class Parser:
             assert brack in openToCloseBraces
             self.brackets[brack] = makeMacroApp(datum)
     def parse(self, streamName, stream):
-        return self.exprs(lex.tokens(streamName, stream))
+        return self.exprs(tokens(streamName, stream))
     def exprs(self, ts):
         ts = makeStream(iter(ts))
         for tok in ts:
@@ -230,12 +231,10 @@ class InfixTightOp(Operator):
 
 fixities = dict(prefix=PrefixOp, infixTight=InfixTightOp, infix=InfixOp)
 
-def attrSubs(attr, seen=set()):
+def deepFromList(attr, seen=set()):
     assert attr not in seen, attr
     seen.add(attr)
-    if not hasattr(attr, 'subs'): return nil
-    return attr.subs
-def deepFromList(x): return x, list(map(deepFromList, fromList(attrSubs(x))))
+    return attr, list(map(deepFromList, fromList(attr.subs)))
 
 def _test(s):
     from io import StringIO

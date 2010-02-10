@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# todo: primitive value tags
 class Named:
     def __init__(self, name): self.name = name
     def __repr__(self): return '<%s %s>'%(self.__class__.__name__, self.name)
 
-class NodeTag(Named):
+class Tag(Named): pass
+class PrimTag(Tag): pass
+class NodeTag(Tag):
     def __init__(self, name, fieldTypes):
-        Named.__init__(self, name)
+        super().__init__(name)
         self.fieldTypes = fieldTypes
     def numFields(self): return len(self.fieldTypes)
 
@@ -38,21 +39,22 @@ unitTag, unit = singleton('Unit')
 
 ################################################################
 # symbols
-symTag = nodeTagN('Symbol', 1)
-symTable = {}
+primSymTag = PrimTag('#Symbol')
 nextSymId = 0
-def symdesc_new(n):
+def primSymbol_new(n):
     global nextSymId
     assert type(n) is str, n
     sd = (n, nextSymId)
     nextSymId += 1
     return sd
+symTag = nodeTagN('Symbol', 1)
 def isSymbol(v): return node_tag(v) is symTag
-def symbol_new(n): return node(symTag, symdesc_new(n))
-def symbol_desc(s): assert isSymbol(s), v; return s[1]
-def symbol_name(s): return symbol_desc(s)[0]
-def symbol_id(s): return symbol_desc(s)[1]
-def symbol_eq(s1, s2): return symbol_desc(s1) == symbol_desc(s2)
+def symbol_new(n): return node(symTag, primSymbol_new(n))
+def symbol_prim(s): assert isSymbol(s), v; return s[1]
+def symbol_name(s): return symbol_prim(s)[0]
+def symbol_id(s): return symbol_prim(s)[1]
+def symbol_eq(s1, s2): return symbol_prim(s1) == symbol_prim(s2)
+symTable = {}
 def symbol(n, table=symTable):
     s = table.get(n)
     if s is None: s = symbol_new(n); table[n] = s
@@ -63,7 +65,7 @@ def nameGen(alphabet=[chr(o) for o in range(ord('a'), ord('z')+1)]):
         repStr = str(rep)
         for s in alphabet: yield s+repStr
         rep += 1
-def alias_new(sym): return symbol_new(symbol_name(sym))
+def toAlias(sym): return symbol_new(symbol_name(sym))
 def gensym(names=nameGen()): return symbol_new(next(names))
 
 ################################################################
@@ -100,10 +102,8 @@ class EnvKey:
     def __str__(self): return prettySymbol(self.sym)
 
 envTag = nodeTagN('Env', 1)
-def env_new(e): return node(envTag, e)
-def env_data(e):
-    assert node_tag(e) is envTag, e
-    return e[1]
+def toEnv(e): return node(envTag, e)
+def fromEnv(e): assert node_tag(e) is envTag, e; return e[1]
 
 ################################################################
 # syntactic closures
@@ -124,8 +124,7 @@ def cons_head(x): assert node_tag(x) is consTag, x; return x[1]
 def cons_tail(x): assert node_tag(x) is consTag, x; return x[2]
 def isListCons(x): return node_tag(x) is consTag
 def isList(x): return x is nil or isListCons(x)
-def toList(args, tail=None):
-    if tail is None: tail = nil
+def toList(args, tail=nil):
     for x in reversed(args): tail = cons(x, tail)
     return tail
 def fromList(xs):
@@ -136,24 +135,29 @@ def fromList(xs):
 
 ################################################################
 # primitive values
-def toPrimArray(xs): # todo: add element tag for safety
+primAddrTag = PrimTag('#Addr') # only explicitly needed for array elemTags
+primArrayTag = PrimTag('#Array')
+def isPrimArray(v):
+    return isinstance(v, tuple) and len(v)>0 and v[0] is primArrayTag
+def primArray_new(elemTag, xs): # tag determines size of each element
+    assert isinstance(elemTag, Tag), elemTag
     assert isinstance(xs, list), xs
-    return xs
-def fromPrimArray(xs): return xs
-arrayTag = nodeTagN('Array', 2)
-def isArray(v): return node_tag(v) is arrayTag
-def toArray(xs): return node(arrayTag, toPrimArray(xs))
-def fromArray(v): assert isArray(v), v; return fromPrimArray(v[1])
+    return (primArrayTag, elemTag, xs) # only adding primTag for debugging
+def primArray_tag(v): assert isPrimArray(v), v; return v[1]
+def primArray_data(v): assert isPrimArray(v), v; return v[2]
+primIntTag = PrimTag('#Int')
 intTag = nodeTagN('Int', 1)
 def isInt(v): return node_tag(v) is intTag
 def toInt(v): return node(intTag, v)
 def fromInt(v): assert isInt(v), v; return v[1]
+primFloatTag = PrimTag('#Float')
 floatTag = nodeTagN('Float', 1)
 def isFloat(v): return node_tag(v) is floatTag
 def toFloat(v): return node(floatTag, v)
 def fromFloat(v): assert isFloat(v), v; return v[1]
-def toPrimChar(v): return v # todo: unicode encoding
-def fromPrimChar(v): return v # todo: unicode encoding
+primCharTag = PrimTag('#Char')
+def toPrimChar(v): return v
+def fromPrimChar(v): return v
 charTag = nodeTagN('Char', 1)
 def isChar(v): return node_tag(v) is charTag
 def toChar(v): return node(charTag, primChar(v))
@@ -163,9 +167,10 @@ def fromChar(v): assert isChar(v), v; return v[1]
 # strings
 def toPrimString(pys):
     assert isinstance(pys, str), pys
-    return toPrimArray([toPrimChar(pych) for pych in pys])
+    return primArray_new(primCharTag, [toPrimChar(pych) for pych in pys])
 def fromPrimString(v):
-    return ''.join(fromPrimChar(ch) for ch in fromPrimArray(v))
+    assert primArray_tag(v) is primCharTag, v
+    return ''.join(fromPrimChar(ch) for ch in primArray_data(v))
 stringTag = nodeTagN('String', 1)
 def isString(v): return node_tag(v) is stringTag
 def toString(v): return node(stringTag, toPrimString(v))
@@ -179,7 +184,7 @@ def prettySynClo(s): return ('(SynClo <env> %s %s)'%
                              (#synclo_senv(s),
                               prettyList(synclo_frees(s)),
                               pretty(synclo_form(s))))
-def prettyArray(a): '#[%s]'%' '.join(pretty(x) for x in fromArray(a))
+#def prettyArray(a): '#[%s]'%' '.join(pretty(x) for x in array_data(a))
 def prettyInt(i): return repr(fromInt(i))
 def prettyFloat(f): return repr(fromFloat(f))
 escapes = {
@@ -204,7 +209,7 @@ tagToPretty = {nilTag: prettyList, consTag: prettyList,
                symTag: prettySymbol,
                syncloTag: prettySynClo,
                unitTag: lambda _: '()',
-               arrayTag: prettyArray,
+#               arrayTag: prettyArray,
                intTag: prettyInt, floatTag: prettyFloat, charTag: prettyChar,
                stringTag: prettyString,
                }

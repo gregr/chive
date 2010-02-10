@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from data import *
+from data import nil, toInt, toFloat, toChar, toString
 import re
 
 tokenTypes = ('whitespace', 'comment', 'indentation', 'syntax',
@@ -57,6 +57,7 @@ class SrcAttr:
         self.streamName = streamName
         self.srcs = list(map(str.rstrip, srcs))
         self.start = start; self.end = end
+        self.subs = nil
     def location(self):
         if self.start[0] == self.end[0]:
             loc='%d,%d-%d'%(self.start[0], self.start[1], self.end[1])
