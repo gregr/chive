@@ -1,28 +1,31 @@
-# Copyright 2010 Gregory L. Rosenblatt
+Copyright 2010 Gregory L. Rosenblatt
 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-#     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 
-set attr.subs to nil by default
-parser
+================================================================
+guard against infinite recursion in pretty-printing
+AST pretty-printing
 
-disorganized ideas:
+================================================================
+= disorganized ideas
+================================================================
 
 {Macro proc}
 {Proc ...} # hidden?
 
 {Root tags modules multimethod-tables?...}
 {Module path dependencies dependants exports senv env}
-{Context kernel module senv env} # and use unpacking for accessors
+{Context root module senv env} # and use unpacking for accessors
 #parser hooks? meta-circular debugging and expansion history? tracer hooks?
 
 # how are modules loaded?
@@ -50,18 +53,6 @@ catch
 expand form senv env
 eval form senv env
 
-{Unit}
-{Nil}
-{Cons head tail}
-{Symbol symdesc}
-{SynClo senv frees form}
-
-Int
-Float
-Char
-String
-
-Array? # hidden?
 array-new
 array-length
 array-unpack/pack
@@ -89,4 +80,4 @@ eval pure values when expansion requires it
 no need to compile unneeded definitions/pure exprs
 if expansion relies on runtime input, compile the continued expansion/eval;
   you end up having to compile interpreter/jit compiler into the executable
-Kernel db usage (multimethods, record fields of tags, etc.) in exprs implies dynamic switch (can be inlined during proc specialization; can be made into static switch using type information)
+Root db usage (multimethods, record fields of tags, etc.) in exprs implies dynamic switch (can be inlined during proc specialization; can be made into static switch using type information)

@@ -114,6 +114,21 @@ def _synclo_get(s, i): assert isSynClo(s), s; return s[i]
 def synclo_senv(s): return _synclo_get(s, 1)
 def synclo_frees(s): return _synclo_get(s, 2)
 def synclo_form(s): return _synclo_get(s, 3)
+def applySynCloEnv(senv, sc):
+    new = env_data(synclo_senv(sc))
+    frees = fromList(synclo_frees(sc))
+    if frees:
+        new = Env(new)
+        for n in frees:
+            n = EnvKey(n)
+            v = senv.get(n)
+            if v is not None: new.extend(n, v)
+    return new
+def syncloExpand(senv, xs):
+    while isSynClo(xs):
+        senv = applySynCloEnv(senv, xs)
+        xs = synclo_form(xs)
+    return senv, xs
 
 ################################################################
 # lists
@@ -243,3 +258,13 @@ class Stream:
 def makeStream(s):
     if not isinstance(s, Stream): s = Stream(s)
     return s
+
+################################################################
+# contexts
+class Context:
+    def __init__(self, root, mod, senv, env):
+        self.root = root; self.mod = mod; self.senv = senv; self.env = env
+    def copy(self): return Context(self.root, self.mod, self.senv, self.env)
+ctxTag = nodeTagN('Context', 2)#4)
+def toCtx(ctx): return node(#toRoot(ctx.root), toMod(ctx.mod),
+                            toEnv(ctx.senv), toEnv(ctx.env))

@@ -58,6 +58,8 @@ class SrcAttr:
         self.srcs = list(map(str.rstrip, srcs))
         self.start = start; self.end = end
         self.subs = nil
+    def copy(self):
+        return SrcAttr(self.streamName, self.srcs, self.start, self.end)
     def location(self):
         if self.start[0] == self.end[0]:
             loc='%d,%d-%d'%(self.start[0], self.start[1], self.end[1])

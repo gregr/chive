@@ -15,7 +15,6 @@ limitations under the License.
 ================================================================
 = Interpreter Overview
 ================================================================
-
 Phases of interpretation:
 
     text -> (lexer) -> tokens -> (parser) -> s-exprs -> (evaluator) -> values
