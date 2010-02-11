@@ -18,7 +18,7 @@ from data import (isSymbol, symbol, Env, EnvKey, toList, fromList, pretty,
 from itertools import chain
 
 class ParseError(Exception): pass
-def parseErr(msg, attr): raise ParseError(msg, attr)
+def parseErr(attr, msg): raise ParseError(attr, msg)
 
 tokToAtomCons = dict(
     ident=(lambda _,tok: symbol(tok.val)),
@@ -27,7 +27,7 @@ tokToAtomCons = dict(
     )
 def makeAtom(opsTable, tok):
     constr = tokToAtomCons.get(tok.ty)
-    if constr is None: parseErr('invalid atom', tok.attr)
+    if constr is None: parseErr(tok.attr, 'invalid atom')
     return constr(opsTable, tok), tok.attr
 
 def makeApp(terms, attr=None):
@@ -38,8 +38,8 @@ def makeApp(terms, attr=None):
             for atsrc in at.srcs:
                 if atsrc not in srcs: srcs.append(atsrc)
         attr = SrcAttr(subs[0][1].streamName, srcs, subs[0][1].start,
-                           subs[-1][1].end)
-    assert attr is not None
+                       subs[-1][1].end)
+    assert attr is not None # attr=None only valid when len(terms)>0
     tas = list(zip(*terms))
     if not tas: tas = ([], [])
     attr.subs = toList(tas[1])
@@ -58,8 +58,8 @@ def makeMacroApp(datum):
         return makeApp(list(chain([(datum, datAt)], terms)), attr)
     return _makeMacroApp
 
-def newOperator(name, fixity, rightAssoc, prec):
-    return fixities[fixity](name, rightAssoc, prec)
+def newOperator(name, fixity, assoc, prec):
+    return fixities[fixity](name, assoc, prec)
 
 def tryMakeAtom(*args):
     try: return makeAtom(*args)
@@ -119,21 +119,22 @@ class Parser:
                     else:
                         ts.put(peek)
                         if subIndent > tok.val:
-                            parseErr('misaligned indentation; expected '+
+                            parseErr(tok.attr,
+                                     'misaligned indentation; expected '+
                                      '%d or %d but found %d' %
-                                     (subIndent, indent, tok.val), tok.attr)
+                                     (subIndent, indent, tok.val))
                     yield self.indentedExpr(tok.val, tok.attr, ts)
             elif tok.ty == 'syntax':
                 yield self.bracketedExpr(tok.val, tok.attr,
                                          ts.compose(unindented))
             else: yield makeAtom(self.opsTable, tok)
-        parseErr('unexpected eof while parsing indented expr', firstAttr)
+        parseErr(firstAttr, 'unexpected eof while parsing indented expr')
     def bracketedExpr(self, openBrace, attr, ts):
         makeExpr = self.brackets.get(openBrace)
         if makeExpr is None:
             if openBrace in closeBraces:
-                parseErr('unmatched %s'%openBrace, attr)
-            else: parseErr('unknown syntax %s'%openBrace, attr)
+                parseErr(attr, 'unmatched %s'%openBrace)
+            else: parseErr(attr, 'unknown syntax %s'%openBrace)
         closeBrace = openToCloseBraces.get(openBrace)
         return makeExpr(self.parseOps(self.bracketedTerms(closeBrace,
                                                           attr, ts)),
@@ -144,7 +145,7 @@ class Parser:
                 if tok.val == closeBrace: return
                 yield self.bracketedExpr(tok.val, tok.attr, ts)
             else: yield makeAtom(self.opsTable, tok)
-        parseErr('unexpected eof while parsing bracketed expr', firstAttr)
+        parseErr(firstAttr, 'unexpected eof while parsing bracketed expr')
 
 def makeOperator(opsTable, name, attr):
     op = opsTable.get(EnvKey(name))
@@ -152,18 +153,19 @@ def makeOperator(opsTable, name, attr):
     return op
 
 class Operator:
-    def __init__(self, sym, assocRight, prec):
+    def __init__(self, sym, assoc, prec):
         assert isSymbol(sym), sym
         assert type(prec) is int, prec
+        assert isSymbol(assoc), assoc
         self.sym = sym
-        self.assocRight = assocRight
+        self.assocRight = assoc is symbol('right') # todo: non-associative ops
         self.prec = prec
     def parse(self, lhs, attr, ts, dats): abstract
 
 class NullOp(Operator): # undeclared op
     def parse(self, lhs, attr, ts, dats):
         if not lhs and ts.empty(): return [(self.sym, attr)]
-        else: parseErr("unknown operator '%s'"%prettySymbol(self.sym), attr)
+        else: parseErr(attr, "unknown operator '%s'"%prettySymbol(self.sym))
 
 class PrefixOp(Operator):
     def parse(self, lhs, attr, ts, dats):
@@ -172,7 +174,7 @@ class PrefixOp(Operator):
         rhs = [(t,a)]
         if isinstance(t, Operator):
             if isinstance(t, PrefixOp): rhs = t.parse([], a, ts, dats)
-            else: parseErr('unexpected operator while parsing prefix op', a)
+            else: parseErr(a, 'unexpected operator while parsing prefix op')
         return lhs+[makeApp([(self.sym, attr)]+rhs)]
 
 def makeReducedApp(terms): return maybeMakeApp((terms, True))
@@ -193,7 +195,7 @@ class InfixOp(Operator):
         rhs = [(t,a)]
         if isinstance(t, Operator):
             if isinstance(t, PrefixOp): rhs = t.parse([], a, ts, dats)
-            else: parseErr('unexpected operator while parsing infix op', a)
+            else: parseErr(a, 'unexpected operator while parsing infix op')
         for term in ts:
             t, a = term
             if isinstance(t, Operator):
@@ -218,7 +220,7 @@ class InfixTightOp(Operator):
         rhs = [(t,a)]
         if isinstance(t, Operator):
             if isinstance(t, PrefixOp): rhs = t.parse([], a, ts, dats)
-            else: parseErr('unexpected operator while parsing infix op', a)
+            else: parseErr(a, 'unexpected operator while parsing infix op')
         if not ts.empty():
             term = next(ts)
             t, a = term
@@ -239,14 +241,14 @@ def deepFromList(attr, seen=set()):
 def _test(s):
     from io import StringIO
     ops = (
-        ('$', 'prefix', False, 5),
-        ('!', 'prefix', False, 5),
-        ('.', 'infixTight', False, 10),
-        ('+', 'infix', False, 5),
-        ('-', 'infix', False, 5),
-        ('*', 'infix', False, 6),
-        ('->', 'infix', True, 3),
-        ('=', 'infix', True, 2),
+        ('$', 'prefix', symbol('left'), 5),
+        ('!', 'prefix', symbol('left'), 5),
+        ('.', 'infixTight', symbol('left'), 10),
+        ('+', 'infix', symbol('left'), 5),
+        ('-', 'infix', symbol('left'), 5),
+        ('*', 'infix', symbol('left'), 6),
+        ('->', 'infix', symbol('right'), 3),
+        ('=', 'infix', symbol('right'), 2),
         )
     opsTable = Env()
     for op in ops:

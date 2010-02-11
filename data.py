@@ -12,17 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+class TypeError(Exception): pass
+def typeErr(ctx, msg): raise TypeError(ctx, msg)
+
 class Named:
     def __init__(self, name): self.name = name
     def __repr__(self): return '<%s %s>'%(self.__class__.__name__, self.name)
-
 class Tag(Named): pass
 class PrimTag(Tag): pass
 class NodeTag(Tag):
-    def __init__(self, name, fieldTypes):
+    def __init__(self, name, fieldTags):
         super().__init__(name)
-        self.fieldTypes = fieldTypes
-    def numFields(self): return len(self.fieldTypes)
+        self.fieldTags = fieldTags
+    def numFields(self):
+        if self.fieldTags is None:
+            typeErr(None, "attempted to use undefined tag: '%s'"%self.name)
+        return len(self.fieldTags)
+def checkNodeBounds(ctx, tag, index, msg):
+    if index >= tag.numFields():
+        typeErr(ctx, (msg+"; tag='%s', num-fields='%d'")%
+                (index, tag, tag.numFields()))
 
 def isNode(v):
     return isinstance(v, list) and len(v) > 0 and isinstance(v[0], NodeTag)
@@ -150,7 +159,11 @@ def fromList(xs):
 
 ################################################################
 # primitive values
-primAddrTag = PrimTag('#Addr') # only explicitly needed for array elemTags
+primTagTag = PrimTag('#Tag')
+tagTag = nodeTagN('Tag', 1)
+def isTag(v): return node_tag(v) is tagTag
+def toTag(v): return node(tagTag, v)
+def fromTag(v): assert isTag(v), v; return v[1]
 primArrayTag = PrimTag('#Array')
 def isPrimArray(v):
     return isinstance(v, tuple) and len(v)>0 and v[0] is primArrayTag
@@ -160,6 +173,14 @@ def primArray_new(elemTag, xs): # tag determines size of each element
     return (primArrayTag, elemTag, xs) # only adding primTag for debugging
 def primArray_tag(v): assert isPrimArray(v), v; return v[1]
 def primArray_data(v): assert isPrimArray(v), v; return v[2]
+# def checkArrayBounds(ctx, arr, index, msg):
+#     data = primArray_data(arr)
+#     if index >= len(data):
+#         typeErr(ctx, (msg+"; length='%d'")%(index, len(data)))
+#     return data
+# def primArray_get(ctx, arr, index): # todo: confirm elemTag?
+#     data = checkArrayBounds(ctx, arr, index, "array index out of bounds: '%d'")
+#     return data[index]
 primIntTag = PrimTag('#Int')
 intTag = nodeTagN('Int', 1)
 def isInt(v): return node_tag(v) is intTag
@@ -262,9 +283,12 @@ def makeStream(s):
 ################################################################
 # contexts
 class Context:
-    def __init__(self, root, mod, senv, env):
+    def __init__(self, root, mod, senv, env, attr, hist=nil):
         self.root = root; self.mod = mod; self.senv = senv; self.env = env
-    def copy(self): return Context(self.root, self.mod, self.senv, self.env)
+        self.attr = attr; self.hist = hist
+    def copy(self):
+        return Context(self.root, self.mod, self.senv, self.env, self.hist)
+    def histAppend(self, form): self.hist = cons(form, self.hist)
 ctxTag = nodeTagN('Context', 2)#4)
 def toCtx(ctx): return node(#toRoot(ctx.root), toMod(ctx.mod),
                             toEnv(ctx.senv), toEnv(ctx.env))

@@ -98,7 +98,7 @@ def matchAgainst(tokClasses, s):
     return (None, None), s, 0, None
 
 class LexError(Exception): pass
-def lexErr(msg, attr): raise LexError(msg, attr)
+def lexErr(attr, msg): raise LexError(attr, msg)
 
 def tokensInLine(streamName, src, line):
     col = 0

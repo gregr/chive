@@ -13,6 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+track element tags (introduce tag unions, subtags/subtypes)
 guard against infinite recursion in pretty-printing
 AST pretty-printing
 
@@ -34,24 +35,9 @@ env-new env
 env-add env sym val
 env-get env sym conseq altern?
 
-var
 unboxed
-newtag
-construct
-unpack/pack
-gettag
-seq
-proc
 # simply group adjacent applications? primitives curried by default too
-#call # only on known procs?
-#apply # what data does it take?
-# explicit apply could be useful as an assertion about the number of arguments
 switch discriminant defaultCont [(tag|[unboxed val])* cont]*
-throw
-catch
-
-expand form senv env
-eval form senv env
 
 array-new
 array-length
@@ -59,10 +45,6 @@ array-unpack/pack
 
 gensym
 alias
-
-update
- delay
- force
 
 ffi?:
 networking
