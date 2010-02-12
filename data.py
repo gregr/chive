@@ -61,7 +61,7 @@ def primVal_tag(v): assert isPrimVal(v), v; return v[0]
 
 def isNode(v):
     return isinstance(v, list) and len(v) > 0 and isinstance(v[0], NodeTag)
-def node(tag, *args):
+def node(tag, *args): # todo: tag-check args
     assert len(args) == tag.numFields(), (len(args), tag.numFields())
     return [tag]+list(args)
 def node_tag(node): assert isNode(node), node; return node[0]
@@ -269,6 +269,42 @@ stringTag = nodeTag('String', arrayTag(primCharTag))
 def isString(v): return node_tag(v) is stringTag
 def toString(v): return node(stringTag, toPrimString(v))
 def fromString(v): assert isString(v), v; return fromPrimString(v[1])
+
+################################################################
+# procs
+class ProcType: pass
+def makeProcType(tag, primTag):
+    class Proc(ProcType):
+        def __init__(self, name, binders, code, closure):
+            self.name = name; self.binders = binders; self.code = code;
+            self.closure = closure
+    def proc_new(name, binders, code, closure):
+        return node(tag,
+                    packPrimVal(primTag, Proc(name, binders, code, closure)))
+    return proc_new
+primProcTag = PrimTag('#Proc')
+procTag = nodeTag('Proc', primProcTag)
+proc_new = makeProcType(procTag, primProcTag)
+def isProc(v): return node_tag(v) is procTag
+def fromProc(proc): assert isProc(proc), proc; return unpackPrimVal(proc[1])
+def applyProc(appCtx, proc, args):
+    binders = proc.binders; ctx = proc.closure.copy(); ctx.env = Env(ctx.env)
+    for binder, arg in zip(binders, args): ctx.env.add(binder, arg)
+    arity = len(binders)
+    if arity <= len(args): return proc.code.eval(ctx), args[arity:]
+    else: return proc_new(proc.name, binders[len(args):], proc.code, ctx), ()
+primForeignProcTag = PrimTag('#ForeignProc')
+foreignProcTag = nodeTag('ForeignProc', primForeignProcTag)
+foreignProc_new = makeProcType(foreignProcTag, primForeignProcTag)
+def isForeignProc(v): return node_tag(v) is foreignProcTag
+def fromForeignProc(fproc):
+    assert isForeignProc(fproc), fproc; return unpackPrimVal(fproc[1])
+def applyForeignProc(appCtx, fproc, args):
+    arity = fproc.binders; code = fproc.code; closure = fproc.closure
+    if arity <= len(args):
+        return code(appCtx, *(closure+args[:arity])), args[arity:]
+    else: return foreignProc_new(fproc.name, arity-len(args), code,
+                                 closure+args), ()
 
 ################################################################
 # pretty printing

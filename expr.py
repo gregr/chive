@@ -43,8 +43,8 @@ class Var(Atom):
 class Constr(Expr): pass
 class ConsProc(Constr):
     names = nameGen(['#proc_'])
-    def __init__(self, binders, body):
-        self.name = self.names.next()
+    def __init__(self, binders, body, name=None):
+        self.name = name or self.names.next()
         self.binders = binders
         self.body = body
     def eval(self, ctx):
@@ -106,7 +106,18 @@ class NodePack(NodeAccess):
 
 ################################################################
 class Seq(Expr): pass
-class Apply(Expr): pass
+class Apply(Expr):
+    def __init__(self, proc, args): self.proc = proc; self.args = args
+    def eval(self, ctx):
+        proc = self.proc; args = self.args
+        while args:
+            if isProc(proc):
+                (ctx, proc), args = applyProc(ctx, fromProc(proc), args)
+            elif isForeignProc(proc):
+                (ctx, proc), args = applyForeignProc(ctx, fromForeignProc(proc),
+                args)
+            else: typeError(ctx, "cannot apply non-procedure: '%s'"%proc)
+        return cont(ctx, proc)
 class Switch(Expr): pass
 
 ################################################################
