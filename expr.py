@@ -12,14 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from data import checkNodeBounds
+from data import checkTagBounds
 
 class EvalError(Exception): pass
 def evalErr(ctx, msg): raise EvalError(ctx, msg)
 
-def evalExpr(ctx, expr): pass
 def final(val): return None, val
 def cont(ctx, expr): return ctx, expr
+def evalExpr(ctx, expr, tag=None): # tail-call trampoline
+    while ctx is not None: ctx, expr = expr.eval(ctx)
+    if tag is not None: checkTag(ctx, tag, expr)
+    return expr # when ctx is None, expr will be a final value
 
 class Expr:
     def pretty(self): return 'todo'
@@ -38,14 +41,6 @@ class Var(Atom):
 
 ################################################################
 class Constr(Expr): pass
-class ConsNode(Constr):
-    def __init__(self, tag, cargs, ctx):
-        checkNodeBounds(ctx, tag, len(cargs),
-                        "too many constructor arguments: '%d'")
-        self.tag = tag; self.cargs = cargs
-    def eval(self, ctx):
-        cargs = [evalExpr(ctx, carg) for carg in self.cargs]
-        return final(node(self.tag, *cargs))
 class ConsProc(Constr):
     names = nameGen(['#proc_'])
     def __init__(self, binders, body):
@@ -69,34 +64,45 @@ class ConsNodeTag(Constr):
             tag = NodeTag(str(self.name), ftags)
             ctx.env.add(self.name, tag)
         if not isinstance(tag, NodeTag):
-            typeErr(ctx, "chosen tag name is already in use: '%s'"%self.name)
+            typeErr(ctx, "name already in use: '%s'"%self.name)
         return final(tag)
+class ConsNode(Constr):
+    def __init__(self, tag, cargs, ctx):
+        checkTagBounds(ctx, tag, len(cargs),
+                       "too many constructor arguments: '%d'")
+        self.tag = tag; self.cargs = cargs
+    def eval(self, ctx):
+        cargs = [evalExpr(ctx, carg, ctag)
+                 for carg, ctag in zip(self.cargs, self.tag.fieldTags)]
+        return final(node(self.tag, *cargs))
+class ConsArrayTag(Constr): pass
+class ConsArray(Constr): pass
 
 ################################################################
 class Access(Expr): pass
 class NodeGetTag(Access):
     def __init__(self, node): self.node = node
-    def eval(self, ctx): return final(node_tag(evalExpr(ctx, self.node)))
+    def eval(self, ctx):
+        val = evalExpr(ctx, self.node); checkIsNode(ctx, val)
+        return final(node_tag(val))
 class NodeAccess(Access):
     def __init__(self, tag, index, node, ctx):
-        checkNodeBounds(ctx, tag, index, "node index out of bounds: '%d'")
+        checkTagBounds(ctx, tag, index, "node index out of bounds: '%d'")
         self.tag = tag; self.index = index+1; self.node = node
     def _evalNode(self, ctx):
-        node = evalExpr(ctx, self.node)
-        if node_tag(node) != self.tag:
-            typeErr(ctx, "tag mismatch: expected '%s', found '%s'"%
-                    (self.tag, node_tag(node)))
+        node = evalExpr(ctx, self.node, self.tag)
         return node
 class NodeUnpack(NodeAccess):
-    def eval(self, ctx): return final(self._evalNode(ctx)[self.index])
+    def eval(self, ctx):
+        return final(nodeUnpack(self._evalNode(ctx)), self.index))
 class NodePack(NodeAccess):
     def __init__(self, rhs, *args):
         super().__init__(*args)
         self.rhs = rhs
     def eval(self, ctx):
-        rhs = evalExpr(ctx, rhs) # todo: match elem tag once they are tracked
-        self._evalNode(ctx)[self.index] = rhs
+        nodePack(self._evalNode(ctx), self.index, evalExpr(ctx, rhs, self.tag))
         return final(unit)
+# todo: array access
 
 ################################################################
 class Seq(Expr): pass
@@ -116,13 +122,13 @@ class Meta(Expr):
     def __init__(self, senv, env, form):
         self.senv = senv; self.env = env; self.form = form
     def _evalArgs(self, ctx):
-        senv = fromEnv(evalExpr(ctx, self.senv)) # todo: type check
-        env = fromEnv(evalExpr(ctx, self.env)) # todo: type check
-        form = evalExpr(ctx, self.form)
+        senv = evalExpr(ctx, self.senv, envTag)
+        env = evalExpr(ctx, self.env, envTag)
+        form = evalExpr(ctx, self.form) # todo: check proper form tag
         ctx = ctx.copy()
         ctx.hist = nil
-        ctx.senv = senv
-        ctx.env = env
+        ctx.senv = fromEnv(senv)
+        ctx.env = fromEnv(env)
         return ctx, form
 class Expand(Meta):
     def eval(self, ctx):

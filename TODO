@@ -13,9 +13,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+tag primitive values for safe debugging
 track element tags (introduce tag unions, subtags/subtypes)
 guard against infinite recursion in pretty-printing
 AST pretty-printing
+structs/tuples
 
 ================================================================
 = disorganized ideas

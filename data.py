@@ -18,8 +18,24 @@ def typeErr(ctx, msg): raise TypeError(ctx, msg)
 class Named:
     def __init__(self, name): self.name = name
     def __repr__(self): return '<%s %s>'%(self.__class__.__name__, self.name)
-class Tag(Named): pass
+class Tag(Named):
+    def contains(self, tag): return self == tag
 class PrimTag(Tag): pass
+class ArrayTag(PrimTag):
+    def __init__(self, elemTag):
+        super().__init__('#Array_'+elemTag.name)
+        self.elemTag = elemTag
+elemToArrayTag = {}
+def arrayTag(elemTag):
+    tag = elemToArrayTag.get(elemTag)
+    if tag is None: tag = ArrayTag(elemTag); elemToArrayTag[elemTag] = tag
+    return tag
+# class TupleTag(PrimTag):
+#     def __init__(self, fieldTags):
+#         super().__init__('#Tuple_'+'_'.join(ft.name for ft in fieldTags))
+#         self.fieldTags = fieldTags
+# fieldsToTupleTag = {}
+
 class NodeTag(Tag):
     def __init__(self, name, fieldTags):
         super().__init__(name)
@@ -28,10 +44,20 @@ class NodeTag(Tag):
         if self.fieldTags is None:
             typeErr(None, "attempted to use undefined tag: '%s'"%self.name)
         return len(self.fieldTags)
-def checkNodeBounds(ctx, tag, index, msg):
-    if index >= tag.numFields():
-        typeErr(ctx, (msg+"; tag='%s', num-fields='%d'")%
-                (index, tag, tag.numFields()))
+def nodeTag(name, *ftags): return NodeTag(name, ftags)
+# todo: polymorphic param tag
+class AnyTag(Tag):
+    def contains(self, tag): return True
+anyTag = AnyTag('Any')
+class UnionTag(Tag):
+    def __init__(self, name, subTags): self.name = name; self.subTags = subTags
+    def contains(self, tag): return any(t.contains(tag) for t in self.subTags)
+
+def isPrimVal(v):
+    return isinstance(v, tuple) and len(v) > 0 and isinstance(v[0], PrimTag)
+def packPrimVal(ptag, pv): return (ptag, pv)
+def unpackPrimVal(pv): assert isPrimVal(pv), pv; return pv[1]
+def primVal_tag(v): assert isPrimVal(v), v; return v[0]
 
 def isNode(v):
     return isinstance(v, list) and len(v) > 0 and isinstance(v[0], NodeTag)
@@ -39,10 +65,41 @@ def node(tag, *args):
     assert len(args) == tag.numFields(), (len(args), tag.numFields())
     return [tag]+list(args)
 def node_tag(node): assert isNode(node), node; return node[0]
+def assertNodeIndex(node, index, tag):
+    if tag is not None: assert node_tag(node) is tag, node
+    assert index < node_tag(node).numFields(), index
+def nodePack(node, index, val, tag=None):
+    assertNodeIndex(node, index, tag)
+    if isinstance(node.fieldTags[index], PrimTag): val = packPrimVal(val)
+    node[index] = val
+def nodeUnpack(node, index, tag=None):
+    assertNodeIndex(node, index, tag)
+    val = node[index]
+    if isinstance(node.fieldTags[index], PrimTag): val = unpackPrimVal(val)
+    return val
 
-def nodeTagN(name, nargs): return NodeTag(name, (None,)*nargs)
+def val_tag(ctx, val):
+    if isNode(val): vtag = node_tag(val)
+    elif isPrimVal(val): vtag = primVal_tag(val)
+    else: typeErr(ctx, "attempted to extract tag from unknown value: '%s'"%val)
+def checkIsNodeTag(ctx, tag):
+    if not isinstance(tag, NodeTag):
+        typeErr(ctx, "expected node tag but found '%s'"%tag)
+def checkIsNode(ctx, val):
+    if not isNode(val): typeErr(ctx, "expected node but found '%s'"%val)
+def checkTagBounds(ctx, tag, index, msg):
+    checkIsNodeTag(ctx, tag)
+    if index >= tag.numFields():
+        typeErr(ctx, (msg+"; tag='%s', num-fields='%d'")%
+                (index, tag, tag.numFields()))
+def checkTag(ctx, tag, val):
+    vtag = val_tag(ctx, val)
+    if not tag.contains(vtag):
+        typeErr(ctx, "tag error: expected subtag of '%s', found '%s'"%
+                (tag, vtag))
+
 def singleton(name):
-    tag = nodeTagN(name, 0)
+    tag = nodeTag(name)
     return tag, node(tag)
 unitTag, unit = singleton('Unit')
 
@@ -56,7 +113,7 @@ def primSymbol_new(n):
     sd = (n, nextSymId)
     nextSymId += 1
     return sd
-symTag = nodeTagN('Symbol', 1)
+symTag = nodeTag('Symbol', primSymTag)
 def isSymbol(v): return node_tag(v) is symTag
 def symbol_new(n): return node(symTag, primSymbol_new(n))
 def symbol_prim(s): assert isSymbol(s), v; return s[1]
@@ -110,13 +167,14 @@ class EnvKey:
     def __repr__(self): return '<EnvKey %r>' % prettySymbol(self.sym)
     def __str__(self): return prettySymbol(self.sym)
 
-envTag = nodeTagN('Env', 1)
+primEnvTag = PrimTag('#Env')
+envTag = nodeTag('Env', primEnvTag)
 def toEnv(e): return node(envTag, e)
 def fromEnv(e): assert node_tag(e) is envTag, e; return e[1]
 
 ################################################################
 # syntactic closures
-syncloTag = nodeTagN('SynClo', 3)
+syncloTag = nodeTag('SynClo', envTag, anyTag, anyTag) # todo
 def isSynClo(s): return node_tag(s) is syncloTag
 def synclo_new(senv, frees, form): return node(syncloTag, senv, frees, form)
 def _synclo_get(s, i): assert isSynClo(s), s; return s[i]
@@ -142,7 +200,7 @@ def syncloExpand(senv, xs):
 ################################################################
 # lists
 nilTag, nil = singleton('Nil')
-consTag = nodeTagN(':', 2)
+consTag = nodeTag(':', anyTag, anyTag) # todo
 def cons(h, t): return node(consTag, h, t)
 def cons_head(x): assert node_tag(x) is consTag, x; return x[1]
 def cons_tail(x): assert node_tag(x) is consTag, x; return x[2]
@@ -160,19 +218,19 @@ def fromList(xs):
 ################################################################
 # primitive values
 primTagTag = PrimTag('#Tag')
-tagTag = nodeTagN('Tag', 1)
+tagTag = nodeTag('Tag', primTagTag)
 def isTag(v): return node_tag(v) is tagTag
 def toTag(v): return node(tagTag, v)
 def fromTag(v): assert isTag(v), v; return v[1]
 primArrayTag = PrimTag('#Array')
-def isPrimArray(v):
-    return isinstance(v, tuple) and len(v)>0 and v[0] is primArrayTag
-def primArray_new(elemTag, xs): # tag determines size of each element
+def isArray(v):
+    return isPrimVal(v) and isinstance(primVal_tag(v), ArrayTag)
+def array_new(elemTag, xs):
     assert isinstance(elemTag, Tag), elemTag
     assert isinstance(xs, list), xs
-    return (primArrayTag, elemTag, xs) # only adding primTag for debugging
-def primArray_tag(v): assert isPrimArray(v), v; return v[1]
-def primArray_data(v): assert isPrimArray(v), v; return v[2]
+    return packPrimVal(arrayTag(elemTag), xs)
+def array_elemTag(v): assert isArray(v), v; return v[0].elemTag
+def array_data(v): assert isArray(v), v; return unpackPrimVal(v)
 # def checkArrayBounds(ctx, arr, index, msg):
 #     data = primArray_data(arr)
 #     if index >= len(data):
@@ -182,19 +240,19 @@ def primArray_data(v): assert isPrimArray(v), v; return v[2]
 #     data = checkArrayBounds(ctx, arr, index, "array index out of bounds: '%d'")
 #     return data[index]
 primIntTag = PrimTag('#Int')
-intTag = nodeTagN('Int', 1)
+intTag = nodeTag('Int', primIntTag)
 def isInt(v): return node_tag(v) is intTag
 def toInt(v): return node(intTag, v)
 def fromInt(v): assert isInt(v), v; return v[1]
 primFloatTag = PrimTag('#Float')
-floatTag = nodeTagN('Float', 1)
+floatTag = nodeTag('Float', primFloatTag)
 def isFloat(v): return node_tag(v) is floatTag
 def toFloat(v): return node(floatTag, v)
 def fromFloat(v): assert isFloat(v), v; return v[1]
 primCharTag = PrimTag('#Char')
 def toPrimChar(v): return v
 def fromPrimChar(v): return v
-charTag = nodeTagN('Char', 1)
+charTag = nodeTag('Char', primCharTag)
 def isChar(v): return node_tag(v) is charTag
 def toChar(v): return node(charTag, primChar(v))
 def fromChar(v): assert isChar(v), v; return v[1]
@@ -203,14 +261,14 @@ def fromChar(v): assert isChar(v), v; return v[1]
 # strings
 def toPrimString(pys):
     assert isinstance(pys, str), pys
-    return primArray_new(primCharTag, [toPrimChar(pych) for pych in pys])
+    return array_new(primCharTag, [toPrimChar(pych) for pych in pys])
 def fromPrimString(v):
-    assert primArray_tag(v) is primCharTag, v
-    return ''.join(fromPrimChar(ch) for ch in primArray_data(v))
-stringTag = nodeTagN('String', 1)
+    assert array_elemTag(v) is primCharTag, v
+    return ''.join(fromPrimChar(ch) for ch in array_data(v))
+stringTag = nodeTag('String', arrayTag(primCharTag))
 def isString(v): return node_tag(v) is stringTag
 def toString(v): return node(stringTag, toPrimString(v))
-def fromString(v): assert isString(v), v; return v[1]
+def fromString(v): assert isString(v), v; return fromPrimString(v[1])
 
 ################################################################
 # pretty printing
@@ -289,6 +347,6 @@ class Context:
     def copy(self):
         return Context(self.root, self.mod, self.senv, self.env, self.hist)
     def histAppend(self, form): self.hist = cons(form, self.hist)
-ctxTag = nodeTagN('Context', 2)#4)
-def toCtx(ctx): return node(#toRoot(ctx.root), toMod(ctx.mod),
-                            toEnv(ctx.senv), toEnv(ctx.env))
+# ctxTag = nodeTag('Context', 2)#4)
+# def toCtx(ctx): return node(#toRoot(ctx.root), toMod(ctx.mod),
+#                             toEnv(ctx.senv), toEnv(ctx.env))
