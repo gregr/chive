@@ -145,4 +145,4 @@ class Expand(Meta):
         ctx, form = expand(*self._evalArgs(ctx))
         return final(synclo_new(toEnv(ctx.senv), nil, form))
 class Evaluate(Meta): pass
-    def eval(self, ctx): return final(evalData(*self._evalArgs(ctx)))
+    def eval(self, ctx): return final(evaluate(*self._evalArgs(ctx)))

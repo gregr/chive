@@ -21,45 +21,75 @@ def attr_head(attr):
 def attr_tail(attr):
     if attr.subs is nil: return nil
     else: return cons_tail(attr.subs)
-
-def subExpand(ctx, attr, xs):
+def withSubCtx(f, ctx, attr, xs):
     ctx = ctx.copy()
     ctx.attr = attr
-    return expand(ctx, xs)
-# todo: macro_apply, isMacro, isExprCons
+    return f(ctx, xs)
+def headSubCtx(f, ctx, xs):
+    return withSubCtx(f, ctx, attr_head(ctx.attr), cons_head(xs))
+def mapRest(f, ctx, xs):
+    xs0 = fromList(cons_tail(xs))
+    attr0 = fromList(attr_tail(ctx.attr))
+    attr0 += [ctx.attr]*(len(xs0)-len(attr0))
+    return [f(ctx, aa, xx) for aa, xx in zip(attr0, xs0)]
+# todo: applyMacro, isMacro, isSemantic, applySemantic
 litExpanders = {}
 def expand(ctx, xs):
     while True:
+        checkIsNode(ctx, xs)
         ctx.senv, xs = syncloExpand(ctx.senv, xs)
         ctx.histAppend(xs)
         if isListCons(xs):
-            hdCtx, hd = subExpand(ctx, attr_head(ctx.attr), cons_head(xs))
+            hdCtx, hd = headSubCtx(expand, ctx, xs)
             if isSymbol(hd):
                 den = hdCtx.senv.get(EnvKey(hd))
                 if den is not None:
                     val = hdCtx.env.get(den)
                     if val is not None:
-                        if isExprCons(val): break
+                        if isSemantic(val): break
                         elif isMacro(val):
-                            ctx, xs = macro_apply(val, ctx,
-                                                  cons(head, cons_tail(xs)))
+                            ctx, xs = applyMacro(val, ctx,
+                                                 cons(hd, cons_tail(xs)))
                             continue
             def wrap(ctx_, _, xx):
                 if ctx_.senv is not ctx.senv:
                     xx = synclo_new(toEnv(ctx_.senv), nil, xx)
                 return xx
-            xs0 = fromList(cons_tail(xs))
-            attr0 = fromList(attr_tail(ctx.attr))
-            attr0 += [ctx.attr]*(len(xs0)-len(attr0))
-            rest = [(aa, wrap(*subExpand(ctx, aa, xx)))
-                    for aa, xx in zip(attr0, xs0)]
+            def wrapSub(ctx, aa, xx):
+                return aa, wrap(*withSubCtx(expand, ctx, aa, xx))
+            rest = mapRest(wrapSub, ctx, xs)
             if rest: attr1, xs1 = list(zip(*rest))
             else: attr1, xs1 = [], []
             xs = cons(wrap(hdCtx, None, hd), toList(xs1))
             ctx.attr = ctx.attr.copy();
-            ctx.attr.subs = cons(hdAttr, toList(attr1))
+            ctx.attr.subs = cons(attr_head(ctx.attr), toList(attr1))
         else:
             ex = litExpanders.get(node_tag(xs))
             if ex is not None: return ex(ctx, xs)
         break
     return ctx, xs
+
+def syncloExCtx(ctx, expr):
+    ctx.senv, expr = syncloExpand(ctx.senv, expr)
+    return ctx, expr
+def semantize(ctx, xs):
+    checkIsNode(ctx, xs)
+    if isListCons(xs):
+        hdCtx, hd = headSubCtx(syncloExCtx, ctx, xs)
+        if isSymbol(hd):
+            den = hdCtx.senv.get(EnvKey(hd))
+            if den is not None:
+                val = hdCtx.env.get(den)
+                if val is not None and isSemantic(val):
+                    return applySemantic(val, ctx, cons(hd, cons_tail(xs)))
+        def semSub(ctx, aa, xx): return withSubCtx(semantize, ctx, aa, xx)
+        rest = mapRest(semSub, ctx, xs)
+        return ctx, Apply(semantize(hdCtx, hd)[1], [expr for _,expr in rest])
+    elif isSymbol(xs):
+        den = ctx.senv.get(EnvKey(xs))
+        if den is None: den = alias_new(xs); ctx.senv.add(EnvKey(den), xs)
+        return ctx, Var(EnvKey(den))
+    elif xs is nil: return ctx, Var(EnvKey(unitDen))
+    else: typeError(ctx, "improper symbolic expression: '%s'"%xs)
+
+def evaluate(ctx, xs): return evalExpr(*semantize(*expand(ctx, xs)))

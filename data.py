@@ -131,7 +131,7 @@ def nameGen(alphabet=[chr(o) for o in range(ord('a'), ord('z')+1)]):
         repStr = str(rep)
         for s in alphabet: yield s+repStr
         rep += 1
-def toAlias(sym): return symbol_new(symbol_name(sym))
+def alias_new(sym): return symbol_new(symbol_name(sym))
 def gensym(names=nameGen()): return symbol_new(next(names))
 
 ################################################################
