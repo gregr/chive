@@ -289,7 +289,8 @@ def isProc(v): return node_tag(v) is procTag
 def fromProc(proc): assert isProc(proc), proc; return unpackPrimVal(proc[1])
 def applyProc(appCtx, proc, args):
     binders = proc.binders; ctx = proc.closure.copy(); ctx.env = Env(ctx.env)
-    for binder, arg in zip(binders, args): ctx.env.add(binder, arg)
+    for binder, arg in zip(binders, args):
+        ctx.env.add(binder, evalExpr(appCtx, arg)) # todo: check arg tags?
     arity = len(binders)
     if arity <= len(args): return proc.code.eval(ctx), args[arity:]
     else: return proc_new(proc.name, binders[len(args):], proc.code, ctx), ()
@@ -299,12 +300,11 @@ foreignProc_new = makeProcType(foreignProcTag, primForeignProcTag)
 def isForeignProc(v): return node_tag(v) is foreignProcTag
 def fromForeignProc(fproc):
     assert isForeignProc(fproc), fproc; return unpackPrimVal(fproc[1])
-def applyForeignProc(appCtx, fproc, args):
-    arity = fproc.binders; code = fproc.code; closure = fproc.closure
-    if arity <= len(args):
-        return code(appCtx, *(closure+args[:arity])), args[arity:]
-    else: return foreignProc_new(fproc.name, arity-len(args), code,
-                                 closure+args), ()
+def applyForeignProc(appCtx, fproc, args): # todo: check arg tags?
+    arity = len(fproc.binders); code = fproc.code; closure = fproc.closure
+    closure += [evalExpr(appCtx, arg) for arg in args[:arity]]
+    if arity <= len(args): return code(appCtx, *closure), args[arity:]
+    else: return foreignProc_new(fproc.name, arity-len(args), code, closure),()
 
 ################################################################
 # pretty printing

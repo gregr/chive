@@ -109,15 +109,14 @@ class Seq(Expr): pass
 class Apply(Expr):
     def __init__(self, proc, args): self.proc = proc; self.args = args
     def eval(self, ctx):
-        proc = self.proc; args = self.args
+        cprc = cont(ctx, self.proc); args = self.args
         while args:
-            if isProc(proc):
-                (ctx, proc), args = applyProc(ctx, fromProc(proc), args)
+            proc = evalExpr(*cprc) # lifted out here for tail-calls
+            if isProc(proc): cprc, args = applyProc(ctx, fromProc(proc), args)
             elif isForeignProc(proc):
-                (ctx, proc), args = applyForeignProc(ctx, fromForeignProc(proc),
-                args)
+                cprc, args = applyForeignProc(ctx, fromForeignProc(proc), args)
             else: typeError(ctx, "cannot apply non-procedure: '%s'"%proc)
-        return cont(ctx, proc)
+        return cprc
 class Switch(Expr): pass
 
 ################################################################
