@@ -17,8 +17,8 @@ from data import (TypeError, typeErr,
                   nil, cons, cons_head, cons_tail,
                   toList, fromList, isListCons,
                   isSymbol, EnvKey, synclo_new, alias_new, syncloExpand,
-                  isMacro, applyMacro, isSemantic, applySemantic,
-                  checkIsNode, node_tag)
+                  isMacro, applyMacro, isSemantic, applySemantic, semantic_new,
+                  checkIsNode, node_tag, addPrim, primCtx, pretty, unitDen)
 
 def attr_head(attr):
     if attr.subs is nil: return attr
@@ -76,6 +76,7 @@ def syncloExCtx(ctx, expr):
     ctx.senv, expr = syncloExpand(ctx.senv, expr)
     return ctx, expr
 def semantize(ctx, xs):
+    ctx, xs = expand(ctx, xs)
     checkIsNode(ctx, xs)
     if isListCons(xs):
         hdCtx, hd = headSubCtx(syncloExCtx, ctx, xs)
@@ -95,14 +96,34 @@ def semantize(ctx, xs):
         if den is None: den = alias_new(xs); ctx.senv.add(EnvKey(den), xs)
         return ctx, Var(EnvKey(den))
     elif xs is nil: return ctx, Var(EnvKey(unitDen))
-    else: typeErr(ctx, "improper symbolic expression: '%s'"%xs)
+    else: typeErr(ctx, "invalid symbolic expression: '%s'"%xs)
 
-def evaluate(ctx, xs): return evalExpr(*semantize(*expand(ctx, xs)))
+def evaluate(ctx, xs, tag=None):
+    ctx, xs = semantize(ctx, xs); return evalExpr(ctx, xs, tag)
 
-def interact(ctx): # todo: break into smaller pieces
+def semproc(name):
+    def install(f): addPrim(name, semantic_new(f)); return f
+    return install
+def stripOuterSynClo(xs):
+    while isSynClo(xs): xs = synclo_form(xs)
+    return xs
+@semproc('#unbox')
+def semUnbox(ctx, form):
+    # todo: validate form
+    form = stripOuterSynClo(cons_head(cons_tail(form)))
+    if node_tag(form) in (symTag, intTag, floatTag, charTag):
+        return ctx, PrimVal(packPrimVal(form[1]))
+    else: typeErr(ctx, "cannot unbox non-literal: '%s'"%form)
+@semproc('#node')
+def semNode(ctx, form):
+    # todo: validate form
+    cargs = [expr for _, expr in semantize(ctx, cons_tail(cons_tail(form)))]
+    tag = evaluate(cons_head(cons_tail(form)), tagTag)
+    return ctx, ConsNode(tag, cargs, ctx)
+
+def interactOnce(modName, ctx): # todo: break into smaller pieces
     import readline
     from io import StringIO
-    modName = 'test' # todo
     buffer = []
     prompt1 = '%s> ' % modName
     prompt2 = ('.'*(len(prompt1)-1)) + ' '
@@ -110,24 +131,29 @@ def interact(ctx): # todo: break into smaller pieces
     while line:
         buffer.append(line+'\n')
         line = input(prompt2)
+    return StringIO(''.join(buffer))
+def interact(ctx):
+    modName = 'test' # todo
     # todo: parser from ctx
     from lex import LexError
     from syntax import ParseError, Parser
     from data import Env, makeStream, unit
     parser = Parser(Env())
-    exprs = makeStream(parser.parse(modName, StringIO(''.join(buffer))))
-    result = unit
-    while True:
-        try:
-            expr, attr = next(exprs)
-            result = evaluate(ctx, expr)
-        except LexError: raise
-        except ParseError: raise
-        except TypeError: raise
+    try:
+        while True:
+            result = unit
+            exprs = parser.parse(modName, interactOnce(modName, ctx))
+            try:
+                for expr, attr in exprs:
+                    result = evaluate(ctx, expr); print(pretty(result))
+            except LexError: raise
+            except ParseError: raise
+            except TypeError: raise
+    except EOFError: pass
     return result
 
 def _test():
-    from data import Env, Context
-    ctx = Context(None,None,Env(),Env(),None)
+    ctx = primCtx()
     interact(ctx)
+    print('')
 if __name__ == '__main__': _test()

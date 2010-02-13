@@ -44,11 +44,9 @@ class NodeTag(Tag):
         if self.fieldTags is None:
             typeErr(None, "attempted to use undefined tag: '%s'"%self.name)
         return len(self.fieldTags)
-def nodeTag(name, *ftags): return NodeTag(name, ftags)
 # todo: polymorphic param tag
 class AnyTag(Tag):
     def contains(self, tag): return True
-anyTag = AnyTag('Any')
 class UnionTag(Tag):
     def __init__(self, name, subTags): self.name = name; self.subTags = subTags
     def contains(self, tag): return any(t.contains(tag) for t in self.subTags)
@@ -98,11 +96,6 @@ def checkTag(ctx, tag, val):
         typeErr(ctx, "tag error: expected subtag of '%s', found '%s'"%
                 (tag, vtag))
 
-def singleton(name):
-    tag = nodeTag(name)
-    return tag, node(tag)
-unitTag, unit = singleton('Unit')
-
 ################################################################
 # symbols
 primSymTag = PrimTag('#Symbol')
@@ -113,7 +106,7 @@ def primSymbol_new(n):
     sd = (n, nextSymId)
     nextSymId += 1
     return sd
-symTag = nodeTag('Symbol', primSymTag)
+symTag = NodeTag('Symbol', (primSymTag,))
 def isSymbol(v): return node_tag(v) is symTag
 def symbol_new(n): return node(symTag, primSymbol_new(n))
 def symbol_prim(s): assert isSymbol(s), v; return s[1]
@@ -167,6 +160,20 @@ class EnvKey:
     def __repr__(self): return '<EnvKey %r>' % prettySymbol(self.sym)
     def __str__(self): return prettySymbol(self.sym)
 
+################################################################
+# primitives
+primitives = {}
+def addPrim(name, val):
+    sym = symbol(name); den = alias_new(sym); nm = EnvKey(sym)
+    assert nm not in primitives, name; primitives[nm] = (den, val)
+def nodeTag(name, *ftags):
+    tag = NodeTag(name, ftags); addPrim(name+'-tag', tag); return tag
+def singleton(name):
+    tag = nodeTag(name); val = node(tag); addPrim(name, val); return tag, val
+addPrim('Symbol-tag', symTag)
+anyTag = AnyTag('Any'); addPrim('Any-tag', anyTag)
+unitTag, unit = singleton('Unit')
+unitDen = primitives.get(EnvKey(symbol('Unit')))[0]
 primEnvTag = PrimTag('#Env')
 envTag = nodeTag('Env', primEnvTag)
 def toEnv(e): return node(envTag, e)
@@ -217,12 +224,22 @@ def fromList(xs):
 
 ################################################################
 # primitive values
-primTagTag = PrimTag('#Tag')
-tagTag = nodeTag('Tag', primTagTag)
-def isTag(v): return node_tag(v) is tagTag
-def toTag(v): return node(tagTag, v)
-def fromTag(v): assert isTag(v), v; return v[1]
-primArrayTag = PrimTag('#Array')
+def simplePrim(name):
+    primTag = PrimTag('#'+name); addPrim('#'+name, primTag)
+    tag = nodeTag(name, primTag)
+    def isX(v): return node_tag(v) is tag
+    def toX(v): return node(tag, v)
+    def fromX(v): assert isX(v), (name, v); return v[1]
+    return primTag, tag, isX, toX, fromX
+primTagTag, tagTag, isTag, toTag, fromTag = simplePrim('Tag')
+primIntTag, intTag, isInt, toInt, fromInt = simplePrim('Int')
+primFloatTag, floatTag, isFloat, toFloat, fromFloat = simplePrim('Float')
+def toPrimChar(v): return v
+def fromPrimChar(v): return v
+primCharTag, charTag, isChar, toChar, fromChar = simplePrim('Char')
+
+################################################################
+# arrays
 def isArray(v):
     return isPrimVal(v) and isinstance(primVal_tag(v), ArrayTag)
 def array_new(elemTag, xs):
@@ -239,23 +256,6 @@ def array_data(v): assert isArray(v), v; return unpackPrimVal(v)
 # def primArray_get(ctx, arr, index): # todo: confirm elemTag?
 #     data = checkArrayBounds(ctx, arr, index, "array index out of bounds: '%d'")
 #     return data[index]
-primIntTag = PrimTag('#Int')
-intTag = nodeTag('Int', primIntTag)
-def isInt(v): return node_tag(v) is intTag
-def toInt(v): return node(intTag, v)
-def fromInt(v): assert isInt(v), v; return v[1]
-primFloatTag = PrimTag('#Float')
-floatTag = nodeTag('Float', primFloatTag)
-def isFloat(v): return node_tag(v) is floatTag
-def toFloat(v): return node(floatTag, v)
-def fromFloat(v): assert isFloat(v), v; return v[1]
-primCharTag = PrimTag('#Char')
-def toPrimChar(v): return v
-def fromPrimChar(v): return v
-charTag = nodeTag('Char', primCharTag)
-def isChar(v): return node_tag(v) is charTag
-def toChar(v): return node(charTag, primChar(v))
-def fromChar(v): assert isChar(v), v; return v[1]
 
 ################################################################
 # strings
@@ -408,3 +408,10 @@ class Context:
 # ctxTag = nodeTag('Context', 2)#4)
 # def toCtx(ctx): return node(#toRoot(ctx.root), toMod(ctx.mod),
 #                             toEnv(ctx.senv), toEnv(ctx.env))
+def primCtx():
+    senv = Env(); env = Env()
+    print('adding primitives:')
+    for name, (den, val) in primitives.items():
+        print(name)
+        sym = name.sym; senv.add(EnvKey(sym), den); env.add(EnvKey(den), val)
+    return Context(None, None, senv, env, None)
