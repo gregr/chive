@@ -105,11 +105,23 @@ class NodePack(NodeAccess):
 # todo: array access
 
 ################################################################
-class Seq(Expr): pass
+class Seq(Expr):
+    def __init__(self, exprs): self.exprs = exprs[:-1]; self.last = exprs[-1]
+    def eval(self, ctx):
+        for expr in self.exprs: evalExpr(ctx, expr)
+        return cont(ctx, self.last)
 class Apply(Expr):
     def __init__(self, proc, args): self.proc = proc; self.args = args
     def eval(self, ctx): return applyFull(ctx, self.proc, self.args)
-class Switch(Expr): pass
+class Switch(Expr):
+    def __init__(self, discrimTag, discrim, default, alts):
+        self.discrimTag = discrimTag
+        self.discrim = discrim; self.default = default; self.alts = alts
+    def eval(self, ctx):
+        discrim = evalExpr(ctx, self.discrim, self.discrimTag)
+        body = self.alts.get(discrim)
+        if body is None: body = self.default
+        return cont(ctx, body)
 
 ################################################################
 class Throw(Expr): pass # could be a proc

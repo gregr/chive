@@ -27,7 +27,7 @@ structs/tuples
 {Proc ...} # hidden?
 
 {Root tags modules multimethod-tables?...}
-{Module path dependencies dependants exports senv env}
+{Module path dependencies dependants exports op-env senv env}
 {Context root module senv env} # and use unpacking for accessors
 #parser hooks? meta-circular debugging and expansion history? tracer hooks?
 
@@ -38,8 +38,6 @@ env-add env sym val
 env-get env sym conseq altern?
 
 unboxed
-# simply group adjacent applications? primitives curried by default too
-switch discriminant defaultCont [(tag|[unboxed val])* cont]*
 
 array-new
 array-length
