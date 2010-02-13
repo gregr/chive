@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from data import (cons, cons_head, cons_tail, toList, fromList, isSymbol,
-                  EnvKey, synclo_new, syncloExpand,
-                  isMacro, applyMacro, isSemantic, applySemantic)
+from expr import evalExpr, Var, Apply
+from data import (TypeError, typeErr,
+                  nil, cons, cons_head, cons_tail,
+                  toList, fromList, isListCons,
+                  isSymbol, EnvKey, synclo_new, alias_new, syncloExpand,
+                  isMacro, applyMacro, isSemantic, applySemantic,
+                  checkIsNode, node_tag)
 
 def attr_head(attr):
     if attr.subs is nil: return attr
@@ -91,6 +95,39 @@ def semantize(ctx, xs):
         if den is None: den = alias_new(xs); ctx.senv.add(EnvKey(den), xs)
         return ctx, Var(EnvKey(den))
     elif xs is nil: return ctx, Var(EnvKey(unitDen))
-    else: typeError(ctx, "improper symbolic expression: '%s'"%xs)
+    else: typeErr(ctx, "improper symbolic expression: '%s'"%xs)
 
 def evaluate(ctx, xs): return evalExpr(*semantize(*expand(ctx, xs)))
+
+def interact(ctx): # todo: break into smaller pieces
+    import readline
+    from io import StringIO
+    modName = 'test' # todo
+    buffer = []
+    prompt1 = '%s> ' % modName
+    prompt2 = ('.'*(len(prompt1)-1)) + ' '
+    line = input(prompt1)
+    while line:
+        buffer.append(line+'\n')
+        line = input(prompt2)
+    # todo: parser from ctx
+    from lex import LexError
+    from syntax import ParseError, Parser
+    from data import Env, makeStream, unit
+    parser = Parser(Env())
+    exprs = makeStream(parser.parse(modName, StringIO(''.join(buffer))))
+    result = unit
+    while True:
+        try:
+            expr, attr = next(exprs)
+            result = evaluate(ctx, expr)
+        except LexError: raise
+        except ParseError: raise
+        except TypeError: raise
+    return result
+
+def _test():
+    from data import Env, Context
+    ctx = Context(None,None,Env(),Env(),None)
+    interact(ctx)
+if __name__ == '__main__': _test()

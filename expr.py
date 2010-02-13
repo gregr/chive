@@ -12,10 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from data import checkTagBounds
-
-class EvalError(Exception): pass
-def evalErr(ctx, msg): raise EvalError(ctx, msg)
+from data import typeErr, checkTagBounds
 
 def final(val): return None, val
 def cont(ctx, expr): return ctx, expr
@@ -36,17 +33,14 @@ class Var(Atom):
     def __init__(self, name): self.name = name
     def eval(self, ctx):
         val = ctx.env.get(self.name)
-        if val is None: evalErr(ctx, "unbound variable '%s'"%self.name)
+        if val is None: typeErr(ctx, "unbound variable '%s'"%self.name)
         return final(val)
 
 ################################################################
 class Constr(Expr): pass
 class ConsProc(Constr):
-    names = nameGen(['#proc_'])
-    def __init__(self, binders, body, name=None):
-        self.name = name or self.names.next()
-        self.binders = binders
-        self.body = body
+    def __init__(self, name, binders, body):
+        self.name = name; self.binders = binders; self.body = body
     def eval(self, ctx):
         return final(proc_new(self.name, self.binders, self.body, ctx))
 class ConsNodeTag(Constr):
@@ -94,7 +88,7 @@ class NodeAccess(Access):
         return node
 class NodeUnpack(NodeAccess):
     def eval(self, ctx):
-        return final(nodeUnpack(self._evalNode(ctx)), self.index))
+        return final(nodeUnpack(self._evalNode(ctx), self.index))
 class NodePack(NodeAccess):
     def __init__(self, rhs, *args):
         super().__init__(*args)
@@ -148,5 +142,5 @@ class Expand(Meta):
     def eval(self, ctx):
         ctx, form = expand(*self._evalArgs(ctx))
         return final(synclo_new(toEnv(ctx.senv), nil, form))
-class Evaluate(Meta): pass
+class Evaluate(Meta):
     def eval(self, ctx): return final(evaluate(*self._evalArgs(ctx)))

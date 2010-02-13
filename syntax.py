@@ -73,11 +73,13 @@ openBraces += ['#'+br for br in openBraces]
 closeBraces = list(')]}')
 openToCloseBraces = dict(zip(openBraces, 2*closeBraces))
 class Parser:
-    def __init__(self, opsTable, bracketDatums=(), rhsSliceDatum=None):
+    def __init__(self, opsTable):
         self.opsTable = opsTable
         self.brackets = {'(': maybeMakeApp}
         self.datums = Datums()
-        self.datums.rhsSliceDatum = rhsSliceDatum
+        self.setRhsSlice(None)
+    def setRhsSlice(self, datum): self.datums.rhsSliceDatum = datum
+    def addBracketDatums(self, bracketDatums):
         for brack, datum in bracketDatums:
             assert brack in openToCloseBraces
             self.brackets[brack] = makeMacroApp(datum)
@@ -184,8 +186,10 @@ def makeInfixApp(sym, lhs, rhs, attr, dats):
     if lhs:
         if rhs: return [makeApp([op,makeReducedApp(lhs),makeReducedApp(rhs)])]
         else: return [makeApp([op, makeReducedApp(lhs)])]
-    elif rhs: return [makeApp([(dats.rhsSliceDatum, attr), op,
-                               makeReducedApp(rhs)])]
+    elif rhs:
+        datum = dats.rhsSliceDatum
+        if datum is None: parseErr('rhs-slice handler is unspecified')
+        return [makeApp([(datum, attr), op, makeReducedApp(rhs)])]
     else: return [op]
 
 class InfixOp(Operator):
@@ -254,7 +258,7 @@ def _test(s):
     for op in ops:
         opName = symbol(op[0])
         opsTable.add(EnvKey(opName), newOperator(opName, *op[1:]))
-    parser = Parser(opsTable, [('[', symbol('list'))])
+    parser = Parser(opsTable); parser.addBracketDatums([('[', symbol('list'))])
     for t,a in parser.parse('syntax.test', StringIO(s)):
         print(pretty(t))
         print(deepFromList(a))
