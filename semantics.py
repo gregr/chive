@@ -83,8 +83,10 @@ def semantize(ctx, xs):
                 if val is not None and isSemantic(val):
                     return applySemantic(val, ctx, cons(hd, cons_tail(xs)))
         def semSub(ctx, aa, xx): return withSubCtx(semantize, ctx, aa, xx)
-        rest = mapRest(semSub, ctx, xs)
-        return ctx, Apply(semantize(hdCtx, hd)[1], [expr for _,expr in rest])
+        rest = [expr for _,expr in mapRest(semSub, ctx, xs)]
+        hdCtx, hd = semantize(hdCtx, hd)
+        if isinstance(hd, Apply): hd.args.extend(rest); return ctx, hd
+        else: return ctx, Apply(hdExpr, rest)
     elif isSymbol(xs):
         den = ctx.senv.get(EnvKey(xs))
         if den is None: den = alias_new(xs); ctx.senv.add(EnvKey(den), xs)
