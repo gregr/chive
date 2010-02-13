@@ -108,15 +108,7 @@ class NodePack(NodeAccess):
 class Seq(Expr): pass
 class Apply(Expr):
     def __init__(self, proc, args): self.proc = proc; self.args = args
-    def eval(self, ctx):
-        cprc = cont(ctx, self.proc); args = self.args
-        while args:
-            proc = evalExpr(*cprc) # lifted out here for tail-calls
-            if isProc(proc): cprc, args = applyProc(ctx, fromProc(proc), args)
-            elif isForeignProc(proc):
-                cprc, args = applyForeignProc(ctx, fromForeignProc(proc), args)
-            else: typeError(ctx, "cannot apply non-procedure: '%s'"%proc)
-        return cprc
+    def eval(self, ctx): return applyFull(ctx, self.proc, self.args)
 class Switch(Expr): pass
 
 ################################################################

@@ -13,7 +13,8 @@
 # limitations under the License.
 
 from data import (cons, cons_head, cons_tail, toList, fromList, isSymbol,
-                  EnvKey, synclo_new, syncloExpand)
+                  EnvKey, synclo_new, syncloExpand,
+                  isMacro, applyMacro, isSemantic, applySemantic)
 
 def attr_head(attr):
     if attr.subs is nil: return attr
@@ -32,7 +33,6 @@ def mapRest(f, ctx, xs):
     attr0 = fromList(attr_tail(ctx.attr))
     attr0 += [ctx.attr]*(len(xs0)-len(attr0))
     return [f(ctx, aa, xx) for aa, xx in zip(attr0, xs0)]
-# todo: applyMacro, isMacro, isSemantic, applySemantic
 litExpanders = {}
 def expand(ctx, xs):
     while True:
@@ -48,8 +48,7 @@ def expand(ctx, xs):
                     if val is not None:
                         if isSemantic(val): break
                         elif isMacro(val):
-                            ctx, xs = applyMacro(val, ctx,
-                                                 cons(hd, cons_tail(xs)))
+                            xs = applyMacro(ctx, val, cons(hd, cons_tail(xs)))
                             continue
             def wrap(ctx_, _, xx):
                 if ctx_.senv is not ctx.senv:
@@ -81,7 +80,7 @@ def semantize(ctx, xs):
             if den is not None:
                 val = hdCtx.env.get(den)
                 if val is not None and isSemantic(val):
-                    return applySemantic(val, ctx, cons(hd, cons_tail(xs)))
+                    return applySemantic(ctx, val, cons(hd, cons_tail(xs)))
         def semSub(ctx, aa, xx): return withSubCtx(semantize, ctx, aa, xx)
         rest = [expr for _,expr in mapRest(semSub, ctx, xs)]
         hdCtx, hd = semantize(hdCtx, hd)

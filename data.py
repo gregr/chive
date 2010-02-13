@@ -70,12 +70,12 @@ def assertNodeIndex(node, index, tag):
     assert index < node_tag(node).numFields(), index
 def nodePack(node, index, val, tag=None):
     assertNodeIndex(node, index, tag)
-    if isinstance(node.fieldTags[index], PrimTag): val = packPrimVal(val)
+    if isinstance(node.fieldTags[index], PrimTag): val = unpackPrimVal(val)
     node[index] = val
 def nodeUnpack(node, index, tag=None):
     assertNodeIndex(node, index, tag)
     val = node[index]
-    if isinstance(node.fieldTags[index], PrimTag): val = unpackPrimVal(val)
+    if isinstance(node.fieldTags[index], PrimTag): val = packPrimVal(val)
     return val
 
 def val_tag(ctx, val):
@@ -279,14 +279,13 @@ def makeProcType(tag, primTag):
             self.name = name; self.binders = binders; self.code = code;
             self.closure = closure
     def proc_new(name, binders, code, closure):
-        return node(tag,
-                    packPrimVal(primTag, Proc(name, binders, code, closure)))
+        return node(tag, Proc(name, binders, code, closure))
     return proc_new
 primProcTag = PrimTag('#Proc')
 procTag = nodeTag('Proc', primProcTag)
 proc_new = makeProcType(procTag, primProcTag)
 def isProc(v): return node_tag(v) is procTag
-def fromProc(proc): assert isProc(proc), proc; return unpackPrimVal(proc[1])
+def fromProc(proc): assert isProc(proc), proc; return proc[1]
 def applyProc(appCtx, proc, args):
     binders = proc.binders; ctx = proc.closure.copy(); ctx.env = Env(ctx.env)
     for binder, arg in zip(binders, args):
@@ -299,12 +298,35 @@ foreignProcTag = nodeTag('ForeignProc', primForeignProcTag)
 foreignProc_new = makeProcType(foreignProcTag, primForeignProcTag)
 def isForeignProc(v): return node_tag(v) is foreignProcTag
 def fromForeignProc(fproc):
-    assert isForeignProc(fproc), fproc; return unpackPrimVal(fproc[1])
+    assert isForeignProc(fproc), fproc; return fproc[1]
 def applyForeignProc(appCtx, fproc, args): # todo: check arg tags?
     arity = len(fproc.binders); code = fproc.code; closure = fproc.closure
     closure += [evalExpr(appCtx, arg) for arg in args[:arity]]
     if arity <= len(args): return code(appCtx, *closure), args[arity:]
     else: return foreignProc_new(fproc.name, arity-len(args), code, closure),()
+def applyFull(ctx, proc, args):
+    cprc = cont(ctx, proc)
+    while args:
+        proc = evalExpr(*cprc) # lifted out here for tail-calls
+        if isProc(proc): cprc, args = applyProc(ctx, fromProc(proc), args)
+        elif isForeignProc(proc):
+            cprc, args = applyForeignProc(ctx, fromForeignProc(proc), args)
+        else: typeError(ctx, "cannot apply non-procedure: '%s'"%proc)
+    return cprc
+
+################################################################
+# macros and semantics
+macroTag = nodeTag('Macro', procTag)
+def isMacro(v): return node_tag(v) is macroTag
+def macro_proc(mac): assert isMacro(mac), mac; return mac[1]
+def applyMacro(ctx, mac, form):
+    return evalExpr(*applyFull(ctx, macro_proc(mac), [form]))
+primSemanticTag = PrimTag('#Semantic')
+semanticTag = nodeTag('Semantic', primSemanticTag)
+def isSemantic(v): return node_tag(v) is semanticTag
+def semantic_new(sproc): return node(semanticTag, sproc)
+def semantic_proc(sm): assert isSemantic(sm), sm; return sm[1]
+def applySemantic(ctx, sem, form): return semantic_proc(sem)(ctx, form)
 
 ################################################################
 # pretty printing
