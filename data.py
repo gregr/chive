@@ -166,12 +166,14 @@ primitives = {}
 def addPrim(name, val):
     sym = symbol(name); den = alias_new(sym); nm = EnvKey(sym)
     assert nm not in primitives, name; primitives[nm] = (den, val)
+def addPrimTag(name, tag): addPrim(name, packPrimVal(primTagTag, tag))
+primTagTag = PrimTag('#Tag')
 def nodeTag(name, *ftags):
-    tag = NodeTag(name, ftags); addPrim(name+'-tag', tag); return tag
+    tag = NodeTag(name, ftags); addPrimTag(name+'-tag', tag); return tag
 def singleton(name):
     tag = nodeTag(name); val = node(tag); addPrim(name, val); return tag, val
-addPrim('Symbol-tag', symTag)
-anyTag = AnyTag('Any'); addPrim('Any-tag', anyTag)
+addPrimTag('Symbol-tag', symTag)
+anyTag = AnyTag('Any'); addPrimTag('Any-tag', anyTag)
 unitTag, unit = singleton('Unit')
 unitDen = primitives.get(EnvKey(symbol('Unit')))[0]
 primEnvTag = PrimTag('#Env')
@@ -225,13 +227,12 @@ def fromList(xs):
 ################################################################
 # primitive values
 def simplePrim(name):
-    primTag = PrimTag('#'+name); addPrim('#'+name, primTag)
+    primTag = PrimTag('#'+name); addPrimTag('#'+name, primTag)
     tag = nodeTag(name, primTag)
     def isX(v): return node_tag(v) is tag
     def toX(v): return node(tag, v)
     def fromX(v): assert isX(v), (name, v); return v[1]
     return primTag, tag, isX, toX, fromX
-primTagTag, tagTag, isTag, toTag, fromTag = simplePrim('Tag')
 primIntTag, intTag, isInt, toInt, fromInt = simplePrim('Int')
 primFloatTag, floatTag, isFloat, toFloat, fromFloat = simplePrim('Float')
 def toPrimChar(v): return v
@@ -367,6 +368,7 @@ tagToPretty = {nilTag: prettyList, consTag: prettyList,
                }
 def pretty(v):
     if isNode(v): pp = tagToPretty.get(node_tag(v))
+    elif isPrimVal(v): return '<%s %s>'%(primVal_tag(v).name, unpackPrimVal(v))
     else: pp = None
     if pp is None: return '<ugly %s>'%repr(v)
     return pp(v)
