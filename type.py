@@ -12,26 +12,43 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from storage import *
+
+class TypeError(Exception): pass
+def typeErr(ctx, msg): raise TypeError(ctx, msg)
 class Type:
     def contains(self, ty): return self is ty
     def size(self): raise NotImplementedError
     def index(self, idx): raise NotImplementedError
+    def unpack(self, mem, offset): raise NotImplementedError
+    def pack(self, mem, offset, val): raise NotImplementedError
     def desc(self): raise NotImplementedError
     def __repr__(self): return '<%s %s>'%(self.__class__.__name__, self.desc())
 ################################################################
 # unboxed types
-class UnboxedType(Type): pass
-class ScalarType(UnboxedType):
-    def __init__(self, name): self.name = name
+class UnboxedType(Type):
+    def unpack(self, mem, offset): return (self, self._unpack(mem, offset))
+    def _unpack(self, mem, offset): raise NotImplementedError
+    def pack(self, mem, offset, val):
+        tag, val = val; assert tag == self; self._pack(mem, offset, val)
+    def _pack(self, mem, offset, val): raise NotImplementedError
+class AtomicUnboxedType(UnboxedType):
     def size(self): return 1 # fixed size due to python
+    def _unpack(self, mem, offset): return mem_read(mem, offset)
+    def _pack(self, mem, offset, val): mem_write(mem, offset, val)
+class ScalarType(AtomicUnboxedType):
+    def __init__(self, name): self.name = name
     def desc(self): return str(self.name)
-class PtrType(UnboxedType):
+class PtrType(AtomicUnboxedType):
     def __init__(self, elt): self.elt = elt
     def contains(self, ty):
         return type(ty) is type(self) and self.elt.contains(ty.elt)
-    def size(self): return 1
     def desc(self): return '&%s'%self.elt
-class ArrayType(UnboxedType):
+class AggUnboxedType(UnboxedType):
+    def _unpack(self, mem, offset): return mem_offset(mem, offset)
+    def _pack(self, mem, offset, val):
+        mem_copy(val, mem_offset(mem, offset), self.size())
+class ArrayType(AggUnboxedType):
     def __init__(self, elt, cnt=None): self.elt = elt; self.cnt = cnt
     def contains(self, ty):
         return (type(ty) is type(self) and self.elt.contains(ty.elt)
@@ -48,7 +65,7 @@ class ArrayType(UnboxedType):
 def struct_index(struct, idx):
     assert idx>=0 and idx<len(struct.elts), (idx, struct.desc())
     return struct.elts[idx], sum(elt.size() for elt in struct.elts[:idx])
-class StructType(UnboxedType):
+class StructType(AggUnboxedType):
     def __init__(self, elts): self.elts = elts
     def contains(self, ty):
         return (type(ty) is type(self) and
@@ -60,6 +77,12 @@ class StructType(UnboxedType):
 # boxed types
 class BoxedType(Type):
     def size(self): return 1
+    def unpack(self, mem, offset):
+        node = mem_read(mem, offset); tag = node_tag(node);
+        assert self.contains(tag), (tag, self); return node
+    def pack(self, mem, offset, node):
+        tag = node_tag(node); assert self.contains(tag), (tag, self)
+        mem_write(mem, offset, node)
 class AnyType(BoxedType):
     def contains(self, ty): return isinstance(ty, BoxedType)
     def desc(self): return 'Any'
