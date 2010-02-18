@@ -13,6 +13,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+exprs: change expand to a proc; eliminate eval; add letrec
+use the type/storage system for expressing data
+combine nested adjacent proc constructors
+associate unique tag with each consproc/foreignproc/delay
 tag primitive values for safe debugging
 track element tags (introduce tag unions, subtags/subtypes)
 guard against infinite recursion in pretty-printing

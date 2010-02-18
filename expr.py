@@ -126,21 +126,21 @@ class Delay(Expr): pass
 class Force(Expr): pass # could be a proc (eval then update)
 
 ################################################################
-class Meta(Expr):
-    def __init__(self, senv, env, form):
-        self.senv = senv; self.env = env; self.form = form
-    def _evalArgs(self, ctx):
-        senv = evalExpr(ctx, self.senv, envTag)
-        env = evalExpr(ctx, self.env, envTag)
-        form = evalExpr(ctx, self.form) # todo: check proper form tag
-        ctx = ctx.copy()
-        ctx.hist = nil
-        ctx.senv = fromEnv(senv)
-        ctx.env = fromEnv(env)
-        return ctx, form
-class Expand(Meta):
-    def eval(self, ctx):
-        ctx, form = expand(*self._evalArgs(ctx))
-        return final(synclo_new(toEnv(ctx.senv), nil, form))
-class Evaluate(Meta):
-    def eval(self, ctx): return final(evaluate(*self._evalArgs(ctx)))
+# class Meta(Expr):
+#     def __init__(self, senv, env, form):
+#         self.senv = senv; self.env = env; self.form = form
+#     def _evalArgs(self, ctx):
+#         senv = evalExpr(ctx, self.senv, envTag)
+#         env = evalExpr(ctx, self.env, envTag)
+# form = evalExpr(ctx, self.form) # todo: check proper form tag
+#         ctx = ctx.copy()
+#         ctx.hist = nil
+#         ctx.senv = fromEnv(senv)
+#         ctx.env = fromEnv(env)
+#         return ctx, form
+# class Expand(Meta):
+#     def eval(self, ctx):
+#         ctx, form = expand(*self._evalArgs(ctx))
+#         return final(synclo_new(toEnv(ctx.senv), nil, form))
+# class Evaluate(Meta):
+#     def eval(self, ctx): return final(evaluate(*self._evalArgs(ctx)))
