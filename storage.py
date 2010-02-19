@@ -17,7 +17,5 @@ def mem_offset_(mem, off): return mem[0]+off
 def mem_offset(mem, off): return (mem_offset_(mem, off), mem[1])
 def mem_read(mem, idx): return mem[1][mem_offset_(mem, idx)]
 def mem_write(mem, idx, val): mem[1][mem_offset_(mem, idx)] = val
-def mem_copy(src, dst, sz):
+def mem_copy(dst, src, sz):
     doff, ddat = dst; soff, sdat = src; ddat[doff:doff+sz]=sdat[soff:soff+sz]
-def data_offset(mem, ty, idx):
-    ty, off = ty.index(idx); return ty, mem_offset(mem, off)
