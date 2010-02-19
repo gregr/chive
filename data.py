@@ -172,7 +172,7 @@ class NativeProc:
         ctx = ctx.copy(); ctx.env = Env(ctx.env)
         for binder, arg in zip(self.binders, args): ctx.env.add(binder, arg)
         return self.code.eval(ctx)
-class NativeProcClosure:
+class NativeClosure:
     def __init__(self, proc, ctx): self.proc = proc; self.ctx = ctx
     def call(self, args): return self.proc.call(self.ctx, args)
 class ForeignProc:
@@ -183,10 +183,10 @@ class PartialApp:
         self.proc = proc; self.saved = saved; self.ty = ty
     def apply(self, ctx, args):
         nextTy, argts, nextArity = self.ty.appliedTy(len(args))
-        saved = self.saved+[evalExpr(ctx, arg, argt)
-                            for argt, arg in zip(argts, args)]
+        saved = self.saved+tuple(evalExpr(ctx, arg, argt)
+                                 for argt, arg in zip(argts, args))
         if nextArity == 0: return self.proc.call(saved), args[len(argts):]
-        else: return final(nextTy.new(PApp(self.proc, saved, nextTy))), ()
+        return final(nextTy.new(PartialApp(self.proc, saved, nextTy))), ()
 def applyFull(ctx, proc, args):
     cprc = cont(ctx, proc)
     while args:

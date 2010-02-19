@@ -39,10 +39,14 @@ class Var(Atom):
 ################################################################
 class Constr(Expr): pass
 class ConsProc(Constr):
-    def __init__(self, name, binders, body):
-        self.name = name; self.binders = binders; self.body = body
+    def __init__(self, name, binders, body, paramts, rett):
+        if isinstance(body, ConsProc): # combine adjacently-nested ConsProcs
+            binders += body.proc.binders
+            body = body.proc.code
+        self.proc = NativeProc(name, body, binders)
+        self.ty = curryProcType(paramts, rett) 
     def eval(self, ctx):
-        return final(proc_new(self.name, self.binders, self.body, ctx))
+        return final(PartialApp(NativeClosure(self.proc, ctx), (), self.ty))
 class ConsNodeTy(Constr):
     def __init__(self, name, els): self.name = name; self.els = els
     def eval(self, ctx):
