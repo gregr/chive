@@ -16,6 +16,8 @@ from storage import *
 
 class TypeError(Exception): pass
 def typeErr(ctx, msg): raise TypeError(ctx, msg)
+def isTyped(val): return (isinstance(val, tuple) and len(val)>0 and
+                          isinstance(getTy(val), Type))
 def typed(ty, val): return (ty, val)
 def getTy(val): return val[0]
 def getVal(val): return val[1]
@@ -28,7 +30,7 @@ class Type:
     def checkIndex(self, idx, msg, exact=False):
         ni = self.numIndices()
         if ni is None and not exact: return
-        if (exact and (idx != ni)) or idx<0 or idx>struct.numIndices():
+        if (exact and (idx != ni)) or idx<0 or idx>self.numIndices():
             typeErr(None, msg+" '%d'; %s has %d elements"%
                     (idx, self.desc(), ni))
     def size(self): raise NotImplementedError
@@ -57,16 +59,28 @@ class AtomicUnboxedType(UnboxedType):
     def _unpack(self, mem, offset): return mem_read(mem, offset)
     def _pack(self, mem, offset, val): mem_write(mem, offset, val)
 class ScalarType(AtomicUnboxedType):
-    def __init__(self, name, pred): self.name = name; self.pred = pred
+    def __init__(self, name, pred=None): self.name = name; self.pred = pred
     def new(self, val):
-        if not self.pred(val): typeErr(None, )
-        return (self, val)
+        if self.pred is not None and not self.pred(val):
+            typeErr(None, "invalid scalar '%r'"%val)
+        return typed(self, val)
     def desc(self): return str(self.name)
+class PyType(ScalarType):
+    def __init__(self, name, pyty):
+        super().__init__(name, (lambda x: isinstance(x, pyty)))
+def cachedTy(cls):
+    cls._cache = {}
+    def makeTy(*args):
+        ty = cls._cache.get(args)
+        if ty is None: ty = cls(*args); cls._cache[args] = ty
+        return ty
+    return makeTy
 class PtrType(AtomicUnboxedType):
     def __init__(self, elt): self.elt = elt
     def contains(self, ty):
         return type(ty) is type(self) and self.elt.contains(ty.elt)
     def desc(self): return '&%s'%self.elt
+ptrTy = cachedTy(PtrType)
 class AggUnboxedType(UnboxedType):
     def _unpack(self, mem, offset): return mem_offset(mem, offset)
     def _pack(self, mem, offset, val):
@@ -88,6 +102,7 @@ class ArrayType(AggUnboxedType):
         if self.cnt is None: pref = '';
         else: pref = '%d * '%self.cnt
         return '#[%s]'%(pref+self.elt.desc())
+arrayTy = cachedTy(ArrayType)
 def struct_index(struct, idx):
     struct.checkIndex(idx, 'invalid index')
     return struct.elts[idx], sum(elt.size() for elt in struct.elts[:idx])
@@ -100,6 +115,7 @@ class StructType(AggUnboxedType):
     def numIndices(self): return len(self.elts)
     def index(self, idx): return struct_index(self, idx)
     def desc(self): return '#{%s}'%' '.join(lyt.desc() for lyt in self.ellyts)
+structTy = cachedTy(StructType)
 ################################################################
 # boxed types
 class BoxedType(Type):
@@ -115,17 +131,21 @@ anyTy = AnyType()
 class NodeType(BoxedType):
     def __init__(self, name, elts):
         self.name = name; self.elts = elts;
-        self.eltSize = sum(elt.size() for elt in elts)
-    def numIndices(self): return len(self.elts)
-    def index(self, idx): return struct_index(self, idx)
+        if elts is not None: self.eltSize = sum(elt.size() for elt in elts)
+    def checkValid(self):
+        if self.elts is None:
+            typeErr(None, "attempted to use undefined tag: '%s'"%self.name)
+    def numIndices(self): self.checkValid(); return len(self.elts)
+    def index(self, idx): self.checkValid(); return struct_index(self, idx)
     def new(self, *args):
         self.checkIndex(len(args), 'invalid number of constructor args', True)
         mem = mem_alloc(self.eltSize)
         offset = 0
         for elt, arg in zip(self.elts, args):
             elt.pack(mem, offset, arg); offset += elt.size()
-        return (self, mem)
+        return typed(self, mem)
     def desc(self): return str(self.name)
+def isNode(v): return isTyped(v) and anyTy.contains(getTy(v))
 class UnionType(BoxedType):
     def __init__(self, elts): self.elts = elts
     def contains(self, ty):
