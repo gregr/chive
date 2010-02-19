@@ -205,7 +205,7 @@ def applyMacro(ctx, mac, form):
 ubSemanticTy = ScalarType('#Semantic')
 semanticTy = nodeTy('Semantic', ubSemanticTy)
 def isSemantic(v): return isTyped(v) and getTy(v) is semanticTy
-def semantic_new(sproc): return node(semanticTy, sproc)
+def semantic_new(sproc): return node(semanticTy, ubSemanticTy.new(sproc))
 def semantic_proc(sm): return semanticTy.unpackEl(sm, 0)
 def applySemantic(ctx, sem, form): return semantic_proc(sem)(ctx, form)
 

@@ -38,10 +38,11 @@ def mapRest(f, ctx, xs):
     attr0 = fromList(attr_tail(ctx.attr))
     attr0 += [ctx.attr]*(len(xs0)-len(attr0))
     return [f(ctx, aa, xx) for aa, xx in zip(attr0, xs0)]
+def checkIsForm(ctx, xs): return anyTy.contains(getTy(xs)) # todo
 litExpanders = {}
 def expand(ctx, xs):
     while True:
-#        checkIsNode(ctx, xs) # todo: check for valid form
+        checkIsForm(ctx, xs) 
         ctx.senv, xs = syncloExpand(ctx.senv, xs)
         ctx.histAppend(xs)
         if isListCons(xs):
@@ -78,7 +79,7 @@ def syncloExCtx(ctx, expr):
     return ctx, expr
 def semantize(ctx, xs):
     ctx, xs = expand(ctx, xs)
-#    checkIsNode(ctx, xs) # todo: check for valid form
+    checkIsForm(ctx, xs)
     if isListCons(xs):
         hdCtx, hd = headSubCtx(syncloExCtx, ctx, xs)
         if isSymbol(hd):
@@ -108,14 +109,14 @@ def semproc(name):
 def stripOuterSynClo(xs):
     while isSynClo(xs): xs = synclo_form(xs)
     return xs
-#@semproc('#unbox')
+@semproc('#unbox')
 def semUnbox(ctx, form):
     # todo: validate form
     form = stripOuterSynClo(cons_head(cons_tail(form))); ty = getTy(form)  
     if ty in (symTy, intTy, floatTy, charTy):
         return ctx, PrimVal(ty.unpackEl(form, 0))
     else: typeErr(ctx, "cannot unbox non-literal: '%s'"%form)
-#@semproc('#node')
+@semproc('#node')
 def semNode(ctx, form):
     # todo: validate form
     cargs = [expr for _, expr in semantize(ctx, cons_tail(cons_tail(form)))]
