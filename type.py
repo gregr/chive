@@ -68,19 +68,19 @@ class ScalarType(AtomicUnboxedType):
 class PyType(ScalarType):
     def __init__(self, name, pyty):
         super().__init__(name, (lambda x: isinstance(x, pyty)))
-def cachedTy(cls):
+def cachedType(cls):
     cls._cache = {}
-    def makeTy(*args):
+    def makeType(*args):
         ty = cls._cache.get(args)
         if ty is None: ty = cls(*args); cls._cache[args] = ty
         return ty
-    return makeTy
+    return makeType
 class PtrType(AtomicUnboxedType):
     def __init__(self, elt): self.elt = elt
     def contains(self, ty):
         return type(ty) is type(self) and self.elt.contains(ty.elt)
     def desc(self): return '&%s'%self.elt
-ptrTy = cachedTy(PtrType)
+ptrType = cachedType(PtrType)
 class AggUnboxedType(UnboxedType):
     def _unpack(self, mem, offset): return mem_offset(mem, offset)
     def _pack(self, mem, offset, val):
@@ -102,7 +102,7 @@ class ArrayType(AggUnboxedType):
         if self.cnt is None: pref = '';
         else: pref = '%d * '%self.cnt
         return '#[%s]'%(pref+self.elt.desc())
-arrayTy = cachedTy(ArrayType)
+arrayType = cachedType(ArrayType)
 def struct_index(struct, idx):
     struct.checkIndex(idx, 'invalid index')
     return struct.elts[idx], sum(elt.size() for elt in struct.elts[:idx])
@@ -115,7 +115,7 @@ class StructType(AggUnboxedType):
     def numIndices(self): return len(self.elts)
     def index(self, idx): return struct_index(self, idx)
     def desc(self): return '#{%s}'%' '.join(lyt.desc() for lyt in self.ellyts)
-structTy = cachedTy(StructType)
+structType = cachedType(StructType)
 ################################################################
 # boxed types
 class BoxedType(Type):
@@ -146,6 +146,20 @@ class NodeType(BoxedType):
         return typed(self, mem)
     def desc(self): return str(self.name)
 def isNode(v): return isTyped(v) and anyTy.contains(getTy(v))
+class ProcType(BoxedType):
+    def __init__(self, inTy, outTy): self.inTy = inTy; self.outTy = outTy
+    def new(self, proc): return typed(self, proc)
+    def appliedTy(self, remainingApps):
+        ty = self; argts = []
+        while remainingApps != 0:
+            if not isinstance(ty, ProcType): break
+            argts.append(ty.inTy); ty = ty.outTy; remainingApps -= 1
+        return ty, argts, remainingApps
+def isProc(v): return isTyped(v) and isinstance(getTy(v), ProcType)
+procType = cachedType(ProcType)
+def curryProcType(paramts, rett):
+    for paramt in paramts: rett = procType(paramt, rett)
+    return rett
 class UnionType(BoxedType):
     def __init__(self, elts): self.elts = elts
     def contains(self, ty):

@@ -165,60 +165,48 @@ def toString(v): return node(stringTy, v)
 
 ################################################################
 # procs
-# class ProcType: pass
-# def makeProcType(tag, primTag):
-#     class Proc(ProcType):
-#         def __init__(self, name, binders, code, closure):
-#             self.name = name; self.binders = binders; self.code = code;
-#             self.closure = closure
-#     def proc_new(name, binders, code, closure):
-#         return node(tag, Proc(name, binders, code, closure))
-#     return proc_new
-# primProcTag = PrimTag('#Proc')
-# procTag = nodeTag('Proc', primProcTag)
-# proc_new = makeProcType(procTag, primProcTag)
-# def isProc(v): return node_tag(v) is procTag
-# def fromProc(proc): assert isProc(proc), proc; return proc[1]
-# def applyProc(appCtx, proc, args):
-#     binders = proc.binders; ctx = proc.closure.copy(); ctx.env = Env(ctx.env)
-#     for binder, arg in zip(binders, args):
-#         ctx.env.add(binder, evalExpr(appCtx, arg)) # todo: check arg tags?
-#     arity = len(binders)
-#     if arity <= len(args): return proc.code.eval(ctx), args[arity:]
-#     else: return proc_new(proc.name, binders[len(args):], proc.code, ctx), ()
-# primForeignProcTag = PrimTag('#ForeignProc')
-# foreignProcTag = nodeTag('ForeignProc', primForeignProcTag)
-# foreignProc_new = makeProcType(foreignProcTag, primForeignProcTag)
-# def isForeignProc(v): return node_tag(v) is foreignProcTag
-# def fromForeignProc(fproc):
-#     assert isForeignProc(fproc), fproc; return fproc[1]
-# def applyForeignProc(appCtx, fproc, args): # todo: check arg tags?
-#     arity = len(fproc.binders); code = fproc.code; closure = fproc.closure
-#     closure += [evalExpr(appCtx, arg) for arg in args[:arity]]
-#     if arity <= len(args): return code(appCtx, *closure), args[arity:]
-#     else: return foreignProc_new(fproc.name, arity-len(args), code, closure),()
-# def applyFull(ctx, proc, args):
-#     cprc = cont(ctx, proc)
-#     while args:
-#         proc = evalExpr(*cprc) # lifted out here for tail-calls
-#         if isProc(proc): cprc, args = applyProc(ctx, fromProc(proc), args)
-#         elif isForeignProc(proc):
-#             cprc, args = applyForeignProc(ctx, fromForeignProc(proc), args)
-#         else: typeError(ctx, "cannot apply non-procedure: '%s'"%proc)
-#     return cprc
+class NativeProc:
+    def __init__(self, name, code, binders):
+        self.name = name; self.code = code; self.binders = binders
+    def call(self, ctx, args):
+        ctx = ctx.copy(); ctx.env = Env(ctx.env)
+        for binder, arg in zip(self.binders, args): ctx.env.add(binder, arg)
+        return self.code.eval(ctx)
+class NativeProcClosure:
+    def __init__(self, proc, ctx): self.proc = proc; self.ctx = ctx
+    def call(self, args): return self.proc.call(self.ctx, args)
+class ForeignProc:
+    def __init__(self, name, code): self.name = name; self.code = code
+    def call(self, args): return self.code(*args)
+class PartialApp:
+    def __init__(self, proc, saved, ty):
+        self.proc = proc; self.saved = saved; self.ty = ty
+    def apply(self, ctx, args):
+        nextTy, argts, nextArity = self.ty.appliedTy(len(args))
+        saved = self.saved+[evalExpr(ctx, arg, argt)
+                            for argt, arg in zip(argts, args)]
+        if nextArity == 0: return self.proc.call(saved), args[len(argts):]
+        else: return final(nextTy.new(PApp(self.proc, saved, nextTy))), ()
+def applyFull(ctx, proc, args):
+    cprc = cont(ctx, proc)
+    while args:
+        proc = evalExpr(*cprc) # lifted out here for tail-calls
+        if isProc(proc): cprc, args = getVal(proc).apply(ctx, args)
+        else: typeError(ctx, "cannot apply non-procedure: '%s'"%proc)
+    return cprc
 
 ################################################################
 # macros and semantics
-macroTy = nodeTy('Macro')#, procTag)
-def isMacro(v): return getTy(v) is macroTy
+macroTy = nodeTy('Macro', curryProcType((anyTy, anyTy), anyTy))
+def isMacro(v): return isTyped(v) and getTy(v) is macroTy
 def macro_proc(mac): return macroTy.unpackEl(mac, 0)
 def applyMacro(ctx, mac, form):
-    return evalExpr(*applyFull(ctx, macro_proc(mac), [form]))
+    return evalExpr(*applyFull(ctx, macro_proc(mac), [toCtx(ctx), form]))
 ubSemanticTy = ScalarType('#Semantic')
 semanticTy = nodeTy('Semantic', ubSemanticTy)
-def isSemantic(v): return getTy(v) is semanticTy
+def isSemantic(v): return isTyped(v) and getTy(v) is semanticTy
 def semantic_new(sproc): return node(semanticTy, sproc)
-#def semantic_proc(sm): assert isSemantic(sm), sm; return sm[1]
+def semantic_proc(sm): return semanticTy.unpackEl(sm, 0)
 def applySemantic(ctx, sem, form): return semantic_proc(sem)(ctx, form)
 
 ################################################################
