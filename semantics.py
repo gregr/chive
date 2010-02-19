@@ -18,7 +18,8 @@ from data import (TypeError, typeErr,
                   toList, fromList, isListCons,
                   isSymbol, EnvKey, synclo_new, alias_new, syncloExpand,
                   isMacro, applyMacro, isSemantic, applySemantic, semantic_new,
-                  checkIsNode, node_tag, addPrim, primCtx, pretty, unitDen)
+                  addPrim, primCtx, pretty, unitDen)
+from type import *
 
 def attr_head(attr):
     if attr.subs is nil: return attr
@@ -40,7 +41,7 @@ def mapRest(f, ctx, xs):
 litExpanders = {}
 def expand(ctx, xs):
     while True:
-        checkIsNode(ctx, xs)
+#        checkIsNode(ctx, xs) # todo: check for valid form
         ctx.senv, xs = syncloExpand(ctx.senv, xs)
         ctx.histAppend(xs)
         if isListCons(xs):
@@ -67,7 +68,7 @@ def expand(ctx, xs):
             ctx.attr = ctx.attr.copy();
             ctx.attr.subs = cons(attr_head(ctx.attr), toList(attr1))
         else:
-            ex = litExpanders.get(node_tag(xs))
+            ex = litExpanders.get(getTy(xs))
             if ex is not None: return ex(ctx, xs)
         break
     return ctx, xs
@@ -77,7 +78,7 @@ def syncloExCtx(ctx, expr):
     return ctx, expr
 def semantize(ctx, xs):
     ctx, xs = expand(ctx, xs)
-    checkIsNode(ctx, xs)
+#    checkIsNode(ctx, xs) # todo: check for valid form
     if isListCons(xs):
         hdCtx, hd = headSubCtx(syncloExCtx, ctx, xs)
         if isSymbol(hd):
@@ -107,19 +108,19 @@ def semproc(name):
 def stripOuterSynClo(xs):
     while isSynClo(xs): xs = synclo_form(xs)
     return xs
-@semproc('#unbox')
+#@semproc('#unbox')
 def semUnbox(ctx, form):
     # todo: validate form
-    form = stripOuterSynClo(cons_head(cons_tail(form)))
-    if node_tag(form) in (symTag, intTag, floatTag, charTag):
-        return ctx, PrimVal(packPrimVal(form[1]))
+    form = stripOuterSynClo(cons_head(cons_tail(form))); ty = getTy(form)  
+    if ty in (symTy, intTy, floatTy, charTy):
+        return ctx, PrimVal(ty.unpackEl(form, 0))
     else: typeErr(ctx, "cannot unbox non-literal: '%s'"%form)
-@semproc('#node')
+#@semproc('#node')
 def semNode(ctx, form):
     # todo: validate form
     cargs = [expr for _, expr in semantize(ctx, cons_tail(cons_tail(form)))]
-    tag = evaluate(cons_head(cons_tail(form)), tagTag)
-    return ctx, ConsNode(tag, cargs, ctx)
+    ty = evaluate(cons_head(cons_tail(form)), tagTy)
+    return ctx, ConsNode(ty, cargs, ctx)
 
 def interactOnce(modName, ctx): # todo: break into smaller pieces
     import readline

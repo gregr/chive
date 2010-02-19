@@ -13,8 +13,9 @@
 # limitations under the License.
 
 from lex import SrcAttr, tokens
-from data import (isSymbol, symbol, Env, EnvKey, toList, fromList, pretty,
+from data import (nodeTy, isSymbol, symbol, Env, EnvKey, toList, fromList, pretty,
                   makeStream)
+from type import *
 from itertools import chain
 
 class ParseError(Exception): pass
@@ -25,14 +26,20 @@ tokToAtomCons = dict(
     operator=(lambda ops,tok: makeOperator(ops, symbol(tok.val), tok.attr)),
     literal=(lambda _,tok: tok.val),
     )
+ubAttrTy = PyType('#Attr', SrcAttr)
+attrTy = nodeTy('Attr', ubAttrTy)
+def toAttr(at): return attrTy.new(ubAttrTy.new(at))
+def fromAttr(at): return getVal(attrTy.unpackEl(at, 0))
 def makeAtom(opsTable, tok):
     constr = tokToAtomCons.get(tok.ty)
     if constr is None: parseErr(tok.attr, 'invalid atom')
-    return constr(opsTable, tok), tok.attr
-
+    return constr(opsTable, tok), toAttr(tok.attr)
 def makeApp(terms, attr=None):
     if len(terms) > 0:
-        subs = sorted((at.start, at) for _,at in terms)
+        def fromAt(at):
+            at = getVal(attrTy.unpackEl(at, 0))
+            return at.start, at
+        subs = sorted(fromAt(at) for _,at in terms)
         srcs = []
         for (_,at) in subs:
             for atsrc in at.srcs:
@@ -43,7 +50,7 @@ def makeApp(terms, attr=None):
     tas = list(zip(*terms))
     if not tas: tas = ([], [])
     attr.subs = toList(tas[1])
-    return toList(tas[0]), attr
+    return toList(tas[0]), toAttr(attr)
 
 def maybeMakeApp(arg, attr=None):
     terms, hasOp = arg
@@ -55,7 +62,7 @@ def makeMacroApp(datum):
     def _makeMacroApp(arg, attr):
         terms, hasOp = arg
         datAt = SrcAttr(attr.streamName, attr.srcs, attr.start, attr.start)
-        return makeApp(list(chain([(datum, datAt)], terms)), attr)
+        return makeApp(list(chain([(datum, toAttr(datAt))], terms)), attr)
     return _makeMacroApp
 
 def newOperator(name, fixity, assoc, prec):
@@ -238,9 +245,9 @@ class InfixTightOp(Operator):
 fixities = dict(prefix=PrefixOp, infixTight=InfixTightOp, infix=InfixOp)
 
 def deepFromList(attr, seen=set()):
-    assert attr not in seen, attr
-    seen.add(attr)
-    return attr, list(map(deepFromList, fromList(attr.subs)))
+#    assert attr not in seen, attr
+#    seen.add(attr)
+    return attr, list(map(deepFromList, fromList(fromAttr(attr).subs)))
 
 def _test(s):
     from io import StringIO

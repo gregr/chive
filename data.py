@@ -12,104 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-class TypeError(Exception): pass
-def typeErr(ctx, msg): raise TypeError(ctx, msg)
-
-class Named:
-    def __init__(self, name): self.name = name
-    def __repr__(self): return '<%s %s>'%(self.__class__.__name__, self.name)
-class Tag(Named):
-    def contains(self, tag): return self == tag
-class PrimTag(Tag): pass
-class ArrayTag(PrimTag):
-    def __init__(self, elemTag):
-        super().__init__('#Array_'+elemTag.name)
-        self.elemTag = elemTag
-elemToArrayTag = {}
-def arrayTag(elemTag):
-    tag = elemToArrayTag.get(elemTag)
-    if tag is None: tag = ArrayTag(elemTag); elemToArrayTag[elemTag] = tag
-    return tag
-# class TupleTag(PrimTag):
-#     def __init__(self, fieldTags):
-#         super().__init__('#Tuple_'+'_'.join(ft.name for ft in fieldTags))
-#         self.fieldTags = fieldTags
-# fieldsToTupleTag = {}
-
-class NodeTag(Tag):
-    def __init__(self, name, fieldTags):
-        super().__init__(name)
-        self.fieldTags = fieldTags
-    def numFields(self):
-        if self.fieldTags is None:
-            typeErr(None, "attempted to use undefined tag: '%s'"%self.name)
-        return len(self.fieldTags)
-# todo: polymorphic param tag
-class AnyTag(Tag):
-    def contains(self, tag): return True
-class UnionTag(Tag):
-    def __init__(self, name, subTags): self.name = name; self.subTags = subTags
-    def contains(self, tag): return any(t.contains(tag) for t in self.subTags)
-
-def isPrimVal(v):
-    return isinstance(v, tuple) and len(v) > 0 and isinstance(v[0], PrimTag)
-def packPrimVal(ptag, pv): return (ptag, pv)
-def unpackPrimVal(pv): assert isPrimVal(pv), pv; return pv[1]
-def primVal_tag(v): assert isPrimVal(v), v; return v[0]
-
-def isNode(v):
-    return isinstance(v, list) and len(v) > 0 and isinstance(v[0], NodeTag)
-def node(tag, *args): # todo: tag-check args
-    assert len(args) == tag.numFields(), (len(args), tag.numFields())
-    return [tag]+list(args)
-def node_tag(node): assert isNode(node), node; return node[0]
-def assertNodeIndex(node, index, tag):
-    if tag is not None: assert node_tag(node) is tag, node
-    assert index < node_tag(node).numFields(), index
-def nodePack(node, index, val, tag=None):
-    assertNodeIndex(node, index, tag)
-    if isinstance(node.fieldTags[index], PrimTag): val = unpackPrimVal(val)
-    node[index] = val
-def nodeUnpack(node, index, tag=None):
-    assertNodeIndex(node, index, tag)
-    val = node[index]
-    if isinstance(node.fieldTags[index], PrimTag): val = packPrimVal(val)
-    return val
-
-def val_tag(ctx, val):
-    if isNode(val): vtag = node_tag(val)
-    elif isPrimVal(val): vtag = primVal_tag(val)
-    else: typeErr(ctx, "attempted to extract tag from unknown value: '%s'"%val)
-def checkIsNodeTag(ctx, tag):
-    if not isinstance(tag, NodeTag):
-        typeErr(ctx, "expected node tag but found '%s'"%tag)
-def checkIsNode(ctx, val):
-    if not isNode(val): typeErr(ctx, "expected node but found '%s'"%val)
-def checkTagBounds(ctx, tag, index, msg):
-    checkIsNodeTag(ctx, tag)
-    if index >= tag.numFields():
-        typeErr(ctx, (msg+"; tag='%s', num-fields='%d'")%
-                (index, tag, tag.numFields()))
-def checkTag(ctx, tag, val):
-    vtag = val_tag(ctx, val)
-    if not tag.contains(vtag):
-        typeErr(ctx, "tag error: expected subtag of '%s', found '%s'"%
-                (tag, vtag))
+from type import *
 
 ################################################################
 # symbols
-primSymTag = PrimTag('#Symbol')
+ubSymTy = ScalarType('#Symbol')
 nextSymId = 0
-def primSymbol_new(n):
+def ubSymbol_new(n):
     global nextSymId
     assert type(n) is str, n
     sd = (n, nextSymId)
     nextSymId += 1
     return sd
-symTag = NodeTag('Symbol', (primSymTag,))
-def isSymbol(v): return node_tag(v) is symTag
-def symbol_new(n): return node(symTag, primSymbol_new(n))
-def symbol_prim(s): assert isSymbol(s), v; return s[1]
+symTy = NodeType('Symbol', (ubSymTy,))
+def isSymbol(v): return getTy(v) is symTy
+def symbol_new(n): return symTy.new(ubSymTy.new(ubSymbol_new(n)))
+def symbol_prim(s): return getVal(symTy.unpackEl(s, 0))
 def symbol_name(s): return symbol_prim(s)[0]
 def symbol_id(s): return symbol_prim(s)[1]
 def symbol_eq(s1, s2): return symbol_prim(s1) == symbol_prim(s2)
@@ -151,7 +69,6 @@ class Env:
     def _lineage(self):
         e = self
         while e is not None: yield e; e = e.p
-
 class EnvKey:
     __slots__ = ['sym']
     def __init__(self, sym): self.sym = sym
@@ -166,30 +83,30 @@ primitives = {}
 def addPrim(name, val):
     sym = symbol(name); den = alias_new(sym); nm = EnvKey(sym)
     assert nm not in primitives, name; primitives[nm] = (den, val)
-def addPrimTag(name, tag): addPrim(name, packPrimVal(primTagTag, tag))
-primTagTag = PrimTag('#Tag')
-def nodeTag(name, *ftags):
-    tag = NodeTag(name, ftags); addPrimTag(name+'-tag', tag); return tag
+ubTagTy = PyType('#Tag', Type)
+def addPrimTag(name, tag): addPrim(name, ubTagTy.new(tag))
+addPrimTag('Symbol-tag', symTy)
+addPrimTag('Any-tag', anyTy)
+def nodeTy(name, *elts):
+    tag = NodeType(name, elts); addPrimTag(name+'-tag', tag); return tag
+def node(ty, *args): return ty.new(*args)
 def singleton(name):
-    tag = nodeTag(name); val = node(tag); addPrim(name, val); return tag, val
-addPrimTag('Symbol-tag', symTag)
-anyTag = AnyTag('Any'); addPrimTag('Any-tag', anyTag)
-unitTag, unit = singleton('Unit')
+    ty = nodeTy(name); val = ty.new(); addPrim(name, val); return ty, val
+unitTy, unit = singleton('Unit')
 unitDen = primitives.get(EnvKey(symbol('Unit')))[0]
-primEnvTag = PrimTag('#Env')
-envTag = nodeTag('Env', primEnvTag)
-def toEnv(e): return node(envTag, e)
-def fromEnv(e): assert node_tag(e) is envTag, e; return e[1]
+ubEnvTy = PyType('#Env', Env)
+envTy = nodeTy('Env', ubEnvTy)
+def toEnv(e): return node(envTy, ubEnvTy.new(e))
+def fromEnv(e): return envTy.unpackEl(e, 0)
 
 ################################################################
 # syntactic closures
-syncloTag = nodeTag('SynClo', envTag, anyTag, anyTag) # todo
-def isSynClo(s): return node_tag(s) is syncloTag
-def synclo_new(senv, frees, form): return node(syncloTag, senv, frees, form)
-def _synclo_get(s, i): assert isSynClo(s), s; return s[i]
-def synclo_senv(s): return _synclo_get(s, 1)
-def synclo_frees(s): return _synclo_get(s, 2)
-def synclo_form(s): return _synclo_get(s, 3)
+syncloTy = nodeTy('SynClo', envTy, anyTy, anyTy) # todo
+def isSynClo(s): return getTy(s) is syncloTy
+def synclo_new(senv, frees, form): return syncloTy.new(senv, frees, form)
+def synclo_senv(s): return syncloTy.unpackEl(s, 0)
+def synclo_frees(s): return syncloTy.unpackEl(s, 1)
+def synclo_form(s): return syncloTy.unpackEl(s, 2)
 def applySynCloEnv(senv, sc):
     new = env_data(synclo_senv(sc))
     frees = fromList(synclo_frees(sc))
@@ -208,12 +125,12 @@ def syncloExpand(senv, xs):
 
 ################################################################
 # lists
-nilTag, nil = singleton('Nil')
-consTag = nodeTag(':', anyTag, anyTag) # todo
-def cons(h, t): return node(consTag, h, t)
-def cons_head(x): assert node_tag(x) is consTag, x; return x[1]
-def cons_tail(x): assert node_tag(x) is consTag, x; return x[2]
-def isListCons(x): return node_tag(x) is consTag
+nilTy, nil = singleton('Nil')
+consTy = nodeTy(':', anyTy, anyTy) # todo
+def cons(h, t): return consTy.new(h, t)
+def cons_head(x): return consTy.unpackEl(x, 0)
+def cons_tail(x): return consTy.unpackEl(x, 1)
+def isListCons(x): return getTy(x) is consTy
 def isList(x): return x is nil or isListCons(x)
 def toList(args, tail=nil):
     for x in reversed(args): tail = cons(x, tail)
@@ -225,108 +142,83 @@ def fromList(xs):
         xs = cons_tail(xs)
 
 ################################################################
-# primitive values
-def simplePrim(name):
-    primTag = PrimTag('#'+name); addPrimTag('#'+name, primTag)
-    tag = nodeTag(name, primTag)
-    def isX(v): return node_tag(v) is tag
-    def toX(v): return node(tag, v)
-    def fromX(v): assert isX(v), (name, v); return v[1]
-    return primTag, tag, isX, toX, fromX
-primIntTag, intTag, isInt, toInt, fromInt = simplePrim('Int')
-primFloatTag, floatTag, isFloat, toFloat, fromFloat = simplePrim('Float')
-def toPrimChar(v): return v
-def fromPrimChar(v): return v
-primCharTag, charTag, isChar, toChar, fromChar = simplePrim('Char')
+# basic values
+def basicTy(name, pyty):
+    ubTy = PyType('#'+name, pyty); addPrimTag('#'+name, ubTy)
+    ty = nodeTy(name, ubTy)
+#    def isX(v): return node_tag(v) is tag
+    def toX(v): return ty.new(ubTy.new(v))
+    def fromX(v): return ty.unpackEl(v, 0)
+    return ubTy, ty, toX, fromX
+ubIntTy, intTy, toInt, fromInt = basicTy('Int', int)
+ubFloatTy, floatTy, toFloat, fromFloat = basicTy('Float', float)
+ubCharTy, charTy, toChar, fromChar = basicTy('Char', str)
 
 ################################################################
 # arrays
-def isArray(v):
-    return isPrimVal(v) and isinstance(primVal_tag(v), ArrayTag)
-def array_new(elemTag, xs):
-    assert isinstance(elemTag, Tag), elemTag
-    assert isinstance(xs, list), xs
-    return packPrimVal(arrayTag(elemTag), xs)
-def array_elemTag(v): assert isArray(v), v; return v[0].elemTag
-def array_data(v): assert isArray(v), v; return unpackPrimVal(v)
-# def checkArrayBounds(ctx, arr, index, msg):
-#     data = primArray_data(arr)
-#     if index >= len(data):
-#         typeErr(ctx, (msg+"; length='%d'")%(index, len(data)))
-#     return data
-# def primArray_get(ctx, arr, index): # todo: confirm elemTag?
-#     data = checkArrayBounds(ctx, arr, index, "array index out of bounds: '%d'")
-#     return data[index]
 
 ################################################################
 # strings
-def toPrimString(pys):
-    assert isinstance(pys, str), pys
-    return array_new(primCharTag, [toPrimChar(pych) for pych in pys])
-def fromPrimString(v):
-    assert array_elemTag(v) is primCharTag, v
-    return ''.join(fromPrimChar(ch) for ch in array_data(v))
-stringTag = nodeTag('String', arrayTag(primCharTag))
-def isString(v): return node_tag(v) is stringTag
-def toString(v): return node(stringTag, toPrimString(v))
-def fromString(v): assert isString(v), v; return fromPrimString(v[1])
+#stringTy = nodeTy('String', None) # todo
+def toString(v): return node(stringTy, v)
+#def fromString(v): assert isString(v), v; return v[1]
 
 ################################################################
 # procs
-class ProcType: pass
-def makeProcType(tag, primTag):
-    class Proc(ProcType):
-        def __init__(self, name, binders, code, closure):
-            self.name = name; self.binders = binders; self.code = code;
-            self.closure = closure
-    def proc_new(name, binders, code, closure):
-        return node(tag, Proc(name, binders, code, closure))
-    return proc_new
-primProcTag = PrimTag('#Proc')
-procTag = nodeTag('Proc', primProcTag)
-proc_new = makeProcType(procTag, primProcTag)
-def isProc(v): return node_tag(v) is procTag
-def fromProc(proc): assert isProc(proc), proc; return proc[1]
-def applyProc(appCtx, proc, args):
-    binders = proc.binders; ctx = proc.closure.copy(); ctx.env = Env(ctx.env)
-    for binder, arg in zip(binders, args):
-        ctx.env.add(binder, evalExpr(appCtx, arg)) # todo: check arg tags?
-    arity = len(binders)
-    if arity <= len(args): return proc.code.eval(ctx), args[arity:]
-    else: return proc_new(proc.name, binders[len(args):], proc.code, ctx), ()
-primForeignProcTag = PrimTag('#ForeignProc')
-foreignProcTag = nodeTag('ForeignProc', primForeignProcTag)
-foreignProc_new = makeProcType(foreignProcTag, primForeignProcTag)
-def isForeignProc(v): return node_tag(v) is foreignProcTag
-def fromForeignProc(fproc):
-    assert isForeignProc(fproc), fproc; return fproc[1]
-def applyForeignProc(appCtx, fproc, args): # todo: check arg tags?
-    arity = len(fproc.binders); code = fproc.code; closure = fproc.closure
-    closure += [evalExpr(appCtx, arg) for arg in args[:arity]]
-    if arity <= len(args): return code(appCtx, *closure), args[arity:]
-    else: return foreignProc_new(fproc.name, arity-len(args), code, closure),()
-def applyFull(ctx, proc, args):
-    cprc = cont(ctx, proc)
-    while args:
-        proc = evalExpr(*cprc) # lifted out here for tail-calls
-        if isProc(proc): cprc, args = applyProc(ctx, fromProc(proc), args)
-        elif isForeignProc(proc):
-            cprc, args = applyForeignProc(ctx, fromForeignProc(proc), args)
-        else: typeError(ctx, "cannot apply non-procedure: '%s'"%proc)
-    return cprc
+# class ProcType: pass
+# def makeProcType(tag, primTag):
+#     class Proc(ProcType):
+#         def __init__(self, name, binders, code, closure):
+#             self.name = name; self.binders = binders; self.code = code;
+#             self.closure = closure
+#     def proc_new(name, binders, code, closure):
+#         return node(tag, Proc(name, binders, code, closure))
+#     return proc_new
+# primProcTag = PrimTag('#Proc')
+# procTag = nodeTag('Proc', primProcTag)
+# proc_new = makeProcType(procTag, primProcTag)
+# def isProc(v): return node_tag(v) is procTag
+# def fromProc(proc): assert isProc(proc), proc; return proc[1]
+# def applyProc(appCtx, proc, args):
+#     binders = proc.binders; ctx = proc.closure.copy(); ctx.env = Env(ctx.env)
+#     for binder, arg in zip(binders, args):
+#         ctx.env.add(binder, evalExpr(appCtx, arg)) # todo: check arg tags?
+#     arity = len(binders)
+#     if arity <= len(args): return proc.code.eval(ctx), args[arity:]
+#     else: return proc_new(proc.name, binders[len(args):], proc.code, ctx), ()
+# primForeignProcTag = PrimTag('#ForeignProc')
+# foreignProcTag = nodeTag('ForeignProc', primForeignProcTag)
+# foreignProc_new = makeProcType(foreignProcTag, primForeignProcTag)
+# def isForeignProc(v): return node_tag(v) is foreignProcTag
+# def fromForeignProc(fproc):
+#     assert isForeignProc(fproc), fproc; return fproc[1]
+# def applyForeignProc(appCtx, fproc, args): # todo: check arg tags?
+#     arity = len(fproc.binders); code = fproc.code; closure = fproc.closure
+#     closure += [evalExpr(appCtx, arg) for arg in args[:arity]]
+#     if arity <= len(args): return code(appCtx, *closure), args[arity:]
+#     else: return foreignProc_new(fproc.name, arity-len(args), code, closure),()
+# def applyFull(ctx, proc, args):
+#     cprc = cont(ctx, proc)
+#     while args:
+#         proc = evalExpr(*cprc) # lifted out here for tail-calls
+#         if isProc(proc): cprc, args = applyProc(ctx, fromProc(proc), args)
+#         elif isForeignProc(proc):
+#             cprc, args = applyForeignProc(ctx, fromForeignProc(proc), args)
+#         else: typeError(ctx, "cannot apply non-procedure: '%s'"%proc)
+#     return cprc
 
 ################################################################
 # macros and semantics
-macroTag = nodeTag('Macro', procTag)
-def isMacro(v): return node_tag(v) is macroTag
-def macro_proc(mac): assert isMacro(mac), mac; return mac[1]
+macroTy = nodeTy('Macro')#, procTag)
+def isMacro(v): return getTy(v) is macroTy
+def macro_proc(mac): return macroTy.unpackEl(mac, 0)
 def applyMacro(ctx, mac, form):
     return evalExpr(*applyFull(ctx, macro_proc(mac), [form]))
-primSemanticTag = PrimTag('#Semantic')
-semanticTag = nodeTag('Semantic', primSemanticTag)
-def isSemantic(v): return node_tag(v) is semanticTag
-def semantic_new(sproc): return node(semanticTag, sproc)
-def semantic_proc(sm): assert isSemantic(sm), sm; return sm[1]
+ubSemanticTy = ScalarType('#Semantic')
+semanticTy = nodeTy('Semantic', ubSemanticTy)
+def isSemantic(v): return getTy(v) is semanticTy
+def semantic_new(sproc): return node(semanticTy, sproc)
+#def semantic_proc(sm): assert isSemantic(sm), sm; return sm[1]
 def applySemantic(ctx, sem, form): return semantic_proc(sem)(ctx, form)
 
 ################################################################
@@ -337,7 +229,6 @@ def prettySynClo(s): return ('(SynClo <env> %s %s)'%
                              (#synclo_senv(s),
                               prettyList(synclo_frees(s)),
                               pretty(synclo_form(s))))
-#def prettyArray(a): '#[%s]'%' '.join(pretty(x) for x in array_data(a))
 def prettyInt(i): return repr(fromInt(i))
 def prettyFloat(f): return repr(fromFloat(f))
 escapes = {
@@ -358,20 +249,19 @@ def escaped(c, delim):
 def prettyChar(c): return "'%s'"%''.join(escaped(c, "'") for c in fromChar(c))
 def prettyString(s):
     return '"%s"'%''.join(escaped(c, '"') for c in fromString(s))
-tagToPretty = {nilTag: prettyList, consTag: prettyList,
-               symTag: prettySymbol,
-               syncloTag: prettySynClo,
-               unitTag: lambda _: '()',
-#               arrayTag: prettyArray,
-               intTag: prettyInt, floatTag: prettyFloat, charTag: prettyChar,
-               stringTag: prettyString,
+tagToPretty = {nilTy: prettyList, consTy: prettyList,
+               symTy: prettySymbol,
+               syncloTy: prettySynClo,
+               unitTy: lambda _: '()',
+               intTy: prettyInt, floatTy: prettyFloat, charTy: prettyChar,
+               #stringTy: prettyString,
                }
 def pretty(v):
-    if isNode(v): pp = tagToPretty.get(node_tag(v))
-    elif isPrimVal(v): return '<%s %s>'%(primVal_tag(v).name, unpackPrimVal(v))
-    else: pp = None
-    if pp is None: return '<ugly %s>'%repr(v)
-    return pp(v)
+    if isTyped(v):
+        pp = tagToPretty.get(getTy(v))
+        if pp is None: return '<%s %s>'%(getTy(v).desc(), getVal(v))
+        else: return pp(v)
+    else: return '<ugly %s>'%repr(v)
 
 ################################################################
 # streams
@@ -407,7 +297,7 @@ class Context:
     def copy(self):
         return Context(self.root, self.mod, self.senv, self.env, self.hist)
     def histAppend(self, form): self.hist = cons(form, self.hist)
-# ctxTag = nodeTag('Context', 2)#4)
+# ctxTy = nodeTy('Context', 2)#4)
 # def toCtx(ctx): return node(#toRoot(ctx.root), toMod(ctx.mod),
 #                             toEnv(ctx.senv), toEnv(ctx.env))
 def primCtx():
