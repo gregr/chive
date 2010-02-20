@@ -12,21 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from expr import evalExpr, Var, Apply
-from data import (TypeError, typeErr,
-                  nil, cons, cons_head, cons_tail,
-                  toList, fromList, isListCons,
-                  isSymbol, EnvKey, synclo_new, alias_new, syncloExpand,
-                  isMacro, applyMacro, isSemantic, applySemantic, semantic_new,
-                  addPrim, primCtx, pretty, unitDen)
-from type import *
+from expr import *
+from syntax import toAttr, fromAttr
+from data import *
 
 def attr_head(attr):
-    if attr.subs is nil: return attr
-    else: return cons_head(attr.subs)
+    if fromAttr(attr).subs is nil: return attr
+    else: return cons_head(fromAttr(attr).subs)
 def attr_tail(attr):
-    if attr.subs is nil: return nil
-    else: return cons_tail(attr.subs)
+    if fromAttr(attr).subs is nil: return nil
+    else: return cons_tail(fromAttr(attr).subs)
 def withSubCtx(f, ctx, attr, xs):
     ctx = ctx.copy()
     ctx.attr = attr
@@ -34,12 +29,20 @@ def withSubCtx(f, ctx, attr, xs):
 def headSubCtx(f, ctx, xs):
     return withSubCtx(f, ctx, attr_head(ctx.attr), cons_head(xs))
 def mapRest(f, ctx, xs):
-    xs0 = fromList(cons_tail(xs))
-    attr0 = fromList(attr_tail(ctx.attr))
+    xs0 = list(fromList(cons_tail(xs)))
+    attr0 = list(fromList(attr_tail(ctx.attr)))
     attr0 += [ctx.attr]*(len(xs0)-len(attr0))
     return [f(ctx, aa, xx) for aa, xx in zip(attr0, xs0)]
 def checkIsForm(ctx, xs): return anyTy.contains(getTy(xs)) # todo
-litExpanders = {}
+def scRoot(ctx, form): return synclo_new(toEnv(ctx.senv), nil, form) # todo: senv
+def expandBasic(tyn):
+    def ex(ctx, val):
+        ubval = toList((symbol('#unbox'), val))
+        return ctx, scRoot(ctx, toList([symbol('#node'), symbol(tyn+'-tag'),
+                                        ubval]))
+    return ex
+litExpanders = dict((ty, expandBasic(ty.name))
+                    for ty in (intTy,floatTy,charTy))
 def expand(ctx, xs):
     while True:
         checkIsForm(ctx, xs) 
@@ -50,7 +53,7 @@ def expand(ctx, xs):
             if isSymbol(hd):
                 den = hdCtx.senv.get(EnvKey(hd))
                 if den is not None:
-                    val = hdCtx.env.get(den)
+                    val = hdCtx.env.get(EnvKey(den))
                     if val is not None:
                         if isSemantic(val): break
                         elif isMacro(val):
@@ -66,11 +69,11 @@ def expand(ctx, xs):
             if rest: attr1, xs1 = list(zip(*rest))
             else: attr1, xs1 = [], []
             xs = cons(wrap(hdCtx, None, hd), toList(xs1))
-            ctx.attr = ctx.attr.copy();
-            ctx.attr.subs = cons(attr_head(ctx.attr), toList(attr1))
+            ctx.attr = toAttr(fromAttr(ctx.attr).copy())
+            fromAttr(ctx.attr).subs = cons(attr_head(ctx.attr), toList(attr1))
         else:
             ex = litExpanders.get(getTy(xs))
-            if ex is not None: return ex(ctx, xs)
+            if ex is not None: ctx, xs = ex(ctx, xs); continue
         break
     return ctx, xs
 
@@ -85,20 +88,20 @@ def semantize(ctx, xs):
         if isSymbol(hd):
             den = hdCtx.senv.get(EnvKey(hd))
             if den is not None:
-                val = hdCtx.env.get(den)
+                val = hdCtx.env.get(EnvKey(den))
                 if val is not None and isSemantic(val):
                     return applySemantic(ctx, val, cons(hd, cons_tail(xs)))
         def semSub(ctx, aa, xx): return withSubCtx(semantize, ctx, aa, xx)
         rest = [expr for _,expr in mapRest(semSub, ctx, xs)]
         hdCtx, hd = semantize(hdCtx, hd)
         if isinstance(hd, Apply): hd.args.extend(rest); return ctx, hd
-        else: return ctx, Apply(hdExpr, rest)
+        else: return ctx, Apply(hd, rest)
     elif isSymbol(xs):
         den = ctx.senv.get(EnvKey(xs))
         if den is None: den = alias_new(xs); ctx.senv.add(EnvKey(den), xs)
         return ctx, Var(EnvKey(den))
     elif xs is nil: return ctx, Var(EnvKey(unitDen))
-    else: typeErr(ctx, "invalid symbolic expression: '%s'"%xs)
+    else: typeErr(ctx, "invalid symbolic expression: '%s'"%pretty(xs))
 
 def evaluate(ctx, xs, tag=None):
     ctx, xs = semantize(ctx, xs); return evalExpr(ctx, xs, tag)
@@ -119,8 +122,8 @@ def semUnbox(ctx, form):
 @semproc('#node')
 def semNode(ctx, form):
     # todo: validate form
-    cargs = [expr for _, expr in semantize(ctx, cons_tail(cons_tail(form)))]
-    ty = evaluate(cons_head(cons_tail(form)), tagTy)
+    cargs = [semantize(ctx, carg)[1] for carg in fromList(cons_tail(cons_tail(form)))]
+    ty = getVal(evaluate(ctx, cons_head(cons_tail(form)), ubTagTy))
     return ctx, ConsNode(ty, cargs, ctx)
 
 def interactOnce(modName, ctx): # todo: break into smaller pieces
@@ -147,7 +150,8 @@ def interact(ctx):
             exprs = parser.parse(modName, interactOnce(modName, ctx))
             try:
                 for expr, attr in exprs:
-                    result = evaluate(ctx, expr); print(pretty(result))
+                    result = withSubCtx(evaluate, ctx, attr, expr)
+                    print(pretty(result))
             except LexError: raise
             except ParseError: raise
             except TypeError: raise

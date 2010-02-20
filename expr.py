@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from data import typeErr
+from data import *
 
 def final(val): return None, val
 def cont(ctx, expr): return ctx, expr
@@ -28,7 +28,7 @@ class Expr:
 class Atom(Expr): pass
 class PrimVal(Atom):
     def __init__(self, val): self.val = val
-    def eval(self, ctx): return final(self.v)
+    def eval(self, ctx): return final(self.val)
 class Var(Atom):
     def __init__(self, name): self.name = name
     def eval(self, ctx):

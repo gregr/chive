@@ -83,6 +83,7 @@ primitives = {}
 def addPrim(name, val):
     sym = symbol(name); den = alias_new(sym); nm = EnvKey(sym)
     assert nm not in primitives, name; primitives[nm] = (den, val)
+def primDen(name): return primitives.get(EnvKey(symbol(name)))[0]
 ubTagTy = PyType('#Tag', Type)
 def addPrimTag(name, tag): addPrim(name, ubTagTy.new(tag))
 addPrimTag('Symbol-tag', symTy)
@@ -93,11 +94,11 @@ def node(ty, *args): return ty.new(*args)
 def singleton(name):
     ty = nodeTy(name); val = ty.new(); addPrim(name, val); return ty, val
 unitTy, unit = singleton('Unit')
-unitDen = primitives.get(EnvKey(symbol('Unit')))[0]
+unitDen = primDen('Unit')
 ubEnvTy = PyType('#Env', Env)
 envTy = nodeTy('Env', ubEnvTy)
 def toEnv(e): return node(envTy, ubEnvTy.new(e))
-def fromEnv(e): return envTy.unpackEl(e, 0)
+def fromEnv(e): return getVal(envTy.unpackEl(e, 0))
 
 ################################################################
 # syntactic closures
@@ -108,7 +109,7 @@ def synclo_senv(s): return syncloTy.unpackEl(s, 0)
 def synclo_frees(s): return syncloTy.unpackEl(s, 1)
 def synclo_form(s): return syncloTy.unpackEl(s, 2)
 def applySynCloEnv(senv, sc):
-    new = env_data(synclo_senv(sc))
+    new = fromEnv(synclo_senv(sc))
     frees = fromList(synclo_frees(sc))
     if frees:
         new = Env(new)
@@ -148,7 +149,7 @@ def basicTy(name, pyty):
     ty = nodeTy(name, ubTy)
 #    def isX(v): return node_tag(v) is tag
     def toX(v): return ty.new(ubTy.new(v))
-    def fromX(v): return ty.unpackEl(v, 0)
+    def fromX(v): return getVal(ty.unpackEl(v, 0))
     return ubTy, ty, toX, fromX
 ubIntTy, intTy, toInt, fromInt = basicTy('Int', int)
 ubFloatTy, floatTy, toFloat, fromFloat = basicTy('Float', float)
@@ -206,7 +207,7 @@ ubSemanticTy = ScalarType('#Semantic')
 semanticTy = nodeTy('Semantic', ubSemanticTy)
 def isSemantic(v): return isTyped(v) and getTy(v) is semanticTy
 def semantic_new(sproc): return node(semanticTy, ubSemanticTy.new(sproc))
-def semantic_proc(sm): return semanticTy.unpackEl(sm, 0)
+def semantic_proc(sm): return getVal(semanticTy.unpackEl(sm, 0))
 def applySemantic(ctx, sem, form): return semantic_proc(sem)(ctx, form)
 
 ################################################################
