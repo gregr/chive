@@ -165,52 +165,6 @@ def toString(v): return node(stringTy, v)
 #def fromString(v): assert isString(v), v; return v[1]
 
 ################################################################
-# procs
-class NativeProc:
-    def __init__(self, name, code, binders):
-        self.name = name; self.code = code; self.binders = binders
-    def call(self, ctx, args):
-        ctx = ctx.copy(); ctx.env = Env(ctx.env)
-        for binder, arg in zip(self.binders, args): ctx.env.add(binder, arg)
-        return self.code.eval(ctx)
-class NativeClosure:
-    def __init__(self, proc, ctx): self.proc = proc; self.ctx = ctx
-    def call(self, args): return self.proc.call(self.ctx, args)
-class ForeignProc:
-    def __init__(self, name, code): self.name = name; self.code = code
-    def call(self, args): return self.code(*args)
-class PartialApp:
-    def __init__(self, proc, saved, ty):
-        self.proc = proc; self.saved = saved; self.ty = ty
-    def apply(self, ctx, args):
-        nextTy, argts, nextArity = self.ty.appliedTy(len(args))
-        saved = self.saved+tuple(evalExpr(ctx, arg, argt)
-                                 for argt, arg in zip(argts, args))
-        if nextArity == 0: return self.proc.call(saved), args[len(argts):]
-        return final(nextTy.new(PartialApp(self.proc, saved, nextTy))), ()
-def applyFull(ctx, proc, args):
-    cprc = cont(ctx, proc)
-    while args:
-        proc = evalExpr(*cprc) # lifted out here for tail-calls
-        if isProc(proc): cprc, args = getVal(proc).apply(ctx, args)
-        else: typeError(ctx, "cannot apply non-procedure: '%s'"%proc)
-    return cprc
-
-################################################################
-# macros and semantics
-macroTy = nodeTy('Macro', curryProcType((anyTy, anyTy), anyTy))
-def isMacro(v): return isTyped(v) and getTy(v) is macroTy
-def macro_proc(mac): return macroTy.unpackEl(mac, 0)
-def applyMacro(ctx, mac, form):
-    return evalExpr(*applyFull(ctx, macro_proc(mac), [toCtx(ctx), form]))
-ubSemanticTy = ScalarType('#Semantic')
-semanticTy = nodeTy('Semantic', ubSemanticTy)
-def isSemantic(v): return isTyped(v) and getTy(v) is semanticTy
-def semantic_new(sproc): return node(semanticTy, ubSemanticTy.new(sproc))
-def semantic_proc(sm): return getVal(semanticTy.unpackEl(sm, 0))
-def applySemantic(ctx, sem, form): return semantic_proc(sem)(ctx, form)
-
-################################################################
 # pretty printing
 def prettyList(xs): return '[%s]'%' '.join(pretty(x) for x in fromList(xs))
 def prettySymbol(s): return symbol_name(s)
@@ -247,8 +201,16 @@ tagToPretty = {nilTy: prettyList, consTy: prettyList,
                }
 def pretty(v):
     if isTyped(v):
+        if isProc(v):
+            return '<(%s) %s>'%(getTy(v).desc(), getVal(v))
         pp = tagToPretty.get(getTy(v))
-        if pp is None: return '<%s %s>'%(getTy(v).desc(), getVal(v))
+        if pp is None:
+            if isNode(v):
+                ty = getTy(v)
+                els = ' '.join(pretty(ty.unpackEl(v, idx))
+                               for idx in range(ty.numIndices()))
+                return '(%s %s)'%(ty.desc(), els)
+            return '<%s %s>'%(getTy(v).desc(), getVal(v))
         else: return pp(v)
     else: return '<ugly %s>'%repr(v)
 

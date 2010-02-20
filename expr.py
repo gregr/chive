@@ -46,7 +46,8 @@ class ConsProc(Constr):
         self.proc = NativeProc(name, body, binders)
         self.ty = curryProcType(paramts, rett) 
     def eval(self, ctx):
-        return final(PartialApp(NativeClosure(self.proc, ctx), (), self.ty))
+        return final(self.ty.new(PartialApp(NativeClosure(self.proc, ctx), (),
+                     self.ty)))
 class ConsNodeTy(Constr):
     def __init__(self, name, els): self.name = name; self.els = els
     def eval(self, ctx):
@@ -79,9 +80,6 @@ class ConsArray(Constr): pass
 
 ################################################################
 class Access(Expr): pass
-class NodeGetTag(Access): # todo: proc?
-    def __init__(self, node): self.node = node
-    def eval(self, ctx): return final(getTy(evalExpr(ctx, self.node, anyTy)))
 class NodeAccess(Access):
     def __init__(self, ty, index, node, ctx):
         ty.checkIndex(index, 'node index out of bounds:')
@@ -93,10 +91,10 @@ class NodeUnpack(NodeAccess):
         return final(self.ty.unpackEl(self._evalNode(ctx), self.index))
 class NodePack(NodeAccess):
     def __init__(self, rhs, *args):
-        super().__init__(*args)
-        self.rhs = rhs
+        super().__init__(*args); self.rhs = rhs
     def eval(self, ctx):
-        self.ty.packEl(self._evalNode(ctx), self.index, evalExpr(ctx, rhs))
+        self.ty.packEl(self._evalNode(ctx), self.index,
+                       evalExpr(ctx, self.rhs))
         return final(unit)
 # todo: array access
 
@@ -144,4 +142,57 @@ class Force(Expr): pass # could be a proc (eval then update)
 #     def eval(self, ctx):
 #         ctx, form = expand(*self._evalArgs(ctx))
 #         return final(synclo_new(toEnv(ctx.senv), nil, form))
+
+################################################################
+# procs
+class NativeProc:
+    def __init__(self, name, code, binders):
+        self.name = name; self.code = code; self.binders = binders
+    def call(self, ctx, args):
+        ctx = ctx.copy(); ctx.env = Env(ctx.env)
+        for binder, arg in zip(self.binders, args): ctx.env.add(binder, arg)
+        return self.code.eval(ctx)
+class NativeClosure:
+    def __init__(self, proc, ctx): self.proc = proc; self.ctx = ctx
+    def call(self, args): return self.proc.call(self.ctx, args)
+    def desc(self): return self.proc.name
+class ForeignProc:
+    def __init__(self, name, code): self.name = name; self.code = code
+    def call(self, args): return self.code(*args)
+    def desc(self): return self.name
+class PartialApp:
+    def __init__(self, proc, saved, ty):
+        self.proc = proc; self.saved = saved; self.ty = ty
+    def __repr__(self):
+        return '<PApp %s %s>'%(self.proc.desc(),
+                               tuple(map(pretty, self.saved)))
+    def apply(self, ctx, args):
+        nextTy, argts, nextArity = self.ty.appliedTy(len(args))
+        saved = self.saved+tuple(evalExpr(ctx, arg, argt)
+                                 for argt, arg in zip(argts, args))
+        if nextArity == 0: return self.proc.call(saved), args[len(argts):]
+        return final(nextTy.new(PartialApp(self.proc, saved, nextTy))), ()
+def fproc_new(name, code, ty):
+    return ty.new(PartialApp(ForeignProc(name, code), (), ty))
+def applyFull(ctx, proc, args):
+    cprc = cont(ctx, proc)
+    while args:
+        proc = evalExpr(*cprc) # lifted out here for tail-calls
+        if isProc(proc): cprc, args = getVal(proc).apply(ctx, args)
+        else: typeError(ctx, "cannot apply non-procedure: '%s'"%proc)
+    return cprc
+
+################################################################
+# macros and semantics
+macroTy = nodeTy('Macro', curryProcType((anyTy, anyTy), anyTy))
+def isMacro(v): return isTyped(v) and getTy(v) is macroTy
+def macro_proc(mac): return macroTy.unpackEl(mac, 0)
+def applyMacro(ctx, mac, form):
+    return evalExpr(*applyFull(ctx, macro_proc(mac), [toCtx(ctx), form]))
+ubSemanticTy = ScalarType('#Semantic')
+semanticTy = nodeTy('Semantic', ubSemanticTy)
+def isSemantic(v): return isTyped(v) and getTy(v) is semanticTy
+def semantic_new(sproc): return node(semanticTy, ubSemanticTy.new(sproc))
+def semantic_proc(sm): return getVal(semanticTy.unpackEl(sm, 0))
+def applySemantic(ctx, sem, form): return semantic_proc(sem)(ctx, form)
 

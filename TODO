@@ -14,10 +14,7 @@ limitations under the License.
 
 ================================================================
 exprs: change expand to a proc; eliminate eval; add letrec
-use the type/storage system for expressing data
-associate unique tag with each consproc/foreignproc/delay
-tag primitive values for safe debugging
-track element tags (introduce tag unions, subtags/subtypes)
+tag unions
 guard against infinite recursion in pretty-printing
 AST pretty-printing
 structs/tuples
@@ -39,8 +36,6 @@ structs/tuples
 env-new env
 env-add env sym val
 env-get env sym conseq altern?
-
-unboxed
 
 array-new
 array-length

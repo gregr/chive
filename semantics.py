@@ -59,7 +59,7 @@ def expand(ctx, xs):
                         elif isMacro(val):
                             xs = applyMacro(ctx, val, cons(hd, cons_tail(xs)))
                             continue
-            def wrap(ctx_, _, xx):
+            def wrap(ctx_, xx):
                 if ctx_.senv is not ctx.senv:
                     xx = synclo_new(toEnv(ctx_.senv), nil, xx)
                 return xx
@@ -68,7 +68,7 @@ def expand(ctx, xs):
             rest = mapRest(wrapSub, ctx, xs)
             if rest: attr1, xs1 = list(zip(*rest))
             else: attr1, xs1 = [], []
-            xs = cons(wrap(hdCtx, None, hd), toList(xs1))
+            xs = cons(wrap(hdCtx, hd), toList(xs1))
             ctx.attr = toAttr(fromAttr(ctx.attr).copy())
             fromAttr(ctx.attr).subs = cons(attr_head(ctx.attr), toList(attr1))
         else:
@@ -109,6 +109,11 @@ def evaluate(ctx, xs, tag=None):
 def semproc(name):
     def install(f): addPrim(name, semantic_new(f)); return f
     return install
+def primproc(name, *tys):
+    def install(f):
+        addPrim(name, fproc_new(name, f, curryProcType(tys[:-1], tys[-1])))
+        return f
+    return install
 def stripOuterSynClo(xs):
     while isSynClo(xs): xs = synclo_form(xs)
     return xs
@@ -122,9 +127,27 @@ def semUnbox(ctx, form):
 @semproc('#node')
 def semNode(ctx, form):
     # todo: validate form
-    cargs = [semantize(ctx, carg)[1] for carg in fromList(cons_tail(cons_tail(form)))]
+    cargs = [semantize(ctx, carg)[1]
+             for carg in fromList(cons_tail(cons_tail(form)))]
     ty = getVal(evaluate(ctx, cons_head(cons_tail(form)), ubTagTy))
     return ctx, ConsNode(ty, cargs, ctx)
+@primproc('#node-tag', anyTy, ubTagTy)
+def procNodeTag(node): return final(ubTagTy.new(getTy(node)))
+@semproc('#node-unpack')
+def semNodeUnpack(ctx, form):
+    _, ty, idx, node = fromList(form)
+    ty = getVal(evaluate(ctx, ty, ubTagTy))
+    idx = evaluate(ctx, idx, intTy)
+    ndCtx, node = semantize(ctx, node)
+    return ctx, NodeUnpack(ty, fromInt(idx), node, ctx)
+@semproc('#node-pack')
+def semNodeUnpack(ctx, form):
+    _, ty, idx, node, rhs = fromList(form)
+    rhsCtx, rhs = semantize(ctx, rhs)
+    ty = getVal(evaluate(ctx, ty, ubTagTy))
+    idx = evaluate(ctx, idx, intTy)
+    ndCtx, node = semantize(ctx, node)
+    return ctx, NodePack(rhs, ty, fromInt(idx), node, ctx)
 
 def interactOnce(modName, ctx): # todo: break into smaller pieces
     import readline

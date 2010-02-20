@@ -155,6 +155,7 @@ class ProcType(BoxedType):
             if not isinstance(ty, ProcType): break
             argts.append(ty.inTy); ty = ty.outTy; remainingApps -= 1
         return ty, argts, remainingApps
+    def desc(self): return '%s -> %s'%(self.inTy.desc(), self.outTy.desc())
 def isProc(v): return isTyped(v) and isinstance(getTy(v), ProcType)
 procType = cachedType(ProcType)
 def curryProcType(paramts, rett):
