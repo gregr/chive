@@ -119,36 +119,36 @@ def stripOuterSynClo(xs):
     return xs
 @semproc('#unbox')
 def semUnbox(ctx, form):
-    # todo: validate form
     form = stripOuterSynClo(cons_head(cons_tail(form))); ty = getTy(form)  
     if ty in (symTy, intTy, floatTy, charTy):
         return ctx, PrimVal(ty.unpackEl(form, 0))
     else: typeErr(ctx, "cannot unbox non-literal: '%s'"%form)
 @semproc('#node')
 def semNode(ctx, form):
-    # todo: validate form
     cargs = [semantize(ctx, carg)[1]
              for carg in fromList(cons_tail(cons_tail(form)))]
     ty = getVal(evaluate(ctx, cons_head(cons_tail(form)), ubTagTy))
     return ctx, ConsNode(ty, cargs, ctx)
 @primproc('#node-tag', anyTy, ubTagTy)
 def procNodeTag(node): return final(ubTagTy.new(getTy(node)))
+def semArgs(ctx, form, numArgs):
+    args = tuple(fromList(cons_tail(form)))
+    if len(args) != numArgs:
+        typeErr(ctx, "semantic '%s' takes %d arguments but was given %d"%
+                (pretty(cons_head(form)), numArgs, len(args)))
+    return args
+def semNodeAccess(ctx, ty, idx, node):
+    ty = getVal(evaluate(ctx, ty, ubTagTy))
+    idx = evaluate(ctx, idx, intTy)
+    ndCtx, node = semantize(ctx, node)
+    return ty, fromInt(idx), node, ctx
 @semproc('#node-unpack')
 def semNodeUnpack(ctx, form):
-    _, ty, idx, node = fromList(form)
-    ty = getVal(evaluate(ctx, ty, ubTagTy))
-    idx = evaluate(ctx, idx, intTy)
-    ndCtx, node = semantize(ctx, node)
-    return ctx, NodeUnpack(ty, fromInt(idx), node, ctx)
+    return ctx, NodeUnpack(*semNodeAccess(ctx, *semArgs(ctx, form, 3)))
 @semproc('#node-pack')
-def semNodeUnpack(ctx, form):
-    _, ty, idx, node, rhs = fromList(form)
-    rhsCtx, rhs = semantize(ctx, rhs)
-    ty = getVal(evaluate(ctx, ty, ubTagTy))
-    idx = evaluate(ctx, idx, intTy)
-    ndCtx, node = semantize(ctx, node)
-    return ctx, NodePack(rhs, ty, fromInt(idx), node, ctx)
-
+def semNodePack(ctx, form):
+    *rest, rhs = semArgs(ctx, form, 4); rhsCtx, rhs = semantize(ctx, rhs)
+    return ctx, NodePack(rhs, *semNodeAccess(ctx, *rest))
 def interactOnce(modName, ctx): # todo: break into smaller pieces
     import readline
     from io import StringIO
