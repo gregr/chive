@@ -198,7 +198,7 @@ class ParamVarType(BoxedType): # only makes sense within parametric context
     def contains(self, ty, tenv=None):
         assert tenv is not None; constraint = tenv.get(self.name)
         return intersectCns(constraint, ty, tenv)
-   def desc(self): return str(self.name)
+    def desc(self): return str(self.name)
 class ConstraintType(BoxedType):
     def __init__(self, name, constraint=anyTy):
         self.name = name; self.constraint = constraint
