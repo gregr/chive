@@ -29,8 +29,8 @@ def makeString(s): return toString(eval(s))
 
 def makeTokClass(tokSpec): return (re.compile(tokSpec[0]),)+tokSpec[1:]
 def makeTokClasses(tokSpecs): return [makeTokClass(c) for c in tokSpecs]
-operPat = '#?[`~!@$%^&*\\=+|;:,.<>/?-]+'
-identPat = r'#?([a-zA-Z_]|(\\.))([-]?(\w|(\\.)))*[!?]*'
+operPat = '#?[~!@$%^&*\\=+|;:,.<>/?-]+'
+identPat = r"#?([a-zA-Z_]|(\\.))([-]?(\w|(\\.)))*[!?]*[']*"
 openBracePat = r'#?[(\[{]'
 closeBracePat = r'[)\]}]'
 bracePat = '(%s|%s)'%(openBracePat, closeBracePat)
