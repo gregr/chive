@@ -1,12 +1,3 @@
-class Env:
-    def __init__(self, parent=None): self.parent = parent; self.bs = {}
-    def add(self, name, val): self.bs[name] = val
-    def get(self, name):
-        env = self
-        while env is not None:
-            val = env.bs.get(name)
-            if val is not None: return val
-            env = env.parent
 def tyErr(msg): raise RuntimeError(msg)
 class Cons:
     def __init__(self, name, vars): self.name = name; self.vars = vars
