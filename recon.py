@@ -71,14 +71,14 @@ class TyCons(TyExpr):
         else: return tyBot
     def contains(self, cenv, ty, parity):
         if isinstance(ty, TyCons) and ty.cons is self.cons:
-            return all(lhs.contains(cenv, rhs, parity*var)
+            return all(contains(cenv, lhs, rhs, parity*var)
                        for lhs, rhs, var in
                        zip(self.args, ty.args, self.cons.vars))
         else: return ty is tyBot
 class TyVariant(TyExpr):
     def __init__(self, conss): self.conss = conss; assert len(conss) > 1
     def __str__(self):
-        return '{%s}'%' '.join(cons for cons in self.conss)
+        return '{%s}'%' '.join(str(cons) for cons in self.conss)
     def freeVars(self): return mapFrees(self.conss)
     def subst(self, subs): return mapSubs(subs, self.conss, self, TyVariant)
     def occurs(self, name): return mapOccurs(name, self.conss)
@@ -129,14 +129,39 @@ class TyVariant(TyExpr):
         else: return tyBot
     def contains(self, cenv, ty, parity):
         if isinstance(ty, TyVariant):
-            return all(self.contains(cenv, cons, parity) for cons in ty.conss)
+            return all(contains(cenv, self, cons, parity) for cons in ty.conss)
         elif isinstance(ty, TyCons):
             for cons in self.conss:
                 if cons.cons is ty.cons:
-                    return all(lhs.contains(cenv, rhs, parity*var)
+                    return all(contains(cenv, lhs, rhs, parity*var)
                                for lhs, rhs, var in
                                zip(cons.args, ty.args, cons.cons.vars))
         else: return ty is tyBot
+class TyUQfied(TyExpr):
+    def __init__(self, bqs, body): self.bqs = bqs; self.body = body
+    def __str__(self):
+        return '(all [%s] => %s)'%(', '.join('%s<:%s'%(qn, bnd)
+                                   for qn, bnd in self.bqs), self.body)
+    def _boundVars(self): return tuple(zip(self.bqs))[0]
+    def freeVars(self): return self.body.freeVars() - set(self._boundVars())
+    def subst(self, subs):
+        qns = self._boundVars()
+        return self.body.subst(sub for sub in subs if sub[0] not in qns)
+    def occurs(self, name):
+        return (name not in self._boundVars()) and self.body.occurs(name)
+    def _instantiate(self, cenv):
+        subs = []
+        for qn, bnd in self.bqs:
+            newName, _ = fresh(cenv)
+            newName.constrain([], cenv, bnd, -1)
+            subs.append((qn, newName))
+        return self.body.subst(subs)
+    def constrain(self, subs, cenv, rhs, relat):
+        constrain(subs, cenv, self._instantiate(cenv), rhs, relat)
+    def merge(self, subs, cenv, ty, parity, grow):
+        return merge(subs, cenv, self._instantiate(cenv), ty, parity, grow)
+    def contains(self, cenv, ty, parity):
+        return contains(cenv, self._instantiate(cenv), ty, parity)
 class TyVar(TyExpr):
     def __init__(self, name): self.name = name
     def __str__(self): return self.name
@@ -175,7 +200,7 @@ class TyVar(TyExpr):
             csrnt.mergeC(varc, parity)
             return var
     def contains(self, cenv, ty, parity):
-        return cenv[self.name].upperBound().contains(cenv, ty, parity)
+        return contains(cenv, cenv[self.name].upperBound(), ty, parity)
 
 def makeVar(cenv, name):
     csrnt = Constraint(name); cenv[name] = csrnt
@@ -188,7 +213,8 @@ def subst(subs, ty):
     subs = iter(subs); ch = True
     while ch: ty, ch = ty.subst(subs)
     return ty
-def constrain(subs, cenv, lhs, rhs, relat):
+# todo: instance ordering
+def constrain(subs, cenv, lhs, rhs, relat): # todo: current l&r quantifiers
     lhs = subst(subs, lhs); rhs = subst(subs, rhs)
     if ((not isinstance(lhs, TyVar)) and
         (isinstance(rhs, (TyVar, TyExtreme)) or
@@ -201,6 +227,8 @@ def merge(subs, cenv, lhs, rhs, parity, grow):
          ((not isinstance(lhs, TyVar)) and
           isinstance(rhs, TyVariant)))): lhs,rhs = rhs,lhs
     return lhs.merge(subs, cenv, rhs, parity, grow)
+def contains(cenv, lhs, rhs, parity): # todo
+    return lhs.contains(cenv, rhs, parity)
 
 class Bound:
     def __init__(self, initBnd): self.bnd = initBnd; self.deps = set()
@@ -240,7 +268,7 @@ class Constraint:
     def parity(self, parity): return self.bndParity[parity]
     def upperBound(self): return self.parity(-1)
     def check(self, cenv):
-        if not self.covar.bnd.contains(cenv, self.contravar.bnd, 1):
+        if not contains(cenv, self.covar.bnd, self.contravar.bnd, 1):
             tyErr("failed constraint '%s': %s <: %s"%
                   (self.name, self.covar.bnd, self.contravar.bnd))
 
@@ -312,13 +340,23 @@ if __name__ == '__main__':
     intTy = TyCons(intc, ())
     addTy = TyCons(arrow, (intTy, TyCons(arrow, (intTy, intTy))))
     pairTy = TyCons(pair, (tyTop, tyTop))
-    pconsdef = mkarr(tyTop, intTy, pairTy)
+    nilTy = TyCons(Cons('Nil', ()), ())
+    listTy = TyVariant((pairTy, nilTy))
+    pconsdef = mkarr(tyTop, tyTop, pairTy)
+    rdef = mkarr(pairTy, listTy, intTy)
+    sdef = mkarr(nilTy, pairTy, listTy)
     fv = mkv(cenv, 'f'); xv = mkv(cenv, 'x'); hv = mkv(cenv, 'h')
     fvr = mkv(cenv, '$f'); fbodyr = mkv(cenv, 'fbodyr')
-    fdef = mkarr(xv, fvr)
+    fdef = mkarr(xv, hv, fvr)
     constrain(subs, cenv, fv, fdef, 0)
-    fbody = mkarr(xv, fbodyr)
-    constrain(subs, cenv, hv, fbody, -1)
+    fapp1r = mkv(cenv, 'fapp1r'); fapp2r = mkv(cenv, 'fapp2r')
+    fbody = mkarr(fapp1r, fapp2r, fbodyr)
+    fapp1 = mkarr(xv, hv, fapp1r)
+    fapp2 = mkarr(xv, hv, fapp2r)
+    constrain(subs, cenv, rdef, fapp1, -1)
+    constrain(subs, cenv, sdef, fapp2, -1)
+    constrain(subs, cenv, pconsdef, fbody, -1)
+#    constrain(subs, cenv, hv, fbody, -1)
     constrain(subs, cenv, fvr, fbodyr, 1)
 #     gv = mkv(cenv, 'g'); yv = mkv(cenv, 'y'); jv = mkv(cenv, 'j')
 #     gvr = mkv(cenv, '$g'); gbodyr = mkv(cenv, 'gbodyr')
