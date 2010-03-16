@@ -151,20 +151,38 @@ class TyUQfied(TyExpr):
         return TyUQfied(self.bqs, body), ()
     def occurs(self, name):
         return (name not in self._boundVars()) and self.body.occurs(name)
-    def _instantiate(self, cenv):
+    def _instantiate(self, cenv, relat):
         subs = []
         for qn, bnd in self.bqs:
             newName, _ = fresh(cenv, qn)
+            if relat >= 0: bnd = TyQVar(newName.name, bnd)
             newName.constrain([], cenv, bnd, -1)
             subs.append((qn, newName))
         print('subs:', subs)
         return subst(subs, self.body)
     def constrain(self, subs, cenv, rhs, relat):
-        constrain(subs, cenv, self._instantiate(cenv), rhs, relat)
+        constrain(subs, cenv, self._instantiate(cenv, relat), rhs, relat)
     def merge(self, subs, cenv, ty, parity, grow):
-        return merge(subs, cenv, self._instantiate(cenv), ty, parity, grow)
+        return merge(subs, cenv, self._instantiate(cenv, parity), ty, parity,
+                     grow)
     def contains(self, cenv, ty, parity):
-        return contains(cenv, self._instantiate(cenv), ty, parity)
+        return contains(cenv, self._instantiate(cenv, parity), ty, parity)
+class TyQVar(TyExpr):
+    def __init__(self, name, bnd): self.name = name; self.bnd = bnd
+    def __str__(self): return '(%s<:%s)'%(self.name, self.bnd)
+    def constrain(self, subs, cenv, rhs, relat):
+        if rhs is self: return
+        if parity < 0: constrain(subs, cenv, self.bnd, rhs, relat)
+        tyErr('invalid quantified var constraint: %s <: %s'%(rhs, self))
+    def merge(self, subs, cenv, ty, parity, grow):
+        if ty is self: return self
+        if parity > 0: return merge(subs, cenv, self.bnd, ty, parity, grow)
+        elif parity < 0: return tyBot
+        tyErr('cannot equate %s and %s'%(self, ty))
+    def contains(self, cenv, ty, parity):
+        if ty is self: return True
+        if parity < 0: return contains(cenv, self.bnd, ty, parity)
+        return False
 class TyVar(TyExpr):
     def __init__(self, name): self.name = name
     def __str__(self): return self.name
@@ -204,7 +222,7 @@ class TyVar(TyExpr):
             csrnt.mergeC(varc, parity)
             return var
     def contains(self, cenv, ty, parity):
-        return contains(cenv, cenv[self.name].upperBound(), ty, parity)
+        return contains(cenv, cenv[self.name].upperBound().bnd, ty, parity)
 
 def makeVar(cenv, name):
     csrnt = Constraint(name); cenv[name] = csrnt
@@ -244,13 +262,13 @@ class Bound:
         self.bnd = merge(subs, cenv, self.bnd, bnd.bnd, parity)
 class Constraint:
     def __init__(self, name):
-        self.name = name; self.invar = False
+        self.name = name; self.invar = None
         self.covar = Bound(tyTop); self.contravar = Bound(tyBot)
         self.bndParity = {1: self.contravar, -1: self.covar}
     def __repr__(self):
         return 'CX(%s, %s <: %s)'%(self.name, self.contravar, self.covar)
     def equate(self, subs, cenv, ty, grow):
-        self.invar = True; subs.append((self.name, ty))
+        self.invar = ty; subs.append((self.name, ty))
         if isinstance(ty, TyVar):
             csrnt = cenv[ty.name]; cenv[self.name] = csrnt
             csrnt.covar.mergeBound(subs, cenv, self.covar, -1, grow)
@@ -275,7 +293,10 @@ class Constraint:
     def check(self, cenv):
         if not contains(cenv, self.covar.bnd, self.contravar.bnd, 1):
             tyErr("failed constraint '%s': %s <: %s"%
-                  (self.name, self.covar.bnd, self.contravar.bnd))
+                  (self.name, self.contravar.bnd, self.covar.bnd))
+        if self.invar and not contains(cenv, self.covar.bnd, self.invar, 1):
+            tyErr("failed constraint invariant '%s': %s <: %s"%
+                (self.name, self.invar, self.covar.bnd))
 
 def dfs(cenv, cx, parity, finished, seen):
     if cx in seen: return
