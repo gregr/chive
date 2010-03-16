@@ -45,7 +45,7 @@ class TyCons(TyExpr):
     def __str__(self):
         if self.args:
             if (not self.cons.name.isalnum()) and len(self.args) == 2:
-                return '%s %s %s'%(self.args[0], self.cons.name, self.args[1])
+                return '(%s %s %s)'%(self.args[0], self.cons.name, self.args[1])
             return '(%s)'%(self.cons.name+' '+' '.join(map(str, self.args)))
         return self.cons.name
     def freeVars(self): return mapFrees(self.args)
