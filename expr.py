@@ -116,7 +116,14 @@ class Switch(Expr):
         body = self.alts.get(discrim)
         if body is None: body = self.default
         return cont(ctx, body)
-
+class Let(Expr):
+    def __init__(self, immed, synt, nonrec, rec, body):
+        self.immed = immed; self.synt = synt # compile-time bindings
+        self.nonrec = nonrec; self.rec = rec # run-time bindings
+        self.body = body
+    def eval(self, ctx):
+#        newCtx = ... # todo
+        return cont(newCtx, self.body)
 ################################################################
 class Throw(Expr): pass # could be a proc
 class Catch(Expr): pass
