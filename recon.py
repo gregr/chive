@@ -19,6 +19,7 @@ class TyExpr:
     def freeVars(self): return set()
     def subst(self, subs): return self, ()
     def occurs(self, name): return False
+    def strengthen(self, cenv, mentions, parity, final): return self
     def __repr__(self): return '%s(%s)'%(self.__class__.__name__, str(self))
     def __str__(self): return ''
 class TyExtreme(TyExpr):
@@ -45,7 +46,7 @@ class TyCons(TyExpr):
     def __str__(self):
         if self.args:
             if (not self.cons.name.isalnum()) and len(self.args) == 2:
-                return '(%s %s %s)'%(self.args[0], self.cons.name, self.args[1])
+                return '(%s %s %s)'%(self.args[0],self.cons.name,self.args[1])
             return '(%s)'%(self.cons.name+' '+' '.join(map(str, self.args)))
         return self.cons.name
     def freeVars(self): return mapFrees(self.args)
@@ -53,6 +54,10 @@ class TyCons(TyExpr):
         return mapSubs(subs, self.args, self,
                        lambda args1: TyCons(self.cons, args1))
     def occurs(self, name): return mapOccurs(name, self.args)
+    def strengthen(self, cenv, mentions, parity, final):
+        args = [arg.strengthen(cenv, mentions, parity*var, final)
+                for arg, var in zip(self.args, self.cons.vars)]
+        return TyCons(self.cons, args)
     def constrain(self, subs, cenv, rhs, relat):
         if not isinstance(rhs, TyCons) or self.cons is not rhs.cons:
             tyErr('invalid constraint') # todo
@@ -66,7 +71,7 @@ class TyCons(TyExpr):
             return TyCons(self.cons, args)
         elif parity == 0: tyErr("cannot equate '%s' and '%s'"%(self, ty))
         elif parity > 0:
-            if isinstance(ty, TyCons): return TyVariant((self, ty))
+            if isinstance(ty, TyCons): return TyVariant([self, ty])
             return tyTop
         else: return tyBot
     def contains(self, cenv, ty, parity):
@@ -82,6 +87,9 @@ class TyVariant(TyExpr):
     def freeVars(self): return mapFrees(self.conss)
     def subst(self, subs): return mapSubs(subs, self.conss, self, TyVariant)
     def occurs(self, name): return mapOccurs(name, self.conss)
+    def strengthen(self, cenv, mentions, parity, final):
+        return TyVariant([cns.strengthen(cenv, mentions, parity, final)
+                          for cns in self.conss])
     def constrain(self, subs, cenv, rhs, relat):
         if isinstance(rhs, TyCons):
             if relat > 0:
@@ -117,11 +125,11 @@ class TyVariant(TyExpr):
             match = dict((cons.cons, cons) for cons in ty.conss); acc = []
             for cons in self.conss:
                 other = match.get(cons.cons)
-                if other is None: parity > 0 and acc.append[cons]
+                if other is None: parity > 0 and acc.append(cons)
                 else:
-                    acc.append[cons.merge(subs, cenv, other, parity, grow)]
+                    acc.append(cons.merge(subs, cenv, other, parity, grow))
                     del match[cons.cons]
-            if parity > 0: acc.extend(match.values)
+            if parity > 0: acc.extend(list(match.values()))
             if len(acc) > 1: return TyVariant(acc)
             elif len(acc) == 1: return acc[0]
             else: return tyBot
@@ -195,6 +203,19 @@ class TyVar(TyExpr):
             if self.name == nm: return ty, subs[idx:]
         return self, ()
     def occurs(self, name): return self.name == name
+    def strengthen(self, cenv, mentions, parity, final):
+        if final and mentions[self.name] > 1: return self
+        cx = cenv[self.name]
+        if cx.invar: return cx.invar.strengthen(cenv, mentions, parity, final)
+        if parity == 1:
+            if final or cx.contravar.bnd is not tyBot:
+                return cx.contravar.bnd.strengthen(cenv, mentions, parity,
+                                                   final)
+        elif (final or isinstance(cx.covar.bnd, TyCons) or
+              cx.covar.bnd.freeVars()):
+            return cx.covar.bnd.strengthen(cenv, mentions, parity, final)
+        count = mentions.setdefault(cx.name, 0); mentions[cx.name] += 1
+        return TyVar(cx.name)#.strengthen(cenv, mentions, parity, final)
     def constrain(self, subs, cenv, rhs, relat):
         print('uh oh:', self, '?', rhs)
         if self.identical(cenv, rhs): return
@@ -221,16 +242,16 @@ class TyVar(TyExpr):
             csrnt.merge(subs, cenv, ty, parity, grow)
             csrnt.mergeC(varc, parity)
             return var
-    def contains(self, cenv, ty, parity):
+    def contains(self, cenv, ty, parity): # todo: chokes on recursive types
         return contains(cenv, cenv[self.name].upperBound().bnd, ty, parity)
 
-def makeVar(cenv, name):
-    csrnt = Constraint(name); cenv[name] = csrnt
+def makeVar(cenv, name, parity):
+    csrnt = Constraint(name, parity); cenv[name] = csrnt
     return TyVar(name), csrnt
 uid = 0
 def fresh(cenv, nm=''):
     global uid
-    name = '$UID_%s_%s'%(uid, nm); uid += 1; return makeVar(cenv, name)
+    name = '$UID_%s_%s'%(uid, nm); uid += 1; return makeVar(cenv, name, 1)
 def subst(subs, ty):
     print('subst:', ty)
     while subs: ty, subs = ty.subst(subs); print('subst:', ty)
@@ -252,6 +273,8 @@ def merge(subs, cenv, lhs, rhs, parity, grow):
 def contains(cenv, lhs, rhs, parity):
     if not ordered(lhs, rhs, cxOrder): parity*=-1; lhs,rhs = rhs,lhs
     return lhs.contains(cenv, rhs, parity)
+def identical(cenv, lhs, rhs):
+    return contains(cenv, lhs, rhs, -1) and contains(cenv, lhs, rhs, 1)
 
 class Bound:
     def __init__(self, initBnd): self.bnd = initBnd; self.deps = set()
@@ -260,11 +283,13 @@ class Bound:
     def mergeBound(self, subs, cenv, bnd, parity):
         self.deps |= bnd.deps;
         self.bnd = merge(subs, cenv, self.bnd, bnd.bnd, parity)
+    def discardDeps(self, deps): self.deps -= deps
 class Constraint:
-    def __init__(self, name):
+    def __init__(self, name, parity):
         self.name = name; self.invar = None
         self.covar = Bound(tyTop); self.contravar = Bound(tyBot)
         self.bndParity = {1: self.contravar, -1: self.covar}
+        self.finalParity = parity
     def __repr__(self):
         return 'CX(%s, %s <: %s)'%(self.name, self.contravar, self.covar)
     def equate(self, subs, cenv, ty, grow):
@@ -298,6 +323,7 @@ class Constraint:
             tyErr("failed constraint invariant '%s': %s <: %s"%
                 (self.name, self.invar, self.covar.bnd))
 
+# todo: this all ends up incorrect thanks to constraint bounds with type vars
 def dfs(cenv, cx, parity, finished, seen):
     if cx in seen: return
     seen.add(cx)
@@ -321,11 +347,11 @@ def depSort(cenv):
     print('components:\n', '\n'.join(map(str, components)))
     return components
 
-def mergeDeps(subs, cenv, cx, parity, ignore=()):
+def mergeDeps(subs, cenv, cx, parity, ignore=set()):
     bnd = cx.parity(parity).bnd
+    cx.parity(parity).discardDeps(ignore)
     for name in cx.parity(parity).deps:
         dep = cenv[name]
-        if dep in ignore: continue
         bnd = merge(subs, cenv, bnd, dep.parity(parity).bnd, parity, False)
     cx.parity(parity).bnd = bnd
 def mergeComp(subs, cenv, comp, parity):
@@ -343,15 +369,30 @@ def satisfy(subs, cenv):
     mergeComponents(subs, cenv, reversed(components), -1)
     mergeComponents(subs, cenv, components, 1)
     for comp in components:
+        tgt = comp[0]
         if len(comp) > 1:
-            tgt = comp[0]
             for cx in comp[1:]: cenv[cx.name] = tgt
-    for comp in components: comp[0].check(cenv)
-# todo: coalesce singly-dependent contravariant constraints before quantifying
+        tgt.check(cenv)
+        deps = tgt.contravar.deps
+        if len(deps) == 1: # coalesce matching single-dep contravar constraints
+            dep = cenv[list(deps)[0]]
+            if identical(cenv, dep.covar.bnd, tgt.covar.bnd):
+                cenv[tgt.name] = dep
+
+def quantify(cenv, ty):
+    mentions = {}
+    ty = ty.strengthen(cenv, mentions, 1, False)
+    print('strengthen:', mentions, ty)
+    ty = ty.strengthen(cenv, mentions, 1, True)
+    print('final:', mentions, ty)
+    bqs = [(name, cenv[name].upperBound().bnd)
+           for name, count in mentions.items() if count > 1]
+    if bqs: ty = TyUQfied(bqs, ty)
+    return ty
 
 if __name__ == '__main__':
     cenv = {}; subs = []
-    def mkv(name): return makeVar(cenv, name)[0]
+    def mkv(name, parity=1): return makeVar(cenv, name, parity)[0]
     def stat():
         print('status:')
         for k, v in cenv.items(): print(k, '::', v)
@@ -361,46 +402,58 @@ if __name__ == '__main__':
         tys = list(tys); res = tys.pop()
         while tys: res = TyCons(arrow, (tys.pop(), res))
         return res
+    def qfy(ty): return quantify(cenv, ty)
     arrow = Cons('->', (-1, 1)); intc = Cons('Int', ());
     pair = Cons('Pair', (1, 1))
     intTy = TyCons(intc, ())
     addTy = TyCons(arrow, (intTy, TyCons(arrow, (intTy, intTy))))
     pairTy = TyCons(pair, (intTy, tyTop))
     nilTy = TyCons(Cons('Nil', ()), ())
-    listTy = TyVariant((pairTy, nilTy))
+    listTy = TyVariant([pairTy, nilTy])
     pconsdef = mkarr(tyTop, tyTop, pairTy)
+    def mkPairTy(a, b): return TyCons(pair, (a, b))
+    def mkListTy(x): return TyVariant([nilTy, mkPairTy(x, tyTop)])
+    polypconsdef = TyUQfied([('A', tyTop), ('B', tyTop)],
+                            mkarr(TyVar('A'), TyVar('B'),
+                                  mkPairTy(TyVar('A'), TyVar('B'))))
     selectTy = mkarr(pairTy, intTy)
     fTy = TyUQfied([('X', tyTop), ('Y', tyTop)],
                   mkarr(TyVar('X'), mkarr(TyVar('X'), TyVar('Y')), TyVar('Y')))
-    gv = mkv('g'); xv = mkv('x'); gvr = mkv('$g')
-    gdef = mkarr(xv, gvr)
-    constrain(subs, cenv, gv, gdef, 0)
-#    gbodyr = mkv('gbodyr'); gapp1r = mkv('gapp1r')
-    gapp2r = mkv('gapp2r')
-#    gbody = mkarr(gapp1r, gapp2r, gbodyr)
-#    gapp1 = mkarr(xv, selectTy, gapp1r)
-    gapp2 = mkarr(xv, selectTy, gapp2r)
-#    constrain(subs, cenv, fTy, gapp1, -1)
-    constrain(subs, cenv, fTy, gapp2, -1)
-    constrain(subs, cenv, gvr, gapp2r, 1)
+#     gv = mkv('g'); xv = mkv('x'); gvr = mkv('$g')
+#     gdef = mkarr(xv, gvr)
+#     constrain(subs, cenv, gv, gdef, 0)
+# #    gbodyr = mkv('gbodyr'); gapp1r = mkv('gapp1r')
+#     gapp2r = mkv('gapp2r')
+# #    gbody = mkarr(gapp1r, gapp2r, gbodyr)
+# #    gapp1 = mkarr(xv, selectTy, gapp1r)
+#     gapp2 = mkarr(xv, selectTy, gapp2r)
+# #    constrain(subs, cenv, fTy, gapp1, -1)
+#     constrain(subs, cenv, fTy, gapp2, -1)
+#     constrain(subs, cenv, gvr, gapp2r, 1)
+
 #    constrain(subs, cenv, pconsdef, gbody, -1)
 #    constrain(subs, cenv, gvr, gbodyr, 1)
-#     qdef = TyUQfied([('X', listTy)], mkarr(TyVar('X'), listTy, TyVar('X')))
-#     rdef = mkarr(pairTy, listTy, intTy)
-#     sdef = mkarr(nilTy, pairTy, listTy)
-#     fv = mkv(cenv, 'f'); xv = mkv(cenv, 'x'); hv = mkv(cenv, 'h')
-#     fvr = mkv(cenv, '$f'); fbodyr = mkv(cenv, 'fbodyr')
-#     fdef = mkarr(xv, hv, fvr)
-#     constrain(subs, cenv, fv, fdef, 0)
-#     fapp1r = mkv(cenv, 'fapp1r'); fapp2r = mkv(cenv, 'fapp2r')
-#     fbody = mkarr(fapp1r, fapp2r, fbodyr)
-#     fapp1 = mkarr(xv, hv, fapp1r)
-#     fapp2 = mkarr(xv, hv, fapp2r)
-#     constrain(subs, cenv, qdef, fapp1, -1)
-#     constrain(subs, cenv, sdef, fapp2, -1)
-#     constrain(subs, cenv, pconsdef, fbody, -1)
-# #    constrain(subs, cenv, hv, fbody, -1)
-#     constrain(subs, cenv, fvr, fbodyr, 1)
+    qdef = TyUQfied([('Q', listTy)], mkarr(TyVar('Q'), listTy, TyVar('Q')))
+    rdef = TyUQfied([('R', tyTop)],
+                    mkarr(mkPairTy(TyVar('R'), tyTop),
+                          mkListTy(TyVar('R')), intTy))
+    sdef = mkarr(nilTy, pairTy, listTy)
+
+    fv = mkv('f'); xv = mkv('x', -1); hv = mkv('h', -1)
+    fvr = mkv('$f'); fbodyr = mkv('fbodyr')
+    fdef = mkarr(xv, hv, fvr)
+    constrain(subs, cenv, fv, fdef, 0)
+    fapp1r = mkv('fapp1r'); fapp2r = mkv('fapp2r')
+    fbody = mkarr(fapp1r, fapp2r, fbodyr)
+    fapp1 = mkarr(xv, hv, fapp1r)
+    fapp2 = mkarr(xv, hv, fapp2r)
+    constrain(subs, cenv, qdef, fapp1, -1)
+    constrain(subs, cenv, rdef, fapp2, -1)
+    constrain(subs, cenv, polypconsdef, fbody, -1)
+
+#     fbody = mkarr(xv, fbodyr)
+#     constrain(subs, cenv, hv, fbody, -1)
+    constrain(subs, cenv, fvr, fbodyr, 1)
 
 #     gv = mkv(cenv, 'g'); yv = mkv(cenv, 'y'); jv = mkv(cenv, 'j')
 #     gvr = mkv(cenv, '$g'); gbodyr = mkv(cenv, 'gbodyr')
