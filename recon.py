@@ -277,7 +277,8 @@ def identical(cenv, lhs, rhs):
     return contains(cenv, lhs, rhs, -1) and contains(cenv, lhs, rhs, 1)
 
 class Bound:
-    def __init__(self, initBnd): self.bnd = initBnd; self.deps = set()
+    def __init__(self, initBnd): # todo: fill backDeps during DFS
+        self.bnd = initBnd; self.deps = set(); self.backDeps = set()
     def __str__(self): return '%s, %s'%(self.bnd, list(self.deps))
 #    def __str__(self): return '%s'%self.bnd
     def mergeBound(self, subs, cenv, bnd, parity):
@@ -379,6 +380,7 @@ def satisfy(subs, cenv):
             if identical(cenv, dep.covar.bnd, tgt.covar.bnd):
                 cenv[tgt.name] = dep
 
+# todo: rethink parities approach
 def quantify(cenv, ty):
     mentions = {}
     ty = ty.strengthen(cenv, mentions, 1, False)
