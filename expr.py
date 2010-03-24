@@ -149,7 +149,7 @@ class Force(Expr): pass # could be a proc (eval then update)
 # class Expand(Meta):
 #     def eval(self, ctx):
 #         ctx, form = expand(*self._evalArgs(ctx))
-#         return final(synclo_new(toEnv(ctx.senv), nil, form))
+#         return final(synclo_new(toCtx(ctx), nil, form))
 
 ################################################################
 # procs

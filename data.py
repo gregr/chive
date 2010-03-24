@@ -95,34 +95,6 @@ def singleton(name):
     ty = prodTy(name); val = ty.new(); addPrim(name, val); return ty, val
 unitTy, unit = singleton('Unit')
 unitDen = primDen('Unit')
-ubEnvTy = PyType('#Env', Env)
-envTy = prodTy('Env', ubEnvTy)
-def toEnv(e): return node(envTy, ubEnvTy.new(e))
-def fromEnv(e): return getVal(envTy.unpackEl(e, 0))
-
-################################################################
-# syntactic closures
-syncloTy = prodTy('SynClo', envTy, anyTy, anyTy) # todo
-def isSynClo(s): return getTy(s) is syncloTy
-def synclo_new(senv, frees, form): return syncloTy.new(senv, frees, form)
-def synclo_senv(s): return syncloTy.unpackEl(s, 0)
-def synclo_frees(s): return syncloTy.unpackEl(s, 1)
-def synclo_form(s): return syncloTy.unpackEl(s, 2)
-def applySynCloEnv(senv, sc):
-    new = fromEnv(synclo_senv(sc))
-    frees = fromList(synclo_frees(sc))
-    if frees:
-        new = Env(new)
-        for n in frees:
-            n = EnvKey(n)
-            v = senv.get(n)
-            if v is not None: new.extend(n, v)
-    return new
-def syncloExpand(senv, xs):
-    while isSynClo(xs):
-        senv = applySynCloEnv(senv, xs)
-        xs = synclo_form(xs)
-    return senv, xs
 
 ################################################################
 # lists
@@ -141,6 +113,51 @@ def fromList(xs):
     while xs is not nil:
         yield cons_head(xs)
         xs = cons_tail(xs)
+
+################################################################
+# contexts
+class Context:
+    def __init__(self, root, mod, senv, env, attr, hist=nil):
+        self.root = root; self.mod = mod; self.senv = senv; self.env = env
+        self.attr = attr; self.hist = hist
+    def __eq__(self, rhs): return self.senv is rhs.senv
+    def copy(self):
+        return Context(self.root, self.mod, self.senv, self.env, self.hist)
+    def histAppend(self, form): self.hist = cons(form, self.hist)
+ubCtxTy = PyType('#Ctx', Context)
+ctxTy = prodTy('Ctx', ubCtxTy)
+def toCtx(e): return node(ctxTy, ubCtxTy.new(e))
+def fromCtx(e): return getVal(ctxTy.unpackEl(e, 0))
+
+def primCtx():
+    senv = Env(); env = Env()
+    print('adding primitives:')
+    for name, (den, val) in primitives.items():
+        print(name)
+        sym = name.sym; senv.add(EnvKey(sym), den); env.add(EnvKey(den), val)
+    return Context(None, None, senv, env, None)
+
+################################################################
+# syntactic closures
+syncloTy = prodTy('SynClo', ctxTy, anyTy, anyTy) # todo
+def isSynClo(s): return getTy(s) is syncloTy
+def synclo_new(ctx, frees, form): return syncloTy.new(ctx, frees, form)
+def synclo_ctx(s): return syncloTy.unpackEl(s, 0)
+def synclo_frees(s): return syncloTy.unpackEl(s, 1)
+def synclo_form(s): return syncloTy.unpackEl(s, 2)
+def applySynCloCtx(ctx, sc):
+    new = fromCtx(synclo_ctx(sc)).senv
+    frees = fromList(synclo_frees(sc))
+    if frees:
+        new = Env(new)
+        for n in frees:
+            n = EnvKey(n)
+            v = ctx.senv.get(n)
+            if v is not None: new.extend(n, v)
+    ctx.senv = new; return ctx
+def syncloExpand(ctx, xs):
+    while isSynClo(xs): ctx = applySynCloCtx(ctx, xs); xs = synclo_form(xs)
+    return ctx, xs
 
 ################################################################
 # basic values
@@ -168,8 +185,8 @@ def toString(v): return node(stringTy, v)
 # pretty printing
 def prettyList(xs): return '[%s]'%' '.join(pretty(x) for x in fromList(xs))
 def prettySymbol(s): return symbol_name(s)
-def prettySynClo(s): return ('(SynClo <env> %s %s)'%
-                             (#synclo_senv(s),
+def prettySynClo(s): return ('(SynClo <ctx> %s %s)'%
+                             (#synclo_senv(s), # todo: string rep
                               prettyList(synclo_frees(s)),
                               pretty(synclo_form(s))))
 def prettyInt(i): return repr(fromInt(i))
@@ -238,22 +255,4 @@ def makeStream(s):
     if not isinstance(s, Stream): s = Stream(s)
     return s
 
-################################################################
-# contexts
-class Context:
-    def __init__(self, root, mod, senv, env, attr, hist=nil):
-        self.root = root; self.mod = mod; self.senv = senv; self.env = env
-        self.attr = attr; self.hist = hist
-    def copy(self):
-        return Context(self.root, self.mod, self.senv, self.env, self.hist)
-    def histAppend(self, form): self.hist = cons(form, self.hist)
-# ctxTy = prodTy('Context', 2)#4)
-# def toCtx(ctx): return node(#toRoot(ctx.root), toMod(ctx.mod),
-#                             toEnv(ctx.senv), toEnv(ctx.env))
-def primCtx():
-    senv = Env(); env = Env()
-    print('adding primitives:')
-    for name, (den, val) in primitives.items():
-        print(name)
-        sym = name.sym; senv.add(EnvKey(sym), den); env.add(EnvKey(den), val)
-    return Context(None, None, senv, env, None)
+

@@ -140,18 +140,22 @@ class VariantType(BoxedType):
         else: return any(elt.contains(ty) for elt in self.elts)
 class NodeType(BoxedType): pass
 class ProductType(NodeType):
-    def __init__(self, name, elts=None):
+    def __init__(self, name, elts=None, fields=()):
         self.name = name
-        if elts is not None: return self.init(elts)
-        self.elts = None
-    def init(self, elts):
+        if elts is not None: return self.init(elts, fields)
+        self.elts = None; self.fields = {}
+    def init(self, elts, fields=()):
         self.elts = elts; self.eltSize = sum(elt.size() for elt in elts)
+        assert len(fields) <= len(elts), (fields, elts)
+        self.fields = dict((fname, idx) for idx, fname in enumerate(fields)
+                            if fname is not None)
     def contains(self, ty, tenv=None): return ty is self
     def checkValid(self):
         if self.elts is None:
             typeErr(None, "attempted to use undefined tag: '%s'"%self.name)
     def numIndices(self): self.checkValid(); return len(self.elts)
     def index(self, idx): self.checkValid(); return struct_index(self, idx)
+    def fieldIndex(self, fname): return self.fields.get(fname)
     def new(self, *args):
         self.checkIndex(len(args), 'invalid number of constructor args', True)
         mem = mem_alloc(self.eltSize)

@@ -34,7 +34,7 @@ def mapRest(f, ctx, xs):
     attr0 += [ctx.attr]*(len(xs0)-len(attr0))
     return [f(ctx, aa, xx) for aa, xx in zip(attr0, xs0)]
 def checkIsForm(ctx, xs): return anyTy.contains(getTy(xs)) # todo
-def scRoot(ctx, form): return synclo_new(toEnv(ctx.senv), nil, form) # todo: senv
+def scRoot(ctx, form): return synclo_new(toCtx(ctx), nil, form) # todo: senv
 def expandBasic(tyn):
     def ex(ctx, val):
         ubval = toList((symbol('#unbox'), val))
@@ -46,7 +46,7 @@ litExpanders = dict((ty, expandBasic(ty.name))
 def expand(ctx, xs):
     while True:
         checkIsForm(ctx, xs) 
-        ctx.senv, xs = syncloExpand(ctx.senv, xs)
+        ctx, xs = syncloExpand(ctx, xs)
         ctx.histAppend(xs)
         if isListCons(xs):
             hdCtx, hd = headSubCtx(expand, ctx, xs)
@@ -60,8 +60,7 @@ def expand(ctx, xs):
                             xs = applyMacro(ctx, val, cons(hd, cons_tail(xs)))
                             continue
             def wrap(ctx_, xx):
-                if ctx_.senv is not ctx.senv:
-                    xx = synclo_new(toEnv(ctx_.senv), nil, xx)
+                if ctx_ != ctx: xx = synclo_new(toCtx(ctx_), nil, xx)
                 return xx
             def wrapSub(ctx, aa, xx):
                 return aa, wrap(*withSubCtx(expand, ctx, aa, xx))
@@ -77,23 +76,20 @@ def expand(ctx, xs):
         break
     return ctx, xs
 
-def syncloExCtx(ctx, expr):
-    ctx.senv, expr = syncloExpand(ctx.senv, expr)
-    return ctx, expr
-def semantize(ctx, xs):
-    ctx, xs = expand(ctx, xs)
+def _semantize(ctx, xs):
+    ctx, xs = syncloExpand(ctx, xs)
     checkIsForm(ctx, xs)
     if isListCons(xs):
-        hdCtx, hd = headSubCtx(syncloExCtx, ctx, xs)
+        hdCtx, hd = headSubCtx(syncloExpand, ctx, xs)
         if isSymbol(hd):
             den = hdCtx.senv.get(EnvKey(hd))
             if den is not None:
                 val = hdCtx.env.get(EnvKey(den))
                 if val is not None and isSemantic(val):
                     return applySemantic(ctx, val, cons(hd, cons_tail(xs)))
-        def semSub(ctx, aa, xx): return withSubCtx(semantize, ctx, aa, xx)
+        def semSub(ctx, aa, xx): return withSubCtx(_semantize, ctx, aa, xx)
         rest = [expr for _,expr in mapRest(semSub, ctx, xs)]
-        hdCtx, hd = semantize(hdCtx, hd)
+        hdCtx, hd = _semantize(hdCtx, hd)
         if isinstance(hd, Apply): hd.args.extend(rest); return ctx, hd
         else: return ctx, Apply(hd, rest)
     elif isSymbol(xs):
@@ -103,6 +99,7 @@ def semantize(ctx, xs):
     elif xs is nil: return ctx, Var(EnvKey(unitDen))
     else: typeErr(ctx, "invalid symbolic expression: '%s'"%pretty(xs))
 
+def semantize(ctx, xs): return _semantize(*expand(ctx, xs))
 def evaluate(ctx, xs, tag=None):
     ctx, xs = semantize(ctx, xs); return evalExpr(ctx, xs, tag)
 
