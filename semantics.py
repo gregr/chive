@@ -111,7 +111,8 @@ def semproc(name):
     return install
 def primproc(name, *tys):
     def install(f):
-        addPrim(name, fproc_new(name, f, curryProcType(tys[:-1], tys[-1])))
+        pty = currySpecificProcType(name, tys[:-1], tys[-1])
+        addPrim(name, fproc_new(name, f, pty))
         return f
     return install
 def stripOuterSynClo(xs):
@@ -119,7 +120,7 @@ def stripOuterSynClo(xs):
     return xs
 @semproc('#unbox')
 def semUnbox(ctx, form):
-    form = stripOuterSynClo(cons_head(cons_tail(form))); ty = getTy(form)  
+    form = stripOuterSynClo(cons_head(cons_tail(form))); ty = getTy(form)
     if ty in (symTy, intTy, floatTy, charTy):
         return ctx, PrimVal(ty.unpackEl(form, 0))
     else: typeErr(ctx, "cannot unbox non-literal: '%s'"%form)

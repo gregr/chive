@@ -13,11 +13,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+tags that semantically expand into constructors/CAFs (needs env-lookup)
+values that know how to present themselves to Switch (implicit node-tag)
 exprs: change expand to a proc; eliminate eval; add letrec
-tag unions
+dynamic dispatch
 guard against infinite recursion in pretty-printing
 AST pretty-printing
 structs/tuples
+modules
+records/row-typing
+reader macros
 
 ================================================================
 = disorganized ideas
@@ -33,16 +38,13 @@ structs/tuples
 
 # how are modules loaded?
 
-env-new env
-env-add env sym val
-env-get env sym conseq altern?
+binding and aliasing
 
 array-new
 array-length
 array-unpack/pack
 
 gensym
-alias
 
 ffi?:
 networking

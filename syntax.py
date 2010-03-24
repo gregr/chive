@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from lex import SrcAttr, tokens
-from data import (nodeTy, isSymbol, symbol, Env, EnvKey, toList, fromList, pretty,
+from data import (prodTy, isSymbol, symbol, Env, EnvKey, toList, fromList, pretty,
                   makeStream)
 from type import *
 from itertools import chain
@@ -27,7 +27,7 @@ tokToAtomCons = dict(
     literal=(lambda _,tok: tok.val),
     )
 ubAttrTy = PyType('#Attr', SrcAttr)
-attrTy = nodeTy('Attr', ubAttrTy)
+attrTy = prodTy('Attr', ubAttrTy)
 def toAttr(at): return attrTy.new(ubAttrTy.new(at))
 def fromAttr(at): return getVal(attrTy.unpackEl(at, 0))
 def makeAtom(opsTable, tok):

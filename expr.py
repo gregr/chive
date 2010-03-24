@@ -44,7 +44,7 @@ class ConsProc(Constr):
             binders += body.proc.binders
             body = body.proc.code
         self.proc = NativeProc(name, body, binders)
-        self.ty = curryProcType(paramts, rett) 
+        self.ty = currySpecificProcType(name, paramts, rett) 
     def eval(self, ctx):
         return final(self.ty.new(PartialApp(NativeClosure(self.proc, ctx), (),
                      self.ty)))
@@ -99,15 +99,16 @@ class NodePack(NodeAccess):
 # todo: array access
 
 ################################################################
-class Seq(Expr):
-    def __init__(self, exprs): self.exprs = exprs[:-1]; self.last = exprs[-1]
-    def eval(self, ctx):
-        for expr in self.exprs: evalExpr(ctx, expr)
-        return cont(ctx, self.last)
+#class Seq(Expr): # todo: replace with a macro-generated proc?
+#    def __init__(self, exprs): self.exprs = exprs[:-1]; self.last = exprs[-1]
+#    def eval(self, ctx):
+#        for expr in self.exprs: evalExpr(ctx, expr)
+#        return cont(ctx, self.last)
 class Apply(Expr):
     def __init__(self, proc, args): self.proc = proc; self.args = args
     def eval(self, ctx): return applyFull(ctx, self.proc, self.args)
-class Switch(Expr):
+# todo: extensible dispatch-proc?
+class Switch(Expr): 
     def __init__(self, discrimTy, discrim, default, alts):
         self.discrimTy = discrimTy
         self.discrim = discrim; self.default = default; self.alts = alts
@@ -117,8 +118,8 @@ class Switch(Expr):
         if body is None: body = self.default
         return cont(ctx, body)
 class Let(Expr):
-    def __init__(self, immed, synt, nonrec, rec, body):
-        self.immed = immed; self.synt = synt # compile-time bindings
+    def __init__(self, immed, nonrec, rec, body):
+        self.immed = immed # compile-time bindings
         self.nonrec = nonrec; self.rec = rec # run-time bindings
         self.body = body
     def eval(self, ctx):
@@ -161,18 +162,17 @@ class NativeProc:
         return self.code.eval(ctx)
 class NativeClosure:
     def __init__(self, proc, ctx): self.proc = proc; self.ctx = ctx
+    def __str__(self): return self.proc.name
     def call(self, args): return self.proc.call(self.ctx, args)
-    def desc(self): return self.proc.name
 class ForeignProc:
     def __init__(self, name, code): self.name = name; self.code = code
+    def __str__(self): return self.name
     def call(self, args): return self.code(*args)
-    def desc(self): return self.name
 class PartialApp:
     def __init__(self, proc, saved, ty):
         self.proc = proc; self.saved = saved; self.ty = ty
     def __repr__(self):
-        return '<PApp %s %s>'%(self.proc.desc(),
-                               tuple(map(pretty, self.saved)))
+        return '<PApp %s %s>'%(self.proc, tuple(map(pretty, self.saved)))
     def apply(self, ctx, args):
         nextTy, argts, nextArity = self.ty.appliedTy(len(args))
         saved = self.saved+tuple(evalExpr(ctx, arg, argt)
@@ -191,15 +191,14 @@ def applyFull(ctx, proc, args):
 
 ################################################################
 # macros and semantics
-macroTy = nodeTy('Macro', curryProcType((anyTy, anyTy), anyTy))
+macroTy = prodTy('Macro', curryProcType((anyTy, anyTy), anyTy))
 def isMacro(v): return isTyped(v) and getTy(v) is macroTy
 def macro_proc(mac): return macroTy.unpackEl(mac, 0)
 def applyMacro(ctx, mac, form):
     return evalExpr(*applyFull(ctx, macro_proc(mac), [toCtx(ctx), form]))
 ubSemanticTy = ScalarType('#Semantic')
-semanticTy = nodeTy('Semantic', ubSemanticTy)
+semanticTy = prodTy('Semantic', ubSemanticTy)
 def isSemantic(v): return isTyped(v) and getTy(v) is semanticTy
 def semantic_new(sproc): return node(semanticTy, ubSemanticTy.new(sproc))
 def semantic_proc(sm): return getVal(semanticTy.unpackEl(sm, 0))
 def applySemantic(ctx, sem, form): return semantic_proc(sem)(ctx, form)
-

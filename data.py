@@ -24,7 +24,7 @@ def ubSymbol_new(n):
     sd = (n, nextSymId)
     nextSymId += 1
     return sd
-symTy = NodeType('Symbol', (ubSymTy,))
+symTy = ProductType('Symbol', (ubSymTy,))
 def isSymbol(v): return getTy(v) is symTy
 def symbol_new(n): return symTy.new(ubSymTy.new(ubSymbol_new(n)))
 def symbol_prim(s): return getVal(symTy.unpackEl(s, 0))
@@ -88,21 +88,21 @@ ubTagTy = PyType('#Tag', Type)
 def addPrimTag(name, tag): addPrim(name, ubTagTy.new(tag))
 addPrimTag('Symbol-tag', symTy)
 addPrimTag('Any-tag', anyTy)
-def nodeTy(name, *elts):
-    tag = NodeType(name, elts); addPrimTag(name+'-tag', tag); return tag
+def prodTy(name, *elts):
+    tag = ProductType(name, elts); addPrimTag(name+'-tag', tag); return tag
 def node(ty, *args): return ty.new(*args)
 def singleton(name):
-    ty = nodeTy(name); val = ty.new(); addPrim(name, val); return ty, val
+    ty = prodTy(name); val = ty.new(); addPrim(name, val); return ty, val
 unitTy, unit = singleton('Unit')
 unitDen = primDen('Unit')
 ubEnvTy = PyType('#Env', Env)
-envTy = nodeTy('Env', ubEnvTy)
+envTy = prodTy('Env', ubEnvTy)
 def toEnv(e): return node(envTy, ubEnvTy.new(e))
 def fromEnv(e): return getVal(envTy.unpackEl(e, 0))
 
 ################################################################
 # syntactic closures
-syncloTy = nodeTy('SynClo', envTy, anyTy, anyTy) # todo
+syncloTy = prodTy('SynClo', envTy, anyTy, anyTy) # todo
 def isSynClo(s): return getTy(s) is syncloTy
 def synclo_new(senv, frees, form): return syncloTy.new(senv, frees, form)
 def synclo_senv(s): return syncloTy.unpackEl(s, 0)
@@ -127,7 +127,7 @@ def syncloExpand(senv, xs):
 ################################################################
 # lists
 nilTy, nil = singleton('Nil')
-consTy = nodeTy(':', anyTy, anyTy) # todo
+consTy = prodTy(':', anyTy, anyTy) # todo
 def cons(h, t): return consTy.new(h, t)
 def cons_head(x): return consTy.unpackEl(x, 0)
 def cons_tail(x): return consTy.unpackEl(x, 1)
@@ -146,7 +146,7 @@ def fromList(xs):
 # basic values
 def basicTy(name, pyty):
     ubTy = PyType('#'+name, pyty); addPrimTag('#'+name, ubTy)
-    ty = nodeTy(name, ubTy)
+    ty = prodTy(name, ubTy)
 #    def isX(v): return node_tag(v) is tag
     def toX(v): return ty.new(ubTy.new(v))
     def fromX(v): return getVal(ty.unpackEl(v, 0))
@@ -160,7 +160,7 @@ ubCharTy, charTy, toChar, fromChar = basicTy('Char', str)
 
 ################################################################
 # strings
-#stringTy = nodeTy('String', None) # todo
+#stringTy = prodTy('String', None) # todo
 def toString(v): return node(stringTy, v)
 #def fromString(v): assert isString(v), v; return v[1]
 
@@ -201,16 +201,15 @@ tagToPretty = {nilTy: prettyList, consTy: prettyList,
                }
 def pretty(v):
     if isTyped(v):
-        if isProc(v):
-            return '<(%s) %s>'%(getTy(v).desc(), getVal(v))
+#        if isProc(v): return '<(%s) %s>'%(getTy(v), getVal(v))
         pp = tagToPretty.get(getTy(v))
         if pp is None:
-            if isNode(v):
+            if isinstance(getTy(v), ProductType):
                 ty = getTy(v)
                 els = ' '.join(pretty(ty.unpackEl(v, idx))
                                for idx in range(ty.numIndices()))
-                return '(%s %s)'%(ty.desc(), els)
-            return '<%s %s>'%(getTy(v).desc(), getVal(v))
+                return '(%s %s)'%(ty, els)
+            return '<%s %s>'%(getTy(v), getVal(v))
         else: return pp(v)
     else: return '<ugly %s>'%repr(v)
 
@@ -248,7 +247,7 @@ class Context:
     def copy(self):
         return Context(self.root, self.mod, self.senv, self.env, self.hist)
     def histAppend(self, form): self.hist = cons(form, self.hist)
-# ctxTy = nodeTy('Context', 2)#4)
+# ctxTy = prodTy('Context', 2)#4)
 # def toCtx(ctx): return node(#toRoot(ctx.root), toMod(ctx.mod),
 #                             toEnv(ctx.senv), toEnv(ctx.env))
 def primCtx():
