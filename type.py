@@ -133,7 +133,9 @@ class AnyType(BoxedType):
 anyTy = AnyType()
 #def isNode(v): return isTyped(v) and anyTy.contains(getTy(v))
 class VariantType(BoxedType):
-    def __init__(self, elts):
+    def __init__(self, elts=None):
+        if elts is not None: self.init(elts)
+    def init(self, elts):
         assert all(isinstance(elt, NodeType) for elt in elts), elts
         self.elts = elts
     def __str__(self): return '(%s)'%'|'.join(str(elt) for elt in self.elts)
@@ -169,7 +171,9 @@ class ProductType(NodeType):
         return typed(self, mem)
     def __str__(self): return str(self.name)
 class ProcType(NodeType):
-    def __init__(self, inTy, outTy): self.inTy = inTy; self.outTy = outTy
+    def __init__(self, inTy=None, outTy=None):
+        if outTy is not None: self.init(inTy, outTy)
+    def init(self, inTy, outTy): self.inTy = inTy; self.outTy = outTy
     def contains(self, ty, tenv=None):
         return (isProc(ty) and ty.inTy.contains(self.inTy, tenv) and
                 self.outTy.contains(ty.outTy, tenv))

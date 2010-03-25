@@ -14,8 +14,85 @@
 
 from data import *
 
+# (variant (...))
+# (product (...))
+# (proc IN OUT)
+# tyname
+# (tyname fieldname)
+variantK = symbol('#variant')
+prodK = symbol('#product')
+procK = symbol('#proc')
+def prepVariantTy(ctx, name, body):
+    if len(body) != 1 or not isListCons(body[0]):
+        typeErr(ctx, "invalid variant type: '%s'"%body)
+    body = body[0]
+    ty = VariantType()
+    def prep(): ty.init(tuple(buildTy(elt) for elt in body))
+    return ty, prep
+def prepProductTy(ctx, name, body):
+    if len(body) != 1 or not isListCons(body[0]):
+        typeErr(ctx, "invalid product type: '%s'"%body)
+    body = body[0]
+    if name is None: typeErr(ctx, "product type requires a name: '%s'"%body)
+    ty = ProductType(name)
+    def prep():
+        elts = []; fields = []
+        for elt in body:
+            if not isListCons(elt):
+                elts.append(checkTyName(ctx, elt, False))
+                fields.append(None)
+            else:
+                elt = fromList(elt)
+                if (len(elt) == 2 and
+                    not isSymbol(checkTyName(ctx, elt[0], False))):
+                    if not isSymbol(elt[1]):
+                        typeErr(ctx, "invalid field name: '%s'"%elt[1])
+                    elts.append(buildTy(ctx, elt[0]))
+                    fields.append(EnvKey(elt[1]))
+                else: elts.append(buildTy(ctx, elt)); fields.append(None)
+        ty.init(elts, fields)
+    return ty, prep
+def prepProcTy(ctx, name, body):
+    if len(body) != 2: typeErr(ctx, "invalid proc type: '%s'"%body)
+    inTy, outTy = body
+    ty = ProcType()
+    def prep(): ty.init(buildTy(ctx, inTy), buildTy(ctx, outTy))
+    return ty, prep
+kindPrep = {
+    variantK: prepVariantTy,
+    prodK: prepProductTy,
+    procK: prepProcType,
+}
+def buildTy(ctx, body, name=None):
+    if isListCons(body):
+        body = fromList(body)
+        tprep = kindPrep.get(body[0])
+        if tprep is None: typeErr(ctx, "invalid kind: '%s'"%body[0])
+        ty, prep = tprep(ctx, name, body[1:])
+        if name is not None: addTyName(ctx, name, ty); return prep
+        else: prep(); return ty
+    elif name is None: return checkTyName(ctx, body, False)
+    typeErr(ctx, "mislocated type alias '%s'"%name)
+def addTyName(ctx, name, ty):
+    aname = alias_new(name)
+    ctx.tenv.add(EnvKey(name), aname); ctx.env.add(EnvKey(aname), ty)
+def checkTyName(ctx, name, new=True):
+    if isSymbol(name):
+        if new: return None
+        name = ctx.tenv.get(EnvKey(name))
+        if name is not None:
+            ty = ctx.env.get(EnvKey(name))
+            if ty is not None: return ty
+    typeErr(ctx, "invalid type name: '%s'"%name)
+def defineTypes(ctx, texprs):
+    assert len(texprs) > 0
+    defs = []
+    for name, body in zip(texprs):
+        checkTyName(ctx, name)
+        defs.append(buildTy(ctx, body, name))
+    for prep in defs: prep()
 
-class ConsNodeTy(Constr):
+class ConsTypes(Constr): # todo: replace with above
     def __init__(self, name, els): self.name = name; self.els = els
     def eval(self, ctx):
         elts = []
@@ -34,7 +111,6 @@ class ConsNodeTy(Constr):
                 typeErr(ctx, "name already in use: '%s'"%self.name)
             tag.__init__(str(self.name), elts = elts)
         return final(tag)
-class ConsArrayTy(Constr): pass
 class ConsArray(Constr): pass
 
 ################################################################
