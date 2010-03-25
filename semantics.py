@@ -38,8 +38,7 @@ def scRoot(ctx, form): return synclo_new(toCtx(ctx), nil, form) # todo: senv
 def expandBasic(tyn):
     def ex(ctx, val):
         ubval = toList((symbol('#unbox'), val))
-        return ctx, scRoot(ctx, toList([symbol('#node'), symbol(tyn+'-tag'),
-                                        ubval]))
+        return ctx, scRoot(ctx, toList([symbol(tyn), ubval]))
     return ex
 litExpanders = dict((ty, expandBasic(ty.name))
                     for ty in (intTy,floatTy,charTy))
@@ -96,7 +95,8 @@ def _semantize(ctx, xs):
         den = ctx.senv.get(EnvKey(xs))
         if den is None: den = alias_new(xs); ctx.senv.add(EnvKey(den), xs)
         return ctx, Var(EnvKey(den))
-    elif xs is nil: return ctx, Var(EnvKey(unitDen))
+    elif xs is nil:
+        return ctx, Var(EnvKey(unitDen))
     else: typeErr(ctx, "invalid symbolic expression: '%s'"%pretty(xs))
 
 def semantize(ctx, xs): return _semantize(*expand(ctx, xs))
@@ -121,14 +121,16 @@ def semUnbox(ctx, form):
     if ty in (symTy, intTy, floatTy, charTy):
         return ctx, PrimVal(ty.unpackEl(form, 0))
     else: typeErr(ctx, "cannot unbox non-literal: '%s'"%form)
+def toTy(ctx, form):
+    ctx, form = expand(ctx, form)
+    if not isSymbol(form): typeErr(ctx, "invalid type name: '%s'"%form)
+    return ctx.env.get(EnvKey(ctx.tenv.get(EnvKey(form))))
 @semproc('#node')
 def semNode(ctx, form):
     cargs = [semantize(ctx, carg)[1]
              for carg in fromList(cons_tail(cons_tail(form)))]
-    ty = getVal(evaluate(ctx, cons_head(cons_tail(form)), ubTagTy))
+    ty = toTy(ctx, cons_head(cons_tail(form)))
     return ctx, ConsNode(ty, cargs, ctx)
-@primproc('#node-tag', anyTy, ubTagTy)
-def procNodeTag(node): return final(ubTagTy.new(getTy(node)))
 def semArgs(ctx, form, numArgs):
     args = tuple(fromList(cons_tail(form)))
     if len(args) != numArgs:
@@ -136,7 +138,7 @@ def semArgs(ctx, form, numArgs):
                 (pretty(cons_head(form)), numArgs, len(args)))
     return args
 def semNodeAccess(ctx, ty, idx, node):
-    ty = getVal(evaluate(ctx, ty, ubTagTy))
+    ty = toTy(ctx, ty)
     idx = evaluate(ctx, idx, intTy)
     ndCtx, node = semantize(ctx, node)
     return ty, fromInt(idx), node, ctx

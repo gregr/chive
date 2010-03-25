@@ -169,12 +169,12 @@ class ProcType(NodeType):
     def contains(self, ty, tenv=None):
         return (isProc(ty) and ty.inTy.contains(self.inTy, tenv) and
                 self.outTy.contains(ty.outTy, tenv))
-    def appliedTy(self, remainingApps):
+    def appliedTy(self, remainingApps, arity):
         ty = self; argts = []
-        while remainingApps != 0:
-            if not isinstance(ty, ProcType): break
-            argts.append(ty.inTy); ty = ty.outTy; remainingApps -= 1
-        return ty, argts, remainingApps
+        while remainingApps != 0 and arity != 0:
+            assert isinstance(ty, ProcType), ty
+            argts.append(ty.inTy); ty = ty.outTy; remainingApps-=1; arity-=1
+        return ty, argts, arity
     def __str__(self): return '%s -> %s'%(self.inTy, self.outTy)
 def isProc(v): return isTyped(v) and isinstance(getTy(v), ProcType)
 procType = cachedType(ProcType)
@@ -185,7 +185,7 @@ class SpecificProcType(ProcType):
     def __init__(self, name, *args): super().__init__(*args); self.name = name
     def contains(self, ty, tenv=None): return self is ty
     def new(self, proc): return typed(self, proc)
-    def __str__(self): return str(self.name)
+    def __str__(self): return ('%s::(%s)')%(str(self.name), super().__str__())
 def currySpecificProcType(name, paramts, rett):
     return curryProcType(paramts, rett,
                          (lambda *args: SpecificProcType(name, *args)))

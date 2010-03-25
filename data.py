@@ -14,6 +14,27 @@
 
 from type import *
 
+def final(val): return None, val
+def cont(ctx, expr): return ctx, expr
+def evalExpr(ctx, expr, ty=None): # tail-call trampoline
+    while ctx is not None: ctx, expr = expr.eval(ctx)
+    if ty is not None: ty.checkTy(expr)
+    return expr # when ctx is None, expr will be a final value
+class Expr:
+    def pretty(self): return 'todo'
+
+################################################################
+class Atom(Expr): pass
+class PrimVal(Atom):
+    def __init__(self, val): self.val = val
+    def eval(self, ctx): return final(self.val)
+class Var(Atom):
+    def __init__(self, name): self.name = name
+    def eval(self, ctx):
+        val = ctx.env.get(self.name)
+        if val is None: typeErr(ctx, "unbound variable '%s'"%self.name)
+        return final(val)
+
 ################################################################
 # symbols
 ubSymTy = ScalarType('#Symbol')
@@ -78,23 +99,110 @@ class EnvKey:
     def __str__(self): return prettySymbol(self.sym)
 
 ################################################################
+# procs
+class NativeProc:
+    def __init__(self, name, code, binders):
+        self.name = name; self.code = code; self.binders = binders
+    def call(self, ctx, args):
+        ctx = ctx.copy(); ctx.env = Env(ctx.env)
+        for binder, arg in zip(self.binders, args): ctx.env.add(binder, arg)
+        return self.code.eval(ctx)
+    def arity(self): return len(self.binders)
+class NativeClosure:
+    def __init__(self, proc, ctx): self.proc = proc; self.ctx = ctx
+    def __str__(self): return self.proc.name
+    def call(self, args): return self.proc.call(self.ctx, args)
+    def arity(self): return self.proc.arity()
+class ForeignProc:
+    def __init__(self, name, code, argc):
+        self.name = name; self.code = code; self.argc = argc
+    def __str__(self): return self.name
+    def call(self, args): return self.code(*args)
+    def arity(self): return self.argc
+class PartialApp:
+    def __init__(self, proc, saved, ty):
+        self.proc = proc; self.saved = saved; self.ty = ty
+    def __repr__(self):
+        return '<PApp %s %s>'%(self.proc, tuple(map(pretty, self.saved)))
+    def arity(self): return self.proc.arity()-len(self.saved)
+    def apply(self, ctx, args):
+        nextTy, argts, nextArity = self.ty.appliedTy(len(args), self.arity())
+        saved = self.saved+tuple(evalExpr(ctx, arg, argt)
+                                 for argt, arg in zip(argts, args))
+        if nextArity == 0: return self.proc.call(saved), args[len(argts):]
+        return final(nextTy.new(PartialApp(self.proc, saved, nextTy))), ()
+def proc_new(proc, ctx, ty):
+    return ty.new(PartialApp(NativeClosure(proc, ctx), (), ty))
+def fproc_new(name, code, ty):
+    return ty.new(PartialApp(ForeignProc(name, code), (), ty))
+def applyFull(ctx, proc, args):
+    cprc = cont(ctx, proc)
+    while args:
+        proc = evalExpr(*cprc) # lifted out here for tail-calls
+        if isProc(proc): cprc, args = getVal(proc).apply(ctx, args)
+        else: typeError(ctx, "cannot apply non-procedure: '%s'"%proc)
+    return cprc
+
+################################################################
+class Constr(Expr): pass
+class ConsProc(Constr):
+    def __init__(self, name, binders, body, paramts, rett):
+        if isinstance(body, ConsProc): # combine adjacently-nested ConsProcs
+            binders += body.proc.binders; body = body.proc.code
+        self.proc = NativeProc(name, body, binders)
+        self.ty = currySpecificProcType(name, paramts, rett)
+    def eval(self, ctx): return final(proc_new(self.proc, ctx, self.ty))
+class ConsNode(Constr):
+    def __init__(self, ty, cargs, ctx=None):
+        if not isinstance(ty, ProductType):
+            typeErr(ctx, "invalid product type: '%s'"%ty)
+        ty.checkIndex(len(cargs),
+                      'incorrect number of constructor arguments:', True)
+        self.ty = ty; self.cargs = cargs
+    def eval(self, ctx):
+        cargs = [evalExpr(ctx, carg) for carg in self.cargs]
+        return final(node(self.ty, *cargs))
+def constr_new(ctx, ty):
+    assert isinstance(ty, ProductType), ty
+    cargs = [EnvKey(gensym()) for elt in ty.elts]
+    cty = currySpecificProcType(ty.name, ty.elts, ty)
+    body = ConsNode(ty, [Var(nm) for nm in cargs], ctx)
+    return proc_new(NativeProc(cty.name, body, cargs), ctx, cty)
+
+################################################################
 # primitives
-primitives = {}
-def addPrim(name, val):
-    sym = symbol(name); den = alias_new(sym); nm = EnvKey(sym)
-    assert nm not in primitives, name; primitives[nm] = (den, val)
+def populator():
+    population = {}
+    def adder(name, val):
+        sym = symbol(name); den = alias_new(sym); nm = EnvKey(sym)
+        assert nm not in population, name; population[nm] = (den, val)
+    return population, adder
+primitives, addPrim = populator()
+primTypes, addPrimTy = populator()
 def primDen(name): return primitives.get(EnvKey(symbol(name)))[0]
 ubTagTy = PyType('#Tag', Type)
-def addPrimTag(name, tag): addPrim(name, ubTagTy.new(tag))
-addPrimTag('Symbol-tag', symTy)
-addPrimTag('Any-tag', anyTy)
+addPrimTy('Symbol', symTy)
+addPrimTy('Any', anyTy)
 def prodTy(name, *elts):
-    tag = ProductType(name, elts); addPrimTag(name+'-tag', tag); return tag
+    ty = ProductType(name, elts); addPrimTy(name, ty); return ty
 def node(ty, *args): return ty.new(*args)
 def singleton(name):
     ty = prodTy(name); val = ty.new(); addPrim(name, val); return ty, val
 unitTy, unit = singleton('Unit')
 unitDen = primDen('Unit')
+
+################################################################
+# basic values
+def basicTy(name, pyty):
+    ubTy = PyType('#'+name, pyty); addPrimTy('#'+name, ubTy)
+    ty = prodTy(name, ubTy)
+#    def isX(v): return node_tag(v) is tag
+    def toX(v): return ty.new(ubTy.new(v))
+    def fromX(v): return getVal(ty.unpackEl(v, 0))
+    return ubTy, ty, toX, fromX
+ubIntTy, intTy, toInt, fromInt = basicTy('Int', int)
+ubFloatTy, floatTy, toFloat, fromFloat = basicTy('Float', float)
+ubCharTy, charTy, toChar, fromChar = basicTy('Char', str)
 
 ################################################################
 # lists
@@ -117,25 +225,31 @@ def fromList(xs):
 ################################################################
 # contexts
 class Context:
-    def __init__(self, root, mod, senv, env, attr, hist=nil):
-        self.root = root; self.mod = mod; self.senv = senv; self.env = env
+    def __init__(self, root, mod, tenv, senv, env, attr, hist=nil):
+        self.root = root; self.mod = mod
+        self.tenv = tenv; self.senv = senv; self.env = env
         self.attr = attr; self.hist = hist
-    def __eq__(self, rhs): return self.senv is rhs.senv
+    def __eq__(self, rhs):
+        return self.tenv is rhs.tenv and self.senv is rhs.senv
     def copy(self):
-        return Context(self.root, self.mod, self.senv, self.env, self.hist)
+        return Context(self.root, self.mod, self.tenv, self.senv, self.env,
+                       self.attr, self.hist)
     def histAppend(self, form): self.hist = cons(form, self.hist)
-ubCtxTy = PyType('#Ctx', Context)
-ctxTy = prodTy('Ctx', ubCtxTy)
-def toCtx(e): return node(ctxTy, ubCtxTy.new(e))
-def fromCtx(e): return getVal(ctxTy.unpackEl(e, 0))
+ubCtxTy, ctxTy, toCtx, fromCtx = basicTy('Ctx', Context)
 
 def primCtx():
-    senv = Env(); env = Env()
+    tenv = Env(); senv = Env(); env = Env()
+    ctx = Context(None, None, tenv, senv, env, None)
     print('adding primitives:')
     for name, (den, val) in primitives.items():
-        print(name)
-        sym = name.sym; senv.add(EnvKey(sym), den); env.add(EnvKey(den), val)
-    return Context(None, None, senv, env, None)
+        print(name); senv.add(name, den); env.add(EnvKey(den), val)
+    print('adding primitive types:')
+    for name, (den, ty) in primTypes.items():
+        print(name); tenv.add(name, den); env.add(EnvKey(den), ty)
+        if isinstance(ty, ProductType) and ty.elts:
+            den = alias_new(name.sym)
+            senv.add(name, den); env.add(EnvKey(den), constr_new(ctx, ty))
+    return ctx
 
 ################################################################
 # syntactic closures
@@ -146,31 +260,17 @@ def synclo_ctx(s): return syncloTy.unpackEl(s, 0)
 def synclo_frees(s): return syncloTy.unpackEl(s, 1)
 def synclo_form(s): return syncloTy.unpackEl(s, 2)
 def applySynCloCtx(ctx, sc):
-    new = fromCtx(synclo_ctx(sc)).senv
+    scCtx = fromCtx(synclo_ctx(sc)); senv = scCtx.senv
     frees = fromList(synclo_frees(sc))
     if frees:
-        new = Env(new)
+        senv = Env(senv)
         for n in frees:
-            n = EnvKey(n)
-            v = ctx.senv.get(n)
-            if v is not None: new.extend(n, v)
-    ctx.senv = new; return ctx
+            n = EnvKey(n); v = ctx.senv.get(n)
+            if v is not None: senv.extend(n, v)
+    ctx.tenv = scCtx.tenv; ctx.senv = senv; return ctx
 def syncloExpand(ctx, xs):
     while isSynClo(xs): ctx = applySynCloCtx(ctx, xs); xs = synclo_form(xs)
     return ctx, xs
-
-################################################################
-# basic values
-def basicTy(name, pyty):
-    ubTy = PyType('#'+name, pyty); addPrimTag('#'+name, ubTy)
-    ty = prodTy(name, ubTy)
-#    def isX(v): return node_tag(v) is tag
-    def toX(v): return ty.new(ubTy.new(v))
-    def fromX(v): return getVal(ty.unpackEl(v, 0))
-    return ubTy, ty, toX, fromX
-ubIntTy, intTy, toInt, fromInt = basicTy('Int', int)
-ubFloatTy, floatTy, toFloat, fromFloat = basicTy('Float', float)
-ubCharTy, charTy, toChar, fromChar = basicTy('Char', str)
 
 ################################################################
 # arrays
@@ -180,6 +280,20 @@ ubCharTy, charTy, toChar, fromChar = basicTy('Char', str)
 #stringTy = prodTy('String', None) # todo
 def toString(v): return node(stringTy, v)
 #def fromString(v): assert isString(v), v; return v[1]
+
+################################################################
+# macros and semantics
+macroTy = prodTy('Macro', curryProcType((anyTy, anyTy), anyTy))
+def isMacro(v): return isTyped(v) and getTy(v) is macroTy
+def macro_proc(mac): return macroTy.unpackEl(mac, 0)
+def applyMacro(ctx, mac, form):
+    return evalExpr(*applyFull(ctx, macro_proc(mac), [toCtx(ctx), form]))
+ubSemanticTy = ScalarType('#Semantic')
+semanticTy = prodTy('Semantic', ubSemanticTy)
+def isSemantic(v): return isTyped(v) and getTy(v) is semanticTy
+def semantic_new(sproc): return node(semanticTy, ubSemanticTy.new(sproc))
+def semantic_proc(sm): return getVal(semanticTy.unpackEl(sm, 0))
+def applySemantic(ctx, sem, form): return semantic_proc(sem)(ctx, form)
 
 ################################################################
 # pretty printing
@@ -254,5 +368,3 @@ class Stream:
 def makeStream(s):
     if not isinstance(s, Stream): s = Stream(s)
     return s
-
-

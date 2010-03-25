@@ -14,40 +14,7 @@
 
 from data import *
 
-def final(val): return None, val
-def cont(ctx, expr): return ctx, expr
-def evalExpr(ctx, expr, ty=None): # tail-call trampoline
-    while ctx is not None: ctx, expr = expr.eval(ctx)
-    if ty is not None: ty.checkTy(expr)
-    return expr # when ctx is None, expr will be a final value
 
-class Expr:
-    def pretty(self): return 'todo'
-
-################################################################
-class Atom(Expr): pass
-class PrimVal(Atom):
-    def __init__(self, val): self.val = val
-    def eval(self, ctx): return final(self.val)
-class Var(Atom):
-    def __init__(self, name): self.name = name
-    def eval(self, ctx):
-        val = ctx.env.get(self.name)
-        if val is None: typeErr(ctx, "unbound variable '%s'"%self.name)
-        return final(val)
-
-################################################################
-class Constr(Expr): pass
-class ConsProc(Constr):
-    def __init__(self, name, binders, body, paramts, rett):
-        if isinstance(body, ConsProc): # combine adjacently-nested ConsProcs
-            binders += body.proc.binders
-            body = body.proc.code
-        self.proc = NativeProc(name, body, binders)
-        self.ty = currySpecificProcType(name, paramts, rett) 
-    def eval(self, ctx):
-        return final(self.ty.new(PartialApp(NativeClosure(self.proc, ctx), (),
-                     self.ty)))
 class ConsNodeTy(Constr):
     def __init__(self, name, els): self.name = name; self.els = els
     def eval(self, ctx):
@@ -67,14 +34,6 @@ class ConsNodeTy(Constr):
                 typeErr(ctx, "name already in use: '%s'"%self.name)
             tag.__init__(str(self.name), elts = elts)
         return final(tag)
-class ConsNode(Constr):
-    def __init__(self, ty, cargs, ctx):
-        ty.checkIndex(len(cargs),
-                      'incorrect number of constructor arguments:', True)
-        self.ty = ty; self.cargs = cargs
-    def eval(self, ctx):
-        cargs = [evalExpr(ctx, carg) for carg in self.cargs]
-        return final(node(self.ty, *cargs))
 class ConsArrayTy(Constr): pass
 class ConsArray(Constr): pass
 
@@ -150,55 +109,3 @@ class Force(Expr): pass # could be a proc (eval then update)
 #     def eval(self, ctx):
 #         ctx, form = expand(*self._evalArgs(ctx))
 #         return final(synclo_new(toCtx(ctx), nil, form))
-
-################################################################
-# procs
-class NativeProc:
-    def __init__(self, name, code, binders):
-        self.name = name; self.code = code; self.binders = binders
-    def call(self, ctx, args):
-        ctx = ctx.copy(); ctx.env = Env(ctx.env)
-        for binder, arg in zip(self.binders, args): ctx.env.add(binder, arg)
-        return self.code.eval(ctx)
-class NativeClosure:
-    def __init__(self, proc, ctx): self.proc = proc; self.ctx = ctx
-    def __str__(self): return self.proc.name
-    def call(self, args): return self.proc.call(self.ctx, args)
-class ForeignProc:
-    def __init__(self, name, code): self.name = name; self.code = code
-    def __str__(self): return self.name
-    def call(self, args): return self.code(*args)
-class PartialApp:
-    def __init__(self, proc, saved, ty):
-        self.proc = proc; self.saved = saved; self.ty = ty
-    def __repr__(self):
-        return '<PApp %s %s>'%(self.proc, tuple(map(pretty, self.saved)))
-    def apply(self, ctx, args):
-        nextTy, argts, nextArity = self.ty.appliedTy(len(args))
-        saved = self.saved+tuple(evalExpr(ctx, arg, argt)
-                                 for argt, arg in zip(argts, args))
-        if nextArity == 0: return self.proc.call(saved), args[len(argts):]
-        return final(nextTy.new(PartialApp(self.proc, saved, nextTy))), ()
-def fproc_new(name, code, ty):
-    return ty.new(PartialApp(ForeignProc(name, code), (), ty))
-def applyFull(ctx, proc, args):
-    cprc = cont(ctx, proc)
-    while args:
-        proc = evalExpr(*cprc) # lifted out here for tail-calls
-        if isProc(proc): cprc, args = getVal(proc).apply(ctx, args)
-        else: typeError(ctx, "cannot apply non-procedure: '%s'"%proc)
-    return cprc
-
-################################################################
-# macros and semantics
-macroTy = prodTy('Macro', curryProcType((anyTy, anyTy), anyTy))
-def isMacro(v): return isTyped(v) and getTy(v) is macroTy
-def macro_proc(mac): return macroTy.unpackEl(mac, 0)
-def applyMacro(ctx, mac, form):
-    return evalExpr(*applyFull(ctx, macro_proc(mac), [toCtx(ctx), form]))
-ubSemanticTy = ScalarType('#Semantic')
-semanticTy = prodTy('Semantic', ubSemanticTy)
-def isSemantic(v): return isTyped(v) and getTy(v) is semanticTy
-def semantic_new(sproc): return node(semanticTy, ubSemanticTy.new(sproc))
-def semantic_proc(sm): return getVal(semanticTy.unpackEl(sm, 0))
-def applySemantic(ctx, sem, form): return semantic_proc(sem)(ctx, form)
