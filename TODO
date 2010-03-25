@@ -13,6 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+data types and aliasing
+generalized packing/unpacking with first-class references
 exprs: change expand to a proc; eliminate eval; add letrec
 dynamic dispatch
 guard against infinite recursion in pretty-printing
@@ -26,12 +28,8 @@ reader macros
 = disorganized ideas
 ================================================================
 
-{Macro proc}
-{Proc ...} # hidden?
-
 {Root tags modules multimethod-tables?...}
 {Module path dependencies dependants exports op-env senv env}
-{Context root module senv env} # and use unpacking for accessors
 #parser hooks? meta-circular debugging and expansion history? tracer hooks?
 
 # how are modules loaded?
