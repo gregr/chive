@@ -72,7 +72,7 @@ class Switch(Expr):
         self.discrimTy = discrimTy
         self.discrim = discrim; self.default = default; self.alts = alts
     def eval(self, ctx):
-        discrim = evalExpr(ctx, self.discrim, self.discrimTy)
+        discrim = getDiscrim(evalExpr(ctx, self.discrim, self.discrimTy))
         body = self.alts.get(discrim)
         if body is None: body = self.default
         return cont(ctx, body)

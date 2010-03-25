@@ -13,9 +13,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
-separate type namespace in contexts; synclo takes ctx rather than senv?
-tags that semantically expand into constructors/CAFs (needs env-lookup)
-values that know how to present themselves to Switch (implicit node-tag)
 exprs: change expand to a proc; eliminate eval; add letrec
 dynamic dispatch
 guard against infinite recursion in pretty-printing
