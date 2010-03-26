@@ -158,7 +158,7 @@ class Parser:
 
 def makeOperator(opsTable, name, attr):
     op = opsTable.get(EnvKey(name))
-    if op is None: op = NullOp(name, False, 0)
+    if op is None: op = NullOp(name, symbol('none'), 0)
     return op
 
 class Operator:

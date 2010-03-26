@@ -222,11 +222,15 @@ def isList(x): return x is nil or isListCons(x)
 def toList(args, tail=nil):
     for x in reversed(args): tail = cons(x, tail)
     return tail
-def fromList(xs):
+def fromList(xs, repeat=None):
     assert isList(xs), xs
     while xs is not nil:
+        if repeat is not None:
+            if id(xs) in repeat: return
+            repeat.append(id(xs))
         yield cons_head(xs)
         xs = cons_tail(xs)
+    if repeat is not None: del repeat[:]
 
 ################################################################
 # contexts
@@ -302,14 +306,20 @@ def applySemantic(ctx, sem, form): return fromSem(sem)(ctx, form)
 
 ################################################################
 # pretty printing
-def prettyList(xs): return '[%s]'%' '.join(pretty(x) for x in fromList(xs))
-def prettySymbol(s): return symbol_name(s)
-def prettySynClo(s): return ('(SynClo <ctx> %s %s)'%
-                             (#synclo_senv(s), # todo: string rep
-                              prettyList(synclo_frees(s)),
-                              pretty(synclo_form(s))))
-def prettyInt(i): return repr(fromInt(i))
-def prettyFloat(f): return repr(fromFloat(f))
+def prettyList(xs, seen):
+    seen.append(id(xs)); shown = []; repeat = []
+    for x in fromList(xs, repeat): shown.append(pretty(x, seen))
+    if repeat: shown.append('...')
+    seen.remove(id(xs)); return '[%s]'%' '.join(shown)
+def prettySymbol(s, _=None): return symbol_name(s)
+def prettySynClo(s, seen):
+    seen.append(id(s))
+    pret = ('(SynClo <ctx> %s %s)'%
+            (#synclo_senv(s), # todo: string rep
+             prettyList(synclo_frees(s), seen), pretty(synclo_form(s), seen)))
+    seen.remove(id(s)); return pret
+def prettyInt(i, _=None): return repr(fromInt(i))
+def prettyFloat(f, _=None): return repr(fromFloat(f))
 escapes = {
     '\a': '\\a',
     '\b': '\\b',
@@ -325,8 +335,9 @@ def escaped(c, delim):
     if cc is not None: return cc
     elif c == delim: return '\\'+delim
     return c
-def prettyChar(c): return "'%s'"%''.join(escaped(c, "'") for c in fromChar(c))
-def prettyString(s):
+def prettyChar(c, _=None): return "'%s'"%''.join(escaped(c, "'")
+                                                 for c in fromChar(c))
+def prettyString(s, _=None):
     return '"%s"'%''.join(escaped(c, '"') for c in fromString(s))
 tagToPretty = {nilTy: prettyList, consTy: prettyList,
                symTy: prettySymbol,
@@ -337,19 +348,17 @@ tagToPretty = {nilTy: prettyList, consTy: prettyList,
                }
 def pretty(v, seen=None):
     if seen is None: seen = []
-    if v in seen: return '...'
-    seen.append(v)
+    if id(v) in seen: return '(...)'
     if isTyped(v):
-#        if isProc(v): return '<(%s) %s>'%(getTy(v), getVal(v))
         pp = tagToPretty.get(getTy(v))
         if pp is None:
             if isinstance(getTy(v), ProductType):
-                ty = getTy(v)
+                seen.append(id(v)); ty = getTy(v)
                 els = ' '.join(pretty(ty.unpackEl(v, idx), seen)
                                for idx in range(ty.numIndices()))
-                return '(%s)'%('%s %s'%(ty, els)).rstrip()
+                seen.remove(id(v)); return '(%s)'%('%s %s'%(ty, els)).rstrip()
             return '<%s %s>'%(getTy(v), getVal(v))
-        else: return pp(v)
+        else: return pp(v, seen)
     else: return '<ugly %s>'%repr(v)
 
 ################################################################

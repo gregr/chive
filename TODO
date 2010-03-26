@@ -25,6 +25,7 @@ reader macros
 ================================================================
 = disorganized ideas
 ================================================================
+(#proc (xs ys) ((#proc (a b) (xs)) (#node-pack \: 1 xs (\: ys (\: ys xs))) (#node-pack \: 1 ys xs))) (\: 1 Nil) (\: 5 Nil)
 
 {Root tags modules multimethod-tables?...}
 {Module path dependencies dependants exports op-env senv env}
