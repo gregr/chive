@@ -17,7 +17,7 @@ from data import *
 class ConsTyExpr:
     def preEval(self): return self.ty
     def eval(self, ctx): raise NotImplementedError
-class ConsTyVar:
+class ConsTyVar(ConsTyExpr):
     def __init__(self, ctx, name):
         den = ctx.tenv.get(EnvKey(name))
         if den is None:
@@ -28,16 +28,22 @@ class ConsTyVar:
         ty = ctx.env.get(self.name)
         if ty is None: typeErr(ctx, "unbound type name: '%s'"%self.name)
         return ty
-class ConsTyProduct:
+# todo: common def-var
+def defVar(ctx, name, val):
+    den = alias_new(name)
+    ctx.senv.add(EnvKey(name), den); ctx.env.add(EnvKey(den), val)
+class ConsTyProduct(ConsTyExpr):
     def __init__(self, ctx, name, elts, fields):
-        self.ty = ProductType(name); self.elts = elts; self.fields
         assert len(elts) >= len(fields), (elts, fields)
+        self.ty = ProductType(name); self.elts = elts; self.fields = fields
     def eval(self, ctx):
-        self.ty.init(tuple(elt.eval(ctx) for elt in self.elts), fields)
-        return self.ty
-class ConsTyVariant:
-    def __init__(self, ctx, elts):
-        self.ty = VariantType(); self.elts = elts
+        print('yes?')
+        self.ty.init(tuple(elt.eval(ctx) for elt in self.elts), self.fields)
+        if len(self.ty.elts) == 0: val = node(self.ty); print('yay?')
+        else: val = constr_new(ctx, self.ty)
+        defVar(ctx, self.ty.name.sym, val); return self.ty
+class ConsTyVariant(ConsTyExpr):
+    def __init__(self, ctx, elts): self.ty = VariantType(); self.elts = elts
     def eval(self, ctx, fields=None):
         elts = []
         for elt in self.elts:
@@ -45,7 +51,7 @@ class ConsTyVariant:
             if isinstance(ty, VariantType): elts.extend(ty.elts)
             else: elts.append(ty)
         self.ty.init(set(elts)); return self.ty
-class ConsTyProc:
+class ConsTyProc(ConsTyExpr):
     def __init__(self, ctx, inTy, outTy):
         self.ty = ProcType(); self.inTy = inTy; self.outTy = outTy
     def eval(self, ctx):
@@ -53,7 +59,7 @@ class ConsTyProc:
 ubKindTy, kindTy, toKind, fromKind = basicTy('Kind', object)
 def isKind(val): return isTyped(val) and getTy(val) is kindTy
 def getKind(ctx, name):
-    ty = ctx.env.get(EnvKey(ctx.tenv.get(name)))
+    ty = ctx.env.get(EnvKey(ctx.tenv.get(EnvKey(name))))
     if isKind(ty): return fromKind(ty)
     return None
 def kindproc(name):
@@ -63,8 +69,8 @@ def kindproc(name):
 def kindProduct(ctx, body, name):
     if name is None: typeErr(ctx, "product type requires a name: '%s'"%body)
     fields = []
-    return ConsTyProduct(ctx, name, tuple(parseType(ctx, form, fields)
-                                          for form in body), fields)
+    return ConsTyProduct(ctx, EnvKey(name), tuple(parseType(ctx, form, fields)
+                                                  for form in body), fields)
 @kindproc('#variant')
 def kindVariant(ctx, body, _):
     return ConsTyVariant(ctx, tuple(parseType(ctx, form) for form in body))
@@ -78,8 +84,7 @@ def parseType(ctx, body, fields=None, name=None):
         if fields is not None: fields.append(None)
         return ConsTyVar(ctx, body)
     elif isListCons(body):
-        body = fromList(body)
-        if len(body) == 1: return parseType(ctx, body[0], fields)
+        body = tuple(fromList(body))
         hdCtx, hd = syncloExpand(ctx.copy(), body[0]) # todo: copy here too
         if isSymbol(hd):
             kind = getKind(ctx, hd)
@@ -90,24 +95,30 @@ def parseType(ctx, body, fields=None, name=None):
             ty, field = body
             if fields is not None:
                 if not isSymbol(field):
-                    typeErr(ctx, "invalid field name: '%s'"%field)
+                    typeErr(ctx, "invalid field name: '%s'"%pretty(field))
                 fields.append(field)
                 return parseType(ctx, ty)
-    typeErr(ctx, "invalid type constructor: '%s'"%body)
+    typeErr(ctx, "invalid type constructor: '%s'"%pretty(body))
 def addTyName(ctx, name, ty):
     aname = alias_new(name)
     ctx.tenv.add(EnvKey(name), aname); ctx.env.add(EnvKey(aname), ty)
-def parseTypes(ctx, consTyForms):
+def defTypes(ctx, consTyForms):
     exprs = []; aliases = []
     for form in consTyForms:
-        if len(form) != 2: typeErr(ctx, "invalid type binder: '%s'"%form)
-        name, body = form
-        expr = parseType(ctx, body, name=name)
-        ty = expr.preEval()
-        if ty is None: aliases.append(name, expr)
-        else: addTyName(name, ty); exprs.append(expr)
+        if isListCons(form):
+            form = tuple(fromList(form))
+            if len(form) == 2:
+                name, body = form
+                print('here', pretty(body))
+                expr = parseType(ctx, body, name=name)
+                ty = expr.preEval()
+                if ty is None: aliases.append((name, expr))
+                else: addTyName(ctx, name, ty); exprs.append(expr)
+                continue
+        typeErr(ctx, "invalid type binder: '%s'"%pretty(form))
     # todo: try sorting aliases topologically, otherwise error
-    for name, expr in aliases: addTyName(name, expr.eval(ctx))
+    print(aliases, exprs)
+    for name, expr in aliases: addTyName(ctx, name, expr.eval(ctx))
     for expr in exprs: expr.eval(ctx)
 
 class ConsTypes(Constr): # todo: replace with above

@@ -110,13 +110,13 @@ class NativeProc:
     def arity(self): return len(self.binders)
 class NativeClosure:
     def __init__(self, proc, ctx): self.proc = proc; self.ctx = ctx
-    def __str__(self): return self.proc.name
+    def __str__(self): return str(self.proc.name)
     def call(self, args): return self.proc.call(self.ctx, args)
     def arity(self): return self.proc.arity()
 class ForeignProc:
     def __init__(self, name, code, argc):
         self.name = name; self.code = code; self.argc = argc
-    def __str__(self): return self.name
+    def __str__(self): return str(self.name)
     def call(self, args): return self.code(*args)
     def arity(self): return self.argc
 class PartialApp:
@@ -335,7 +335,7 @@ def pretty(v):
                 ty = getTy(v)
                 els = ' '.join(pretty(ty.unpackEl(v, idx))
                                for idx in range(ty.numIndices()))
-                return '(%s %s)'%(ty, els)
+                return '(%s)'%('%s %s'%(ty, els)).rstrip()
             return '<%s %s>'%(getTy(v), getVal(v))
         else: return pp(v)
     else: return '<ugly %s>'%repr(v)

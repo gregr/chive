@@ -75,6 +75,7 @@ def expand(ctx, xs):
         break
     return ctx, xs
 
+unitExpr = Var(EnvKey(unitDen))
 def _semantize(ctx, xs):
     ctx, xs = syncloExpand(ctx, xs)
     checkIsForm(ctx, xs)
@@ -95,8 +96,7 @@ def _semantize(ctx, xs):
         den = ctx.senv.get(EnvKey(xs))
         if den is None: den = alias_new(xs); ctx.senv.add(EnvKey(den), xs)
         return ctx, Var(EnvKey(den))
-    elif xs is nil:
-        return ctx, Var(EnvKey(unitDen))
+    elif xs is nil: return ctx, unitExpr
     else: typeErr(ctx, "invalid symbolic expression: '%s'"%pretty(xs))
 
 def semantize(ctx, xs): return _semantize(*expand(ctx, xs))
@@ -149,6 +149,9 @@ def semNodeUnpack(ctx, form):
 def semNodePack(ctx, form):
     *rest, rhs = semArgs(ctx, form, 4); rhsCtx, rhs = semantize(ctx, rhs)
     return ctx, NodePack(rhs, *semNodeAccess(ctx, *rest))
+@semproc('#def-types')
+def semDefTypes(ctx, form):
+    defTypes(ctx, fromList(cons_tail(form))); return ctx, unitExpr
 def interactOnce(modName, ctx): # todo: break into smaller pieces
     import readline
     from io import StringIO
