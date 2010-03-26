@@ -45,6 +45,7 @@ class Type:
         self.checkTy(agg); elt, off = self.index(idx);
         elt.pack(getVal(agg), off, val)
     def discrim(self, val): raise NotImplementedError
+    def finiteDesc(self, seen): return [str(self)]
     def __str__(self): raise NotImplementedError
     def __repr__(self): return '<%s %s>'%(self.__class__.__name__, self)
 ################################################################
@@ -135,8 +136,13 @@ class VariantType(BoxedType):
     def __init__(self, elts=None):
         if elts is not None: self.init(elts)
     def init(self, elts):
-        assert all(isinstance(elt, NodeType) for elt in elts), elts
-        self.elts = elts
+        prods = []
+        for elt in elts:
+            if isinstance(elt, VariantType): prods.extend(elt.elts)
+            else:
+                assert isinstance(elt, NodeType), elt
+                prods.append(elt)
+        self.elts = set(prods)
     def __str__(self): return '(%s)'%'|'.join(str(elt) for elt in self.elts)
     def contains(self, ty, tenv=None):
         if isinstance(ty, VariantType):
@@ -186,7 +192,10 @@ class ProcType(NodeType):
             assert isinstance(ty, ProcType), ty
             argts.append(ty.inTy); ty = ty.outTy; remainingApps-=1; arity-=1
         return ty, argts, arity
-    def __str__(self): return '(%s -> %s)'%(self.inTy, self.outTy)
+    def finiteDesc(self, seen):
+        if self in seen: return ['...']
+        seen.add(self); return [str(self.inTy)]+self.outTy.finiteDesc(seen)
+    def __str__(self): return '(%s)'%' -> '.join(self.finiteDesc(set()))
 def isProc(v): return isTyped(v) and isinstance(getTy(v), ProcType)
 procType = cachedType(ProcType)
 def curryProcType(paramts, rett, constr=procType):

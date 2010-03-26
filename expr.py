@@ -44,17 +44,13 @@ class ConsTyProduct(ConsTyExpr):
 class ConsTyVariant(ConsTyExpr):
     def __init__(self, ctx, elts): self.ty = VariantType(); self.elts = elts
     def eval(self, ctx, fields=None):
-        elts = []
-        for elt in self.elts:
-            ty = elt.eval(ctx)
-            if isinstance(ty, VariantType): elts.extend(ty.elts)
-            else: elts.append(ty)
-        self.ty.init(set(elts)); return self.ty
+        self.ty.init([elt.eval(ctx) for elt in self.elts]); return self.ty
 class ConsTyProc(ConsTyExpr):
     def __init__(self, ctx, inTy, outTy):
         self.ty = ProcType(); self.inTy = inTy; self.outTy = outTy
     def eval(self, ctx):
-        self.ty.init(self.inTy.eval(ctx), self.outTy.eval(ctx)); return ty
+        self.ty.init(self.inTy.eval(ctx), self.outTy.eval(ctx))
+        return self.ty
 ubKindTy, kindTy, toKind, fromKind = basicTy('Kind', object)
 def isKind(val): return isTyped(val) and getTy(val) is kindTy
 def getKind(ctx, name):
@@ -78,13 +74,13 @@ def kindProc(ctx, body, _):
     if len(body) != 2: typeErr(ctx, "proc type requires two args: '%s'"%body)
     return ConsTyProc(ctx, parseType(ctx, body[0]), parseType(ctx, body[1]))
 def parseType(ctx, body, fields=None, name=None):
-    ctx, body = syncloExpand(ctx.copy(), body) # todo: shouldn't have to copy
+    ctx, body = syncloExpand(ctx, body) # todo: shouldn't have to copy
     if isSymbol(body):
         if fields is not None: fields.append(None)
         return ConsTyVar(ctx, body)
     elif isListCons(body):
         body = tuple(fromList(body))
-        hdCtx, hd = syncloExpand(ctx.copy(), body[0]) # todo: copy here too
+        hdCtx, hd = syncloExpand(ctx, body[0]) # todo: copy here too
         if isSymbol(hd):
             kind = getKind(ctx, hd)
             if kind is not None:

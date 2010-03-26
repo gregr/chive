@@ -70,9 +70,7 @@ def gensym(names=nameGen()): return symbol_new(next(names))
 # envs
 class Env:
     __slots__ = ['p', 'bs']
-    def __init__(self, p=None):
-        self.p = p
-        self.bs = {}
+    def __init__(self, p=None): self.p = p; self.bs = {}
     def get(self, n):
         for e in self._lineage():
             v = e.bs.get(n)
@@ -180,7 +178,6 @@ def populator():
 primitives, addPrim = populator()
 primTypes, addPrimTy = populator()
 def primDen(name): return primitives.get(EnvKey(symbol(name)))[0]
-ubTagTy = PyType('#Tag', Type)
 addPrimTy('Symbol', symTy)
 addPrimTy('Any', anyTy)
 def prodTy(name, *elts):
@@ -206,8 +203,11 @@ ubCharTy, charTy, toChar, fromChar = basicTy('Char', str)
 
 ################################################################
 # lists
+listTy = VariantType()
 nilTy, nil = singleton('Nil')
-consTy = prodTy(':', anyTy, anyTy) # todo
+consTy = prodTy(':', anyTy, listTy)
+listTy.init((nilTy, consTy))
+addPrimTy('List', listTy)
 def cons(h, t): return consTy.new(h, t)
 def cons_head(x): return consTy.unpackEl(x, 0)
 def cons_tail(x): return consTy.unpackEl(x, 1)
@@ -252,14 +252,17 @@ def primCtx():
 
 ################################################################
 # syntactic closures
-syncloTy = prodTy('SynClo', ctxTy, anyTy, anyTy) # todo
+formTy = VariantType()
+syncloTy = prodTy('SynClo', ctxTy, listTy, formTy) # todo
+formTy.init((listTy, symTy, syncloTy, intTy, floatTy, charTy))
+addPrimTy('SynForm', formTy)
 def isSynClo(s): return getTy(s) is syncloTy
 def synclo_new(ctx, frees, form): return syncloTy.new(ctx, frees, form)
 def synclo_ctx(s): return syncloTy.unpackEl(s, 0)
 def synclo_frees(s): return syncloTy.unpackEl(s, 1)
 def synclo_form(s): return syncloTy.unpackEl(s, 2)
 def applySynCloCtx(ctx, sc):
-    scCtx = fromCtx(synclo_ctx(sc)); senv = scCtx.senv
+    ctx = ctx.copy(); scCtx = fromCtx(synclo_ctx(sc)); senv = scCtx.senv
     frees = fromList(synclo_frees(sc))
     if frees:
         senv = Env(senv)
@@ -282,7 +285,7 @@ def toString(v): return node(stringTy, v)
 
 ################################################################
 # macros and semantics
-macroTy = prodTy('Macro', curryProcType((anyTy, anyTy), anyTy))
+macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), formTy))
 def isMacro(v): return isTyped(v) and getTy(v) is macroTy
 def macro_proc(mac): return macroTy.unpackEl(mac, 0)
 def applyMacro(ctx, mac, form):
@@ -326,14 +329,17 @@ tagToPretty = {nilTy: prettyList, consTy: prettyList,
                intTy: prettyInt, floatTy: prettyFloat, charTy: prettyChar,
                #stringTy: prettyString,
                }
-def pretty(v):
+def pretty(v, seen=None):
+    if seen is None: seen = []
+    if v in seen: return '...'
+    seen.append(v)
     if isTyped(v):
 #        if isProc(v): return '<(%s) %s>'%(getTy(v), getVal(v))
         pp = tagToPretty.get(getTy(v))
         if pp is None:
             if isinstance(getTy(v), ProductType):
                 ty = getTy(v)
-                els = ' '.join(pretty(ty.unpackEl(v, idx))
+                els = ' '.join(pretty(ty.unpackEl(v, idx), seen)
                                for idx in range(ty.numIndices()))
                 return '(%s)'%('%s %s'%(ty, els)).rstrip()
             return '<%s %s>'%(getTy(v), getVal(v))

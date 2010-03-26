@@ -33,7 +33,7 @@ def mapRest(f, ctx, xs):
     attr0 = list(fromList(attr_tail(ctx.attr)))
     attr0 += [ctx.attr]*(len(xs0)-len(attr0))
     return [f(ctx, aa, xx) for aa, xx in zip(attr0, xs0)]
-def checkIsForm(ctx, xs): return anyTy.contains(getTy(xs)) # todo
+def checkIsForm(ctx, xs): return formTy.contains(getTy(xs))
 def scRoot(ctx, form): return synclo_new(toCtx(ctx), nil, form) # todo: senv
 def expandBasic(tyn):
     def ex(ctx, val):
