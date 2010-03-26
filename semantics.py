@@ -104,7 +104,7 @@ def evaluate(ctx, xs, tag=None):
     ctx, xs = semantize(ctx, xs); return evalExpr(ctx, xs, tag)
 
 def semproc(name):
-    def install(f): addPrim(name, semantic_new(f)); return f
+    def install(f): addPrim(name, toSem(f)); return f
     return install
 def primproc(name, *tys):
     def install(f):

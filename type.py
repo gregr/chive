@@ -131,7 +131,6 @@ class AnyType(BoxedType):
     def contains(self, ty, tenv=None): return isinstance(ty, BoxedType)
     def __str__(self): return 'Any'
 anyTy = AnyType()
-#def isNode(v): return isTyped(v) and anyTy.contains(getTy(v))
 class VariantType(BoxedType):
     def __init__(self, elts=None):
         if elts is not None: self.init(elts)
@@ -153,8 +152,12 @@ class ProductType(NodeType):
     def init(self, elts, fields=()):
         self.elts = elts; self.eltSize = sum(elt.size() for elt in elts)
         assert len(fields) <= len(elts), (fields, elts)
-        self.fields = dict((fname, idx) for idx, fname in enumerate(fields)
-                            if fname is not None)
+        for idx, fname in enumerate(fields):
+            if fname is None: continue
+            if fname in self.fields:
+                typeErr(None, "type '%s' has duplicate field name: '%s'"
+                              %(self.name, fname))
+            self.fields[fname] = idx
     def contains(self, ty, tenv=None): return ty is self
     def checkValid(self):
         if self.elts is None:
@@ -183,7 +186,7 @@ class ProcType(NodeType):
             assert isinstance(ty, ProcType), ty
             argts.append(ty.inTy); ty = ty.outTy; remainingApps-=1; arity-=1
         return ty, argts, arity
-    def __str__(self): return '%s -> %s'%(self.inTy, self.outTy)
+    def __str__(self): return '(%s -> %s)'%(self.inTy, self.outTy)
 def isProc(v): return isTyped(v) and isinstance(getTy(v), ProcType)
 procType = cachedType(ProcType)
 def curryProcType(paramts, rett, constr=procType):
@@ -193,7 +196,7 @@ class SpecificProcType(ProcType):
     def __init__(self, name, *args): super().__init__(*args); self.name = name
     def contains(self, ty, tenv=None): return self is ty
     def new(self, proc): return typed(self, proc)
-    def __str__(self): return ('%s::(%s)')%(str(self.name), super().__str__())
+    def __str__(self): return ('%s::%s')%(str(self.name), super().__str__())
 def currySpecificProcType(name, paramts, rett):
     return curryProcType(paramts, rett,
                          (lambda *args: SpecificProcType(name, *args)))

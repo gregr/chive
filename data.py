@@ -240,15 +240,14 @@ ubCtxTy, ctxTy, toCtx, fromCtx = basicTy('Ctx', Context)
 def primCtx():
     tenv = Env(); senv = Env(); env = Env()
     ctx = Context(None, None, tenv, senv, env, None)
-    print('adding primitives:')
-    for name, (den, val) in primitives.items():
-        print(name); senv.add(name, den); env.add(EnvKey(den), val)
     print('adding primitive types:')
     for name, (den, ty) in primTypes.items():
         print(name); tenv.add(name, den); env.add(EnvKey(den), ty)
         if isinstance(ty, ProductType) and ty.elts:
-            den = alias_new(name.sym)
-            senv.add(name, den); env.add(EnvKey(den), constr_new(ctx, ty))
+            addPrim(symbol_name(name.sym), constr_new(ctx, ty))
+    print('adding primitive values:')
+    for name, (den, val) in primitives.items():
+        print(name); senv.add(name, den); env.add(EnvKey(den), val)
     return ctx
 
 ################################################################
@@ -288,12 +287,9 @@ def isMacro(v): return isTyped(v) and getTy(v) is macroTy
 def macro_proc(mac): return macroTy.unpackEl(mac, 0)
 def applyMacro(ctx, mac, form):
     return evalExpr(*applyFull(ctx, macro_proc(mac), [toCtx(ctx), form]))
-ubSemanticTy = ScalarType('#Semantic')
-semanticTy = prodTy('Semantic', ubSemanticTy)
+ubSemanticTy, semanticTy, toSem, fromSem = basicTy('Semantic', object)
 def isSemantic(v): return isTyped(v) and getTy(v) is semanticTy
-def semantic_new(sproc): return node(semanticTy, ubSemanticTy.new(sproc))
-def semantic_proc(sm): return getVal(semanticTy.unpackEl(sm, 0))
-def applySemantic(ctx, sem, form): return semantic_proc(sem)(ctx, form)
+def applySemantic(ctx, sem, form): return fromSem(sem)(ctx, form)
 
 ################################################################
 # pretty printing
