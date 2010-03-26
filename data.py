@@ -246,18 +246,26 @@ class Context:
                        self.attr, self.hist)
     def histAppend(self, form): self.hist = cons(form, self.hist)
 ubCtxTy, ctxTy, toCtx, fromCtx = basicTy('Ctx', Context)
+def getDen(xenv, name):
+    den = xenv.get(EnvKey(name))
+    if den is None: den = alias_new(name); xenv.add(EnvKey(name), den)
+    return den
+def bindVar(ctx, name, val): ctx.env.add(EnvKey(getDen(ctx.senv,name)),val)
+def bindTy(ctx, name, ty): ctx.env.add(EnvKey(getDen(ctx.tenv,name)),ty)
 
+def setPrims(ctx, xenv, xs, name, extra=lambda a,b,c:None):
+    print('adding primitive %s:'%name)
+    for name, (den, xx) in xs.items():
+        print(name); xenv.add(name, den); ctx.env.add(EnvKey(den), xx)
+        extra(ctx, name, xx)
+def addPrimCons(ctx, name, ty):
+    if isinstance(ty, ProductType) and ty.elts:
+        addPrim(symbol_name(name.sym), constr_new(ctx, ty))
 def primCtx():
     tenv = Env(); senv = Env(); env = Env()
     ctx = Context(None, None, tenv, senv, env, None)
-    print('adding primitive types:')
-    for name, (den, ty) in primTypes.items():
-        print(name); tenv.add(name, den); env.add(EnvKey(den), ty)
-        if isinstance(ty, ProductType) and ty.elts:
-            addPrim(symbol_name(name.sym), constr_new(ctx, ty))
-    print('adding primitive values:')
-    for name, (den, val) in primitives.items():
-        print(name); senv.add(name, den); env.add(EnvKey(den), val)
+    setPrims(ctx, tenv, primTypes, 'types', addPrimCons)
+    setPrims(ctx, senv, primitives, 'values')
     return ctx
 
 ################################################################
@@ -342,7 +350,7 @@ def prettyString(s, _=None):
 tagToPretty = {nilTy: prettyList, consTy: prettyList,
                symTy: prettySymbol,
                syncloTy: prettySynClo,
-               unitTy: lambda _: '()',
+               unitTy: lambda _,__: '()',
                intTy: prettyInt, floatTy: prettyFloat, charTy: prettyChar,
                #stringTy: prettyString,
                }

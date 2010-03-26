@@ -14,24 +14,24 @@
 
 from data import *
 
+# todo: common
+def getDen(xenv, name):
+    den = xenv.get(EnvKey(name))
+    if den is None: den = alias_new(name); xenv.add(EnvKey(name), den)
+    return den
+def bindVar(ctx, name, val): ctx.env.add(EnvKey(getDen(ctx.senv,name)),val)
+def bindTy(ctx, name, ty): ctx.env.add(EnvKey(getDen(ctx.tenv,name)),ty)
 class ConsTyExpr:
     def preEval(self): return self.ty
     def eval(self, ctx): raise NotImplementedError
-def tyDen(ctx, name): # todo: common
-    den = ctx.tenv.get(EnvKey(name))
-    if den is None: den = alias_new(name); ctx.tenv.add(EnvKey(name), den)
-    return den
 class ConsTyVar(ConsTyExpr):
-    def __init__(self, ctx, name): self.name = EnvKey(tyDen(ctx, name))
+    def __init__(self, ctx, name):
+        self.name = EnvKey(getDen(ctx.tenv, name))
     def preEval(self): return None
     def eval(self, ctx):
         ty = ctx.env.get(self.name)
         if ty is None: typeErr(ctx, "unbound type name: '%s'"%self.name)
         return ty
-# todo: common def-var
-def defVar(ctx, name, val):
-    den = alias_new(name)
-    ctx.senv.add(EnvKey(name), den); ctx.env.add(EnvKey(den), val)
 class ConsTyProduct(ConsTyExpr):
     def __init__(self, ctx, name, elts, fields):
         assert len(elts) >= len(fields), (elts, fields)
@@ -40,7 +40,7 @@ class ConsTyProduct(ConsTyExpr):
         self.ty.init(tuple(elt.eval(ctx) for elt in self.elts), self.fields)
         if len(self.ty.elts) == 0: val = node(self.ty);
         else: val = constr_new(ctx, self.ty)
-        defVar(ctx, self.ty.name.sym, val); return self.ty
+        bindVar(ctx, self.ty.name.sym, val); return self.ty
 class ConsTyVariant(ConsTyExpr):
     def __init__(self, ctx, elts): self.ty = VariantType(); self.elts = elts
     def eval(self, ctx, fields=None):
@@ -54,7 +54,7 @@ class ConsTyProc(ConsTyExpr):
 ubKindTy, kindTy, toKind, fromKind = basicTy('Kind', object)
 def isKind(val): return isTyped(val) and getTy(val) is kindTy
 def getKind(ctx, name):
-    ty = ctx.env.get(EnvKey(ctx.tenv.get(EnvKey(name))))
+    ty = ctx.env.get(EnvKey(getDen(ctx.tenv, name)))
     if isKind(ty): return fromKind(ty)
     return None
 def kindproc(name):
@@ -94,9 +94,7 @@ def parseType(ctx, body, fields=None, name=None):
                 fields.append(field)
                 return parseType(ctx, ty)
     typeErr(ctx, "invalid type constructor: '%s'"%pretty(body))
-# todo: common?
-def addTyName(ctx, name, ty): ctx.env.add(EnvKey(tyDen(ctx, name)), ty)
-def defTypes(ctx, consTyForms):
+def bindTypes(ctx, consTyForms):
     exprs = []; aliases = []
     for form in consTyForms:
         if isListCons(form):
@@ -106,11 +104,11 @@ def defTypes(ctx, consTyForms):
                 expr = parseType(ctx, body, name=name)
                 ty = expr.preEval()
                 if ty is None: aliases.append((name, expr))
-                else: addTyName(ctx, name, ty); exprs.append(expr)
+                else: bindTy(ctx, name, ty); exprs.append(expr)
                 continue
         typeErr(ctx, "invalid type binder: '%s'"%pretty(form))
     # todo: try sorting aliases topologically, otherwise error
-    for name, expr in aliases: addTyName(ctx, name, expr.eval(ctx))
+    for name, expr in aliases: bindTy(ctx, name, expr.eval(ctx))
     for expr in exprs: expr.eval(ctx)
 
 class ConsArray(Constr): pass

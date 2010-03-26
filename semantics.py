@@ -160,7 +160,7 @@ def semNodePack(ctx, form):
     return ctx, NodePack(rhs, *semNodeAccess(ctx, *rest))
 @semproc('#def-types')
 def semDefTypes(ctx, form):
-    defTypes(ctx, fromList(cons_tail(form))); return ctx, unitExpr
+    bindTypes(ctx, fromList(cons_tail(form))); return ctx, unitExpr
 def interactOnce(modName, ctx): # todo: break into smaller pieces
     import readline
     from io import StringIO
