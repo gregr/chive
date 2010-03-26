@@ -13,14 +13,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
-data types and aliasing
-generalized packing/unpacking with first-class references
+modules
+variable binding/aliasing
 exprs: change expand to a proc; eliminate eval; add letrec
 dynamic dispatch
-guard against infinite recursion in pretty-printing
 AST pretty-printing
 structs/tuples
-modules
 records/row-typing
 reader macros
 

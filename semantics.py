@@ -125,12 +125,6 @@ def toTy(ctx, form):
     ctx, form = expand(ctx, form)
     if not isSymbol(form): typeErr(ctx, "invalid type name: '%s'"%form)
     return ctx.env.get(EnvKey(ctx.tenv.get(EnvKey(form))))
-@semproc('#node')
-def semNode(ctx, form):
-    cargs = [semantize(ctx, carg)[1]
-             for carg in fromList(cons_tail(cons_tail(form)))]
-    ty = toTy(ctx, cons_head(cons_tail(form)))
-    return ctx, ConsNode(ty, cargs, ctx)
 def semArgs(ctx, form, numArgs):
     args = tuple(fromList(cons_tail(form)))
     if len(args) != numArgs:
@@ -142,6 +136,21 @@ def semNodeAccess(ctx, ty, idx, node):
     idx = evaluate(ctx, idx, intTy)
     ndCtx, node = semantize(ctx, node)
     return ty, fromInt(idx), node, ctx
+@semproc('#proc')
+def semConsProc(ctx, form):
+    binders, body = semArgs(ctx, form, 2)
+    vars = []; paramts = []
+    bodyCtx = ctx.copy(); bodyCtx.senv = Env(ctx.senv)
+    for binder in fromList(binders):
+        if isListCons(binder):
+            var, ty = tuple(fromList(binder)); ty = toTy(ctx, ty)
+        else: var = binder; ty = anyTy
+        if not isSymbol(var): # todo: synclo?
+            typeErr(ctx, "invalid proc binder: '%s'"%pretty(var))
+        den = alias_new(var); bodyCtx.senv.add(EnvKey(var), den)
+        vars.append(EnvKey(den)); paramts.append(ty)
+    return ctx, ConsProc(EnvKey(gensym()), vars,
+                         semantize(bodyCtx, body)[1], paramts, None)
 @semproc('#node-unpack')
 def semNodeUnpack(ctx, form):
     return ctx, NodeUnpack(*semNodeAccess(ctx, *semArgs(ctx, form, 3)))

@@ -201,6 +201,11 @@ procType = cachedType(ProcType)
 def curryProcType(paramts, rett, constr=procType):
     for paramt in reversed(paramts): rett = constr(paramt, rett)
     return rett
+def uncurryProcType(ty, max=-1):
+    ts = []
+    while max != 0 and isinstance(ty, ProcType):
+        ts.append(ty.inTy); ty = ty.outTy; max -= 1
+    return ts, ty
 class SpecificProcType(ProcType):
     def __init__(self, name, *args): super().__init__(*args); self.name = name
     def contains(self, ty, tenv=None): return self is ty

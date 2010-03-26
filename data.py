@@ -145,8 +145,14 @@ def applyFull(ctx, proc, args):
 class Constr(Expr): pass
 class ConsProc(Constr):
     def __init__(self, name, binders, body, paramts, rett):
+        # todo: what about fake rett in light of nested ConsProcs?
         if isinstance(body, ConsProc): # combine adjacently-nested ConsProcs
+            if rett is None:
+                paramts = list(paramts)
+                ts, rett = uncurryProcType(body.ty, len(body.proc.binders))
+                paramts.extend(ts)
             binders += body.proc.binders; body = body.proc.code
+        if rett is None: rett = anyTy
         self.proc = NativeProc(name, body, binders)
         self.ty = currySpecificProcType(name, paramts, rett)
     def eval(self, ctx): return final(proc_new(self.proc, ctx, self.ty))
