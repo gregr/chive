@@ -14,13 +14,6 @@
 
 from data import *
 
-# todo: common
-def getDen(xenv, name):
-    den = xenv.get(EnvKey(name))
-    if den is None: den = alias_new(name); xenv.add(EnvKey(name), den)
-    return den
-def bindVar(ctx, name, val): ctx.env.add(EnvKey(getDen(ctx.senv,name)),val)
-def bindTy(ctx, name, ty): ctx.env.add(EnvKey(getDen(ctx.tenv,name)),ty)
 class ConsTyExpr:
     def preEval(self): return self.ty
     def eval(self, ctx): raise NotImplementedError
@@ -121,12 +114,16 @@ class NodeAccess(Access):
         self.ty = ty; self.index = index; self.node = node
     def _evalNode(self, ctx):
         return evalExpr(ctx, self.node, self.ty)
+    def freeVars(self): return self.node.freeVars()
+    def subst(self, subs): self.node.subst(subs)
 class NodeUnpack(NodeAccess):
     def eval(self, ctx):
         return final(self.ty.unpackEl(self._evalNode(ctx), self.index))
 class NodePack(NodeAccess):
     def __init__(self, rhs, *args):
         super().__init__(*args); self.rhs = rhs
+    def freeVars(self): return super().freeVars()+self.rhs.freeVars()
+    def subst(self, subs): super().subst(subs); self.rhs.subst(subs)
     def eval(self, ctx):
         self.ty.packEl(self._evalNode(ctx), self.index,
                        evalExpr(ctx, self.rhs))
@@ -141,12 +138,18 @@ class NodePack(NodeAccess):
 #        return cont(ctx, self.last)
 class Apply(Expr):
     def __init__(self, proc, args): self.proc = proc; self.args = args
+    def freeVars(self): return foldFreeVars(self.args)
+    def subst(self, subs): mapSubst(subs, self.args)
     def eval(self, ctx): return applyFull(ctx, self.proc, self.args)
 # todo: extensible dispatch-proc?
 class Switch(Expr): 
     def __init__(self, discrimTy, discrim, default, alts):
         self.discrimTy = discrimTy
         self.discrim = discrim; self.default = default; self.alts = alts
+    def _children(self):
+        return [body for _,body in self.alts]+[self.default, self.discrim]
+    def freeVars(self): return foldFreeVars(self._children())
+    def subst(self, subs): mapSubst(subs, self._children())
     def eval(self, ctx):
         discrim = getDiscrim(evalExpr(ctx, self.discrim, self.discrimTy))
         body = self.alts.get(discrim)

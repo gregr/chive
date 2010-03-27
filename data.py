@@ -21,6 +21,8 @@ def evalExpr(ctx, expr, ty=None): # tail-call trampoline
     if ty is not None: ty.checkTy(expr)
     return expr # when ctx is None, expr will be a final value
 class Expr:
+    def freeVars(self): return set()
+    def subst(self, subs): pass
     def pretty(self): return 'todo'
 
 ################################################################
@@ -30,6 +32,10 @@ class PrimVal(Atom):
     def eval(self, ctx): return final(self.val)
 class Var(Atom):
     def __init__(self, name): self.name = name
+    def freeVars(self): return set([self.name])
+    def subst(self, subs):
+        newName = subs.get(self.name)
+        if newName is not None: self.name = newName
     def eval(self, ctx):
         val = ctx.env.get(self.name)
         if val is None: typeErr(ctx, "unbound variable '%s'"%self.name)
@@ -101,6 +107,10 @@ class EnvKey:
 class NativeProc:
     def __init__(self, name, code, binders):
         self.name = name; self.code = code; self.binders = binders
+    def freeVars(self): return self.code.freeVars()-set(self.binders)
+    def subst(self, subs):
+        subs = dict((old, new) for old, new in subs if old not in self.binders)
+        self.code.subst(subs)
     def call(self, ctx, args):
         ctx = ctx.copy(); ctx.env = Env(ctx.env)
         for binder, arg in zip(self.binders, args): ctx.env.add(binder, arg)
@@ -155,7 +165,12 @@ class ConsProc(Constr):
         if rett is None: rett = anyTy
         self.proc = NativeProc(name, body, binders)
         self.ty = currySpecificProcType(name, paramts, rett)
+    def freeVars(self): return self.proc.freeVars()
+    def subst(self, subs): self.proc.subst(subs)
     def eval(self, ctx): return final(proc_new(self.proc, ctx, self.ty))
+def foldFreeVars(xs): return reduce(set.union,(x.freeVars() for x in xs),set())
+def mapSubst(subs, xs):
+    for xx in xs: xx.subst(subs)
 class ConsNode(Constr):
     def __init__(self, ty, cargs, ctx=None):
         if not isinstance(ty, ProductType):
@@ -163,6 +178,8 @@ class ConsNode(Constr):
         ty.checkIndex(len(cargs),
                       'incorrect number of constructor arguments:', True)
         self.ty = ty; self.cargs = cargs
+    def freeVars(self): return foldFreeVars(xs)
+    def subst(self, subs): mapSubst(subs, self.cargs)
     def eval(self, ctx):
         cargs = [evalExpr(ctx, carg) for carg in self.cargs]
         return final(node(self.ty, *cargs))
