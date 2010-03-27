@@ -138,7 +138,7 @@ class NodePack(NodeAccess):
 #        return cont(ctx, self.last)
 class Apply(Expr):
     def __init__(self, proc, args): self.proc = proc; self.args = args
-    def freeVars(self): return foldFreeVars(self.args)
+    def freeVars(self): return accFreeVars(self.args)
     def subst(self, subs): mapSubst(subs, self.args)
     def eval(self, ctx): return applyFull(ctx, self.proc, self.args)
 # todo: extensible dispatch-proc?
@@ -148,7 +148,7 @@ class Switch(Expr):
         self.discrim = discrim; self.default = default; self.alts = alts
     def _children(self):
         return [body for _,body in self.alts]+[self.default, self.discrim]
-    def freeVars(self): return foldFreeVars(self._children())
+    def freeVars(self): return accFreeVars(self._children())
     def subst(self, subs): mapSubst(subs, self._children())
     def eval(self, ctx):
         discrim = getDiscrim(evalExpr(ctx, self.discrim, self.discrimTy))

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from type import *
+from functools import reduce
 
 def final(val): return None, val
 def cont(ctx, expr): return ctx, expr
@@ -168,7 +169,7 @@ class ConsProc(Constr):
     def freeVars(self): return self.proc.freeVars()
     def subst(self, subs): self.proc.subst(subs)
     def eval(self, ctx): return final(proc_new(self.proc, ctx, self.ty))
-def foldFreeVars(xs): return reduce(set.union,(x.freeVars() for x in xs),set())
+def accFreeVars(xs): return reduce(set.union,(x.freeVars() for x in xs),set())
 def mapSubst(subs, xs):
     for xx in xs: xx.subst(subs)
 class ConsNode(Constr):
@@ -178,7 +179,7 @@ class ConsNode(Constr):
         ty.checkIndex(len(cargs),
                       'incorrect number of constructor arguments:', True)
         self.ty = ty; self.cargs = cargs
-    def freeVars(self): return foldFreeVars(xs)
+    def freeVars(self): return accFreeVars(xs)
     def subst(self, subs): mapSubst(subs, self.cargs)
     def eval(self, ctx):
         cargs = [evalExpr(ctx, carg) for carg in self.cargs]
