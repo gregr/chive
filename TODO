@@ -21,6 +21,9 @@ AST pretty-printing
 structs/tuples
 records/row-typing
 reader macros
+dependency analysis
+           -driving the eval order of non-sequenced exprs/typedefs
+           -searching mutually-recursive modules for missing dependencies
 
 ================================================================
 = disorganized ideas
