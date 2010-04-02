@@ -37,17 +37,54 @@ class ModuleManager:
                 for group in self.groups[idx:]: mgrp.absorbGroup(group)
                 self.groups = self.groups[:idx+1]
         return mod
+    def __iter__(self):
+        while self.groups:
+            mod = self.groups[-1].top()
+            if mod is None: self.groups.pop(); continue
+            for expr in iter(mod): yield expr; break
 class ModuleGroup:
     def __init__(self): self.mods = set(); self.modsActive = set()
+    def top(self): return next(iter(self.modsActive), None)
     def add(self, mod): self.mods.add(mod); self.modsActive.add(mod)
     def absorbGroup(self, grp):
         for mod in grp.mods: mod.group = self; self.mods.add(mod)
         self.modsActive |= grp.modsActive
+class DefManager:
+    def __init__(self, xenv, env):
+        self.xenv = xenv; self.env = env; self.exportedNames = set()
+        self.dependants = set()
+    def define(self, exporting, name, val):
+        if exporting: self.exportedNames.add(name)
+        bindX(self.xenv, self.env, name, val)
+    def export(self):
+        for defX, including, excluding in self.dependants:
+            if excluding is None: exports = set(including.keys())
+            else: exports = self.exportedNames-excluding
+            for name in exports:
+                rename = including.get(name)
+                if rename is None: rename = name
+                defX(rename, getX(self.xenv, self.env, name))
+        self.dependants.clear()
 class Module:
     def __init__(self, ctx, name, stream, group):
-        self.name = name; self.ctx = ctx.copy(); self.ctx.mod = self;
-        self.ctx.tenv = Env(ctx.tenv); self.ctx.senv = Env(ctx.senv)
+        self.name = name; self.exporting = True
+        self.ctx = ctx.branch(); self.ctx.mod = self
         self.ctx.attr = None; self.ctx.hist = nil
-        self.stream = stream; self.group = group; group.add(self)
+        self.varDefs = DefManager(ctx.senv, ctx.env)
+        self.tyDefs = DefManager(ctx.tenv, ctx.env)
+        self.exprs = Parser(self.ctx.ops).parse(name, stream)
+        self.group = group; group.add(self)
+    def __iter__(self):
+        for expr in self.exprs: yield expr
+        self.deactivate(); self.export()
     def isActive(self): return self in self.group.modsActive
     def deactivate(self): self.group.modsActive.remove(self)
+    def _defX(self, xdefs, name, xx): xdefs.define(self.exporting, name, xx)
+    def defVar(self, name, val): self._defX(self.varDefs, name, val)
+    def defTy(self, name, ty): self._defX(self.tyDefs, name, ty)
+    def _depX(self, xdeps, handler):
+        xdeps.dependants.add(handler)
+        if not self.isActive(): xdeps.export()
+    def depVar(self, handler): self._depX(self.varDefs, handler)
+    def depTy(self, handler): self._depX(self.tyDefs, handler)
+    def export(self): self.tyDefs.export(); self.varDefs.export()

@@ -253,23 +253,29 @@ def fromList(xs, repeat=None):
 ################################################################
 # contexts
 class Context:
-    def __init__(self, root, mod, tenv, senv, env, attr, hist=nil):
+    def __init__(self, root, mod, ops, tenv, senv, env, attr, hist=nil):
         self.root = root; self.mod = mod
-        self.tenv = tenv; self.senv = senv; self.env = env
+        self.ops = ops; self.tenv = tenv; self.senv = senv; self.env = env
         self.attr = attr; self.hist = hist
-    def __eq__(self, rhs):
-        return self.tenv is rhs.tenv and self.senv is rhs.senv
+    def __eq__(self, rhs): return self._cmp() == rhs._cmp()
+    def _cmp(self): return (self.ops, self.tenv, self.senv)
     def copy(self):
-        return Context(self.root, self.mod, self.tenv, self.senv, self.env,
+        return Context(self.root, self.mod,
+                       self.ops, self.tenv, self.senv, self.env,
                        self.attr, self.hist)
+    def branch(self):
+        ctx = self.copy(); ctx.ops = Env(ctx.ops)
+        ctx.tenv = Env(ctx.tenv); ctx.senv = Env(ctx.senv); return ctx
     def histAppend(self, form): self.hist = cons(form, self.hist)
 ubCtxTy, ctxTy, toCtx, fromCtx = basicTy('Ctx', Context)
 def getDen(xenv, name):
     den = xenv.get(EnvKey(name))
     if den is None: den = alias_new(name); xenv.add(EnvKey(name), den)
     return den
-def bindVar(ctx, name, val): ctx.env.add(EnvKey(getDen(ctx.senv,name)),val)
-def bindTy(ctx, name, ty): ctx.env.add(EnvKey(getDen(ctx.tenv,name)),ty)
+def getX(xenv, env, name): return env.get(EnvKey(getDen(xenv, name)))
+def bindX(xenv, env, name, xx): env.add(EnvKey(getDen(xenv, name)), xx)
+def bindVar(ctx, name, val): bindX(ctx.senv, ctx.env, name, val)
+def bindTy(ctx, name, ty): bindX(ctx.tenv, ctx.env, name, ty)
 
 def setPrims(ctx, xenv, xs, name, extra=lambda a,b,c:None):
     print('adding primitive %s:'%name)
@@ -279,9 +285,9 @@ def setPrims(ctx, xenv, xs, name, extra=lambda a,b,c:None):
 def addPrimCons(ctx, name, ty):
     if isinstance(ty, ProductType) and ty.elts:
         addPrim(symbol_name(name.sym), constr_new(ctx, ty))
-def primCtx():
-    tenv = Env(); senv = Env(); env = Env()
-    ctx = Context(None, None, tenv, senv, env, None)
+def primCtx(root=None):
+    ops = Env(); tenv = Env(); senv = Env(); env = Env()
+    ctx = Context(root, None, ops, tenv, senv, env, None)
     setPrims(ctx, tenv, primTypes, 'types', addPrimCons)
     setPrims(ctx, senv, primitives, 'values')
     return ctx
@@ -411,3 +417,31 @@ class Stream:
 def makeStream(s):
     if not isinstance(s, Stream): s = Stream(s)
     return s
+# todo
+class Root:
+    def __init__(self):
+        self.ctx = primCtx(self); self.modman = ModuleManager(self.ctx)
+class DepGraph:
+    def __init__(self):
+        self.deps = {}; self.finished = set()
+    def finish(self, name): del self.deps[name]; self.finished.add(name)
+    def add(self, name, deps):
+        assert name not in deps, name
+        self.deps[name] = [deps, []]
+    def dfs(self, seen, finished, name, idx):
+        seen.add(name)
+        for dn in self.deps[name][idx]:
+            if dn not in self.finished:
+                if idx == 0: self.deps[dn][1].append(name)
+                if dn not in seen: self.dfs(seen, finished, dn, idx)
+        finished.append(name)
+    def depSort(self, name):
+        if name in self.finished: return []
+        finished = []; self.dfs(set(), finished, name, 0)
+        seen = set(); components = []
+        for name in reversed(finished):
+            if name not in seen:
+                component = []; components.append(component)
+                self.dfs(seen, component, name, 1)
+            self.finish(name)
+        return components
