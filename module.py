@@ -53,17 +53,18 @@ class DefManager:
     def __init__(self, xenv, env):
         self.xenv = xenv; self.env = env; self.exportedNames = set()
         self.dependants = set()
-    def define(self, exporting, name, val):
-        if exporting: self.exportedNames.add(name)
-        bindX(self.xenv, self.env, name, val)
-    def export(self):
+    def define(self, exporting, sym, val):
+        if exporting: self.exportedNames.add(EnvKey(sym))
+        bindX(self.xenv, self.env, sym, val)
+    def export(self, ops=None):
+        if ops is None: ops = Env()
         for defX, including, excluding in self.dependants:
             if excluding is None: exports = set(including.keys())
             else: exports = self.exportedNames-excluding
             for name in exports:
-                rename = including.get(name)
-                if rename is None: rename = name
-                defX(rename, getX(self.xenv, self.env, name))
+                sym = including.get(name)
+                if sym is None: sym = name.sym
+                defX(sym, getX(self.xenv, self.env, name.sym), ops.get(name))
         self.dependants.clear()
 class Module:
     def __init__(self, ctx, name, stream, group):
@@ -76,15 +77,18 @@ class Module:
         self.group = group; group.add(self)
     def __iter__(self):
         for expr in self.exprs: yield expr
-        self.deactivate(); self.export()
+        self.deactivate()
     def isActive(self): return self in self.group.modsActive
-    def deactivate(self): self.group.modsActive.remove(self)
-    def _defX(self, xdefs, name, xx): xdefs.define(self.exporting, name, xx)
-    def defVar(self, name, val): self._defX(self.varDefs, name, val)
-    def defTy(self, name, ty): self._defX(self.tyDefs, name, ty)
-    def _depX(self, xdeps, handler):
+    def deactivate(self): self.group.modsActive.remove(self); self.export()
+    def _defX(self, xdefs, sym, xx): xdefs.define(self.exporting, sym, xx)
+    def defVar(self, sym, val, op=None):
+        self._defX(self.varDefs, sym, val)
+        if op is not None: self.defOp(sym, op)
+    def defTy(self, sym, ty, _=None): self._defX(self.tyDefs, sym, ty)
+    def defOp(self, sym, op): self.ctx.ops.add(EnvKey(sym), op)
+    def _depX(self, xdeps, handler, ops=None):
         xdeps.dependants.add(handler)
-        if not self.isActive(): xdeps.export()
-    def depVar(self, handler): self._depX(self.varDefs, handler)
+        if not self.isActive(): xdeps.export(ops)
+    def depVar(self, handler): self._depX(self.varDefs, handler, self.ctx.ops)
     def depTy(self, handler): self._depX(self.tyDefs, handler)
-    def export(self): self.tyDefs.export(); self.varDefs.export()
+    def export(self): self.tyDefs.export(); self.varDefs.export(self.ctx.ops)

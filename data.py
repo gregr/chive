@@ -268,14 +268,14 @@ class Context:
         ctx.tenv = Env(ctx.tenv); ctx.senv = Env(ctx.senv); return ctx
     def histAppend(self, form): self.hist = cons(form, self.hist)
 ubCtxTy, ctxTy, toCtx, fromCtx = basicTy('Ctx', Context)
-def getDen(xenv, name):
-    den = xenv.get(EnvKey(name))
-    if den is None: den = alias_new(name); xenv.add(EnvKey(name), den)
+def getDen(xenv, sym):
+    den = xenv.get(EnvKey(sym))
+    if den is None: den = alias_new(sym); xenv.add(EnvKey(sym), den)
     return den
-def getX(xenv, env, name): return env.get(EnvKey(getDen(xenv, name)))
-def bindX(xenv, env, name, xx): env.add(EnvKey(getDen(xenv, name)), xx)
-def bindVar(ctx, name, val): bindX(ctx.senv, ctx.env, name, val)
-def bindTy(ctx, name, ty): bindX(ctx.tenv, ctx.env, name, ty)
+def getX(xenv, env, sym): return env.get(EnvKey(getDen(xenv, sym)))
+def bindX(xenv, env, sym, xx): env.add(EnvKey(getDen(xenv, sym)), xx)
+def bindVar(ctx, sym, val): bindX(ctx.senv, ctx.env, sym, val)
+def bindTy(ctx, sym, ty): bindX(ctx.tenv, ctx.env, sym, ty)
 
 def setPrims(ctx, xenv, xs, name, extra=lambda a,b,c:None):
     print('adding primitive %s:'%name)
