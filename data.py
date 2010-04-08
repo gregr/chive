@@ -14,6 +14,8 @@
 
 from type import *
 from functools import reduce
+from itertools import chain
+import os
 
 def final(val): return None, val
 def cont(ctx, expr): return ctx, expr
@@ -253,14 +255,14 @@ def fromList(xs, repeat=None):
 ################################################################
 # contexts
 class Context:
-    def __init__(self, root, mod, ops, tenv, senv, env, attr, hist=nil):
-        self.root = root; self.mod = mod
+    def __init__(self, root, nspace, ops, tenv, senv, env, attr, hist=nil):
+        self.root = root; self.nspace = nspace
         self.ops = ops; self.tenv = tenv; self.senv = senv; self.env = env
         self.attr = attr; self.hist = hist
     def __eq__(self, rhs): return self._cmp() == rhs._cmp()
     def _cmp(self): return (self.ops, self.tenv, self.senv)
     def copy(self):
-        return Context(self.root, self.mod,
+        return Context(self.root, self.nspace,
                        self.ops, self.tenv, self.senv, self.env,
                        self.attr, self.hist)
     def branch(self):
@@ -285,12 +287,13 @@ def setPrims(ctx, xenv, xs, name, extra=lambda a,b,c:None):
 def addPrimCons(ctx, name, ty):
     if isinstance(ty, ProductType) and ty.elts:
         addPrim(symbol_name(name.sym), constr_new(ctx, ty))
-def primCtx(root=None):
-    ops = Env(); tenv = Env(); senv = Env(); env = Env()
-    ctx = Context(root, None, ops, tenv, senv, env, None)
-    setPrims(ctx, tenv, primTypes, 'types', addPrimCons)
-    setPrims(ctx, senv, primitives, 'values')
-    return ctx
+def freshCtx(root, nspace):
+    return Context(root, nspace, Env(), Env(), Env(), Env(), None)
+def loadPrims(ctx):
+    setPrims(ctx, ctx.tenv, primTypes, 'types', addPrimCons)
+    setPrims(ctx, ctx.senv, primitives, 'values')
+def primCtx(root=None, nspace=None):
+    ctx = freshCtx(root, nspace); loadPrims(ctx); return ctx
 
 ################################################################
 # syntactic closures
@@ -417,10 +420,28 @@ class Stream:
 def makeStream(s):
     if not isinstance(s, Stream): s = Stream(s)
     return s
-# todo
+
+def resolvePath(searchPaths, path):
+    curdir = os.getcwd(); ap = None
+    for start in searchPaths:
+        os.chdir(start); ap = os.path.abspath(path)
+        if os.path.exists(ap): break
+        ap = None
+    os.chdir(curdir); return ap
+def fileStream(path): return open(path)
+def fileModule(fpath, root, group):
+    return Module(EnvKey(symbol(fpath)), fileStream(fpath), root, group)
 class Root:
-    def __init__(self):
-        self.ctx = primCtx(self); self.modman = ModuleManager(self.ctx)
+    def __init__(self, coreMod, searchPaths=('.',)):
+        self.coreMod = coreMod; self.searchPaths = searchPaths
+        self.modman = ModuleManager(self.makeMod)
+    def getFileModule(self, fpath):
+        def mkMod(grp): return self._makeFileModule(fpath, grp)
+        return self.modman.get(name, mkMod)
+    def _makeFileModule(self, fpath, group):
+        mod = fileModule(fpath, self, group)
+        # todo: populate with core defs unless file specifies otherwise
+        return mod
 class DepGraph:
     def __init__(self):
         self.deps = {}; self.finished = set()

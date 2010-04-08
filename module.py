@@ -13,24 +13,12 @@
 # limitations under the License.
 
 class ModuleManager:
-    def __init__(self, ctx, implicitStream):
-        self.ctx = ctx; self.mods = {}; self.groups = []
-        self.streams = {}; self.implicitStream = implicitStream
-    def _getStream(self, name):
-        stream = self.streams.get(name)
-        if stream is None:
-            stream = self.implicitStream(name)
-            self.explicitStream(name, stream)
-        return stream
-    def explicitStream(self, name, stream):
-        assert name not in self.streams, name
-        self.streams[name] = stream
-    def get(self, name):
+    def __init__(self): self.mods = {}; self.groups = []
+    def get(self, name, mkmod):
         mod = self.mods.get(name)
         if mod is None:
             group = ModuleGroup(); self.groups.append(group)
-            mod = Module(self.ctx, name, self._getStream(name), group)
-            self.mods[name] = mod
+            mod = mkmod(group); self.mods[name] = mod
         else: # if active, fold up strongly-connected component
             if mod.isActive():
                 mgrp = mod.group; idx = self.groups.index[mgrp]
@@ -49,46 +37,58 @@ class ModuleGroup:
     def absorbGroup(self, grp):
         for mod in grp.mods: mod.group = self; self.mods.add(mod)
         self.modsActive |= grp.modsActive
-class DefManager:
-    def __init__(self, xenv, env):
-        self.xenv = xenv; self.env = env; self.exportedNames = set()
-        self.dependants = set()
-    def define(self, exporting, sym, val):
-        if exporting: self.exportedNames.add(EnvKey(sym))
-        bindX(self.xenv, self.env, sym, val)
-    def export(self, ops=None):
-        if ops is None: ops = Env()
-        for defX, including, excluding in self.dependants:
-            if excluding is None: exports = set(including.keys())
-            else: exports = self.exportedNames-excluding
-            for name in exports:
-                sym = including.get(name)
-                if sym is None: sym = name.sym
-                defX(sym, getX(self.xenv, self.env, name.sym), ops.get(name))
-        self.dependants.clear()
 class Module:
-    def __init__(self, ctx, name, stream, group):
-        self.name = name; self.exporting = True
-        self.ctx = ctx.branch(); self.ctx.mod = self
-        self.ctx.attr = None; self.ctx.hist = nil
-        self.varDefs = DefManager(ctx.senv, ctx.env)
-        self.tyDefs = DefManager(ctx.tenv, ctx.env)
+    def __init__(self, name, stream, root, group):
+        self.name = name; self.curNS = Namespace(root, self)
         self.exprs = Parser(self.ctx.ops).parse(name, stream)
         self.group = group; group.add(self)
     def __iter__(self):
         for expr in self.exprs: yield expr
         self.deactivate()
     def isActive(self): return self in self.group.modsActive
-    def deactivate(self): self.group.modsActive.remove(self); self.export()
-    def _defX(self, xdefs, sym, xx): xdefs.define(self.exporting, sym, xx)
-    def defVar(self, sym, val, op=None):
-        self._defX(self.varDefs, sym, val)
+    def deactivate(self):
+        self.group.modsActive.remove(self); self.curNS.exportAll()
+class Namespace:
+    def __init__(self, root, mod):
+        self.mod = mod; self.ctx = freshCtx(root, self); self.exporting = True
+        self.varDefs = DefManager(self.ctx.senv, self.ctx.env, self.ctx.ops)
+        self.tyDefs = DefManager(self.ctx.tenv, self.ctx.env)
+    def addDep(self, *args, now=False):
+        if now or not self.mod.isActive(): self.varDefs.export(*args)
+        else: self.varDefs.dependants.add(*args)
+    def depend(self, ns, filter, now=False):
+        ns.addDep(self.defVar, self.exporting, filter, now=now)
+    def _defX(self, xdefs, sym, xx, export=None):
+        if export is None: export = self.exporting
+        xdefs.define(export, sym, xx)
+    def defVar(self, sym, val, export=None, op=None):
+        self._defX(self.varDefs, sym, val, export)
         if op is not None: self.defOp(sym, op)
-    def defTy(self, sym, ty, _=None): self._defX(self.tyDefs, sym, ty)
+    def defTy(self, sym, ty, export=None, _=None):
+        self._defX(self.tyDefs, sym, ty, export)
     def defOp(self, sym, op): self.ctx.ops.add(EnvKey(sym), op)
-    def _depX(self, xdeps, handler, ops=None):
+    def _depX(self, xdeps, handler):
         xdeps.dependants.add(handler)
-        if not self.isActive(): xdeps.export(ops)
-    def depVar(self, handler): self._depX(self.varDefs, handler, self.ctx.ops)
+        if not self.isActive(): xdeps.exportAll()
+    def depVar(self, handler): self._depX(self.varDefs, handler)
     def depTy(self, handler): self._depX(self.tyDefs, handler)
-    def export(self): self.tyDefs.export(); self.varDefs.export(self.ctx.ops)
+    def exportAll(self): self.tyDefs.exportAll(); self.varDefs.exportAll()
+class DefManager:
+    def __init__(self, xenv, env, ops=None):
+        self.xenv = xenv; self.env = env; self.ops = ops or Env()
+        self.exportedNames = set(); self.dependants = set()
+    def define(self, exporting, sym, val):
+        if exporting: self.exportedNames.add(EnvKey(sym))
+        bindX(self.xenv, self.env, sym, val)
+    def export(self, defX, shouldExport, filter):
+        hideNames, names, rename = filter
+        if hideNames: exports = self.exportedNames-names
+        else: exports = names
+        if rename:
+            nold, nnew = tuple(zip(rename)); exports-=nold; exports+=nnew
+        for name in exports:
+            defX(sym, getX(self.xenv, self.env, name.sym), shouldExport,
+                 self.ops.get(name))
+    def exportAll(self):
+        for exArgs in self.dependants: self.export(*exArgs)
+        self.dependants.clear()

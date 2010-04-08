@@ -13,14 +13,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
-modules
+root search path; module local path; allow diamond import pattern
+import path [modname] [[only (...)]|[hide (...)]] [rename (...)]]
+provide a way for modules to bootstrap themselves without core definitions
+        reset the current module, including only specified defs
+        could this also be a way to implement hiding? sub-modules?
+first class namespaces
+expansion history and attributes for definitions
 variable binding/aliasing
 exprs: change expand to a proc; eliminate eval; add letrec
 dynamic dispatch
 AST pretty-printing
 structs/tuples
 records/row-typing
-reader macros
+reader macros/importing them
 dependency analysis
            -driving the eval order of non-sequenced exprs/typedefs
            -searching mutually-recursive modules for missing dependencies
