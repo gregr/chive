@@ -274,6 +274,9 @@ def getDen(xenv, sym):
     den = xenv.get(EnvKey(sym))
     if den is None: den = alias_new(sym); xenv.add(EnvKey(sym), den)
     return den
+def referX(xenvFrom, xenvTo, sym):
+    xenvTo.add(EnvKey(sym), EnvKey(getDen(xenvFrom, sym)))
+def referVar(ctxFrom, ctxTo, sym): referX(ctxFrom.senv, ctxTo.senv, sym)
 def getX(xenv, env, sym): return env.get(EnvKey(getDen(xenv, sym)))
 def bindX(xenv, env, sym, xx): env.add(EnvKey(getDen(xenv, sym)), xx)
 def bindVar(ctx, sym, val): bindX(ctx.senv, ctx.env, sym, val)

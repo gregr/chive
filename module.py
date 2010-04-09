@@ -77,9 +77,12 @@ class DefManager:
     def __init__(self, xenv, env, ops=None):
         self.xenv = xenv; self.env = env; self.ops = ops or Env()
         self.exportedNames = set(); self.dependants = set()
-    def define(self, exporting, sym, val):
+    def _addName(self, exporting, sym):
         if exporting: self.exportedNames.add(EnvKey(sym))
-        bindX(self.xenv, self.env, sym, val)
+    def refer(self, exporting, sym, srcEnv):
+        self.addName(exporting, sym); referX(srcEnv, self.xenv, sym)
+    def define(self, exporting, sym, val):
+        self.addName(exporting, sym); bindX(self.xenv, self.env, sym, val)
     def export(self, defX, shouldExport, filter):
         hideNames, names, rename = filter
         if hideNames: exports = self.exportedNames-names
