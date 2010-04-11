@@ -15,12 +15,7 @@ limitations under the License.
 ================================================================
 option for direct file-inclusion
 interpreter-agnostic expression evaluation
-root search path; module local path; allow diamond import pattern
 import path [modname] [[only (...)]|[hide (...)]] [rename (...)]]
-provide a way for modules to bootstrap themselves without core definitions
-        reset the current module, including only specified defs
-        could this also be a way to implement hiding? sub-modules?
-first class namespaces
 thread interaction with delays, module-loading, etc.
 expansion history and attributes for definitions
 exprs: change expand to a proc; eliminate eval; add letrec

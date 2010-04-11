@@ -86,7 +86,9 @@ class Env:
             if v is not None: return v
         return None
     def add(self, n, v):
-        assert self.bs.get(n) is None, "redefinition of '%s'"%n
+        ov = self.bs.get(n)
+        if ov is not None and ov is not v:
+            typeErr(None, "redefinition of '%s'"%n)
         self.bs[n] = v
     def bindings(self):
         bs = {}
@@ -425,15 +427,35 @@ def makeStream(s):
     if not isinstance(s, Stream): s = Stream(s)
     return s
 
+def resolvePath(searchPaths, path):
+    curdir = os.getcwd(); ap = None
+    for start in searchPaths:
+        os.chdir(start); ap = os.path.abspath(path)
+        if os.path.exists(ap): break
+        ap = None
+    os.chdir(curdir); return ap
 class Module:
-    def __init__(self, name, stream, root):
-        self.name = name; self.curNS = Namespace(root, self)
-        self.exprs = Parser(self.ctx.ops).parse(name, stream)
-        self.active = True
+    def __init__(self, name, path, stream, root):
+        self.name = name; self.path = path; self.root = root
+        self.curNS = Namespace(root, self); self.setStream(stream)
     def __iter__(self):
         for expr in self.exprs: yield expr
         self.active = False
+    def setStream(self, stream):
+        if stream is None: self.exprs = (); self.active = False; return
+        self.exprs = Parser(self.ctx.ops).parse(self.name, stream)
+        self.active = True
     def isActive(self): return self.active
+    def resolvePath(self, searchPaths, path):
+        return resolvePath(chain((self.path,), searchPaths), path)
+    def getFileModule(self, ctx, path):
+        path = self.resolvePath(path)
+        if path is None:
+            typeErr(ctx, "unable to resolve module path: '%s'"%path)
+        return self.root.getFileModule(path)
+    def newNamespace(self, filter):
+        ns = Namespace(self.root, self); self.curNS.export(ns, filter)
+        self.curNS = ns
 class Namespace:
     def __init__(self, root, mod):
         self.mod = mod; self.ctx = freshCtx(root, self)
@@ -456,27 +478,20 @@ class Namespace:
             ns.refer(self.ctx, name.sym, nnew.sym)
             op = self.ctx.ops.get(name)
             if op is not None: ns.defOp(nnew.sym, op)
-def resolvePath(searchPaths, path):
-    curdir = os.getcwd(); ap = None
-    for start in searchPaths:
-        os.chdir(start); ap = os.path.abspath(path)
-        if os.path.exists(ap): break
-        ap = None
-    os.chdir(curdir); return ap
 def fileStream(path): return open(path)
 exportAllFilter = (True, set(), {})
 class Root:
-    def __init__(self, coreMod, searchPaths=('.',)):
+    def __init__(self, coreMod, searchPaths):
         self.coreMod = coreMod; self.searchPaths = searchPaths
         self.modules = {}
-    def _makeModule(self, name, stream):
-        mod = Module(name, stream, self)
+    def _makeModule(self, name, path, stream):
+        mod = Module(name, path, stream, self)
         self.coreMod.export(mod.curNS, exportAllFilter)
         return mod
     def getFileModule(self, fpath):
         name = EnvKey(symbol(fpath)); mod = self.modules.get(name)
         if mod is None:
-            mod = self._makeModule(name, fileStream(fpath))
+            mod = self._makeModule(name, fpath, fileStream(fpath))
             self.modules[name] = mod
         elif mod.isActive(): typeErr(None, "module self-dependency: '%s'"%name)
         return mod
