@@ -13,8 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
-variable binding/aliasing
-no more mutually recursive modules
+option for direct file-inclusion
 interpreter-agnostic expression evaluation
 root search path; module local path; allow diamond import pattern
 import path [modname] [[only (...)]|[hide (...)]] [rename (...)]]

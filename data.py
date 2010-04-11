@@ -274,8 +274,9 @@ def getDen(xenv, sym):
     den = xenv.get(EnvKey(sym))
     if den is None: den = alias_new(sym); xenv.add(EnvKey(sym), den)
     return den
-def referX(xenvFrom, xenvTo, sym):
-    xenvTo.add(EnvKey(sym), EnvKey(getDen(xenvFrom, sym)))
+def referX(xenvFrom, xenvTo, symFrom, symTo=None):
+    if symTo is None: symTo = symFrom
+    xenvTo.add(EnvKey(symTo), EnvKey(getDen(xenvFrom, symFrom)))
 def referVar(ctxFrom, ctxTo, sym): referX(ctxFrom.senv, ctxTo.senv, sym)
 def getX(xenv, env, sym): return env.get(EnvKey(getDen(xenv, sym)))
 def bindX(xenv, env, sym, xx): env.add(EnvKey(getDen(xenv, sym)), xx)
@@ -432,18 +433,21 @@ def resolvePath(searchPaths, path):
         ap = None
     os.chdir(curdir); return ap
 def fileStream(path): return open(path)
-def fileModule(fpath, root, group):
-    return Module(EnvKey(symbol(fpath)), fileStream(fpath), root, group)
+exportAllFilter = (True, set(), {})
 class Root:
     def __init__(self, coreMod, searchPaths=('.',)):
         self.coreMod = coreMod; self.searchPaths = searchPaths
-        self.modman = ModuleManager(self.makeMod)
+        self.modules = {}
+    def _makeModule(self, name, stream):
+        mod = Module(name, stream, self)
+        self.coreMod.export(mod.curNS, exportAllFilter)
+        return mod
     def getFileModule(self, fpath):
-        def mkMod(grp): return self._makeFileModule(fpath, grp)
-        return self.modman.get(name, mkMod)
-    def _makeFileModule(self, fpath, group):
-        mod = fileModule(fpath, self, group)
-        # todo: populate with core defs unless file specifies otherwise
+        name = EnvKey(symbol(fpath)); mod = self.modules.get(name)
+        if mod is None:
+            mod = self._makeModule(name, fileStream(fpath))
+            self.modules[name] = mod
+        elif mod.isActive(): typeErr(None, "module self-dependency: '%s'"%name)
         return mod
 class DepGraph:
     def __init__(self):
