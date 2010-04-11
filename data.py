@@ -425,6 +425,37 @@ def makeStream(s):
     if not isinstance(s, Stream): s = Stream(s)
     return s
 
+class Module:
+    def __init__(self, name, stream, root):
+        self.name = name; self.curNS = Namespace(root, self)
+        self.exprs = Parser(self.ctx.ops).parse(name, stream)
+        self.active = True
+    def __iter__(self):
+        for expr in self.exprs: yield expr
+        self.active = False
+    def isActive(self): return self.active
+class Namespace:
+    def __init__(self, root, mod):
+        self.mod = mod; self.ctx = freshCtx(root, self)
+        self.exportedNames = set(); self.exporting = True
+    def _addName(self, export, sym):
+        if export or self.exporting: self.exportedNames.add(EnvKey(sym))
+    def refer(self, ctxFrom, symFrom, symTo=None, export=None):
+        self.addName(export, symTo)
+        referVar(ctxFrom, self.ctx, symFrom, symTo)
+    def define(self, sym, val, export=None):
+        self.addName(export, sym); bindVar(self.ctx, self.env, sym, val)
+    def defOp(self, sym, op): self.ctx.ops.add(EnvKey(sym), op)
+    def export(self, ns, filter):
+        hideNames, names, rename = filter
+        if hideNames: exports = self.exportedNames-names
+        else: exports = names
+        for name in exports:
+            nnew = rename.get(name)
+            if nnew is None: nnew = name
+            ns.refer(self.ctx, name.sym, nnew.sym)
+            op = self.ctx.ops.get(name)
+            if op is not None: ns.defOp(nnew.sym, op)
 def resolvePath(searchPaths, path):
     curdir = os.getcwd(); ap = None
     for start in searchPaths:
