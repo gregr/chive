@@ -228,7 +228,8 @@ def referVar(ctxFrom, ctxTo, sym): referX(ctxFrom.senv, ctxTo.senv, sym)
 def getX(xenv, env, sym): return env.get(EnvKey(getDen(xenv, sym)))
 def bindX(xenv, env, sym, xx): env.add(EnvKey(getDen(xenv, sym)), xx)
 def bindVar(ctx, sym, val): bindX(ctx.senv, ctx.env, sym, val)
-def bindTy(ctx, sym, ty): bindX(ctx.tenv, ctx.env, sym, ty)
+def defVar(ctx, sym, ty): ctx.nspace.define(sym, ty)
+defTy = defVar
 def freshCtx(root, nspace):
     return Context(root, nspace, Env(), Env(), Env(), Env(), None)
 ################################################################

@@ -14,40 +14,40 @@
 
 from data import *
 
+def evalTy(ctx, ty): return type_type(ty.eval(ctx))
+def evalTys(ctx, tys): return (evalTy(ctx, ty) for ty in tys)
 class ConsTyExpr:
-    def preEval(self): return self.ty
+    def preEval(self): return type_new(self.ty)
     def eval(self, ctx): raise NotImplementedError
 class ConsTyVar(ConsTyExpr):
     def __init__(self, ctx, name):
-        self.name = EnvKey(getDen(ctx.tenv, name))
+        self.name = EnvKey(getDen(ctx.senv, name))
     def preEval(self): return None
     def eval(self, ctx):
-        ty = ctx.env.get(self.name)
+        ty = type_type(ctx.env.get(self.name))
         if ty is None: typeErr(ctx, "unbound type name: '%s'"%self.name)
-        return ty
+        return type_new(ty)
 class ConsTyProduct(ConsTyExpr):
     def __init__(self, ctx, name, elts, fields):
         assert len(elts) >= len(fields), (elts, fields)
         self.ty = ProductType(name); self.elts = elts; self.fields = fields
     def eval(self, ctx):
-        self.ty.init(tuple(elt.eval(ctx) for elt in self.elts), self.fields)
-        if len(self.ty.elts) == 0: val = node(self.ty);
-        else: val = constr_new(ctx, self.ty)
-        bindVar(ctx, self.ty.name.sym, val); return self.ty
+        self.ty.init(tuple(evalTys(ctx, self.elts)), self.fields)
+        addConsDen(ctx, self.ty.name.sym, self.ty); return type_new(self.ty)
 class ConsTyVariant(ConsTyExpr):
     def __init__(self, ctx, elts): self.ty = VariantType(); self.elts = elts
     def eval(self, ctx, fields=None):
-        self.ty.init([elt.eval(ctx) for elt in self.elts]); return self.ty
+        self.ty.init(list(evalTys(ctx, self.elts))); return type_new(self.ty)
 class ConsTyProc(ConsTyExpr):
     def __init__(self, ctx, inTy, outTy):
         self.ty = ProcType(); self.inTy = inTy; self.outTy = outTy
     def eval(self, ctx):
-        self.ty.init(self.inTy.eval(ctx), self.outTy.eval(ctx))
-        return self.ty
+        self.ty.init(*list(evalTys(ctx, (self.inTy, self.outTy))))
+        return type_new(self.ty)
 ubTyConsTy, tyConsTy, toTyCons, fromTyCons = basicTy('TypeCons', object)
 def isTyCons(val): return isTyped(val) and getTy(val) is tyConsTy
 def getTyCons(ctx, name):
-    ty = ctx.env.get(EnvKey(getDen(ctx.tenv, name)))
+    ty = ctx.env.get(EnvKey(getDen(ctx.senv, name)))
     if isTyCons(ty): return fromTyCons(ty)
     return None
 def tycproc(name):
@@ -97,11 +97,11 @@ def bindTypes(ctx, consTyForms):
                 expr = parseType(ctx, body, name=name)
                 ty = expr.preEval()
                 if ty is None: aliases.append((name, expr))
-                else: bindTy(ctx, name, ty); exprs.append(expr)
+                else: defTy(ctx, name, ty); exprs.append(expr)
                 continue
         typeErr(ctx, "invalid type binder: '%s'"%pretty(form))
     # todo: try sorting aliases topologically, otherwise error
-    for name, expr in aliases: bindTy(ctx, name, expr.eval(ctx))
+    for name, expr in aliases: defTy(ctx, name, expr.eval(ctx))
     for expr in exprs: expr.eval(ctx)
 
 class ConsArray(Constr): pass

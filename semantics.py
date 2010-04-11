@@ -125,7 +125,7 @@ def semUnbox(ctx, form):
 def toTy(ctx, form):
     ctx, form = expand(ctx, form)
     if not isSymbol(form): typeErr(ctx, "invalid type name: '%s'"%form)
-    return ctx.env.get(EnvKey(ctx.tenv.get(EnvKey(form))))
+    return type_type(ctx.env.get(EnvKey(ctx.senv.get(EnvKey(form)))))
 def semArgs(ctx, form, numArgs):
     args = tuple(fromList(cons_tail(form)))
     if len(args) != numArgs:
