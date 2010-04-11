@@ -13,11 +13,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+fix deftypes
 option for direct file-inclusion
 interpreter-agnostic expression evaluation
 import path [modname] [[only (...)]|[hide (...)]] [rename (...)]]
 thread interaction with delays, module-loading, etc.
-expansion history and attributes for definitions
+expansion history (fix) and attributes for definitions
 exprs: change expand to a proc; eliminate eval; add letrec
 dynamic dispatch
 AST pretty-printing

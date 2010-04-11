@@ -74,7 +74,8 @@ class ScalarType(AtomicUnboxedType):
     def __init__(self, name, pred=lambda _: True):
         self.name = name; self.pred = pred
     def new(self, val):
-        if not self.pred(val): typeErr(None, "invalid scalar '%r'"%val)
+        if not self.pred(val):
+            typeErr(None, "invalid scalar '%s'"%repr(val))
         return typed(self, val)
     def discrim(self, val): return getVal(val)
     def __str__(self): return str(self.name)
@@ -164,7 +165,7 @@ class ProductType(NodeType):
     def __init__(self, name, elts=None, fields=()):
         self.name = name
         if elts is not None: return self.init(elts, fields)
-        self.elts = None; self.fields = {}
+        self.elts = None; self.fields = {}; self.consDen = None
     def init(self, elts, fields=()):
         self.elts = elts; self.eltSize = sum(elt.size() for elt in elts)
         assert len(fields) <= len(elts), (fields, elts)

@@ -34,11 +34,10 @@ def mapRest(f, ctx, xs):
     attr0 += [ctx.attr]*(len(xs0)-len(attr0))
     return [f(ctx, aa, xx) for aa, xx in zip(attr0, xs0)]
 def checkIsForm(ctx, xs): return formTy.contains(getTy(xs))
-def scRoot(ctx, form): return synclo_new(toCtx(ctx), nil, form) # todo: senv
 def expandBasic(tyn):
     def ex(ctx, val):
         ubval = toList((symbol('#unbox'), val))
-        return ctx, scRoot(ctx, toList([symbol(tyn), ubval]))
+        return ctx, primSC(toList([symbol(tyn), ubval]))
     return ex
 litExpanders = dict((ty, expandBasic(ty.name))
                     for ty in (intTy,floatTy,charTy))
@@ -93,8 +92,10 @@ def _semantize(ctx, xs):
         if isinstance(hd, Apply): hd.args.extend(rest); return ctx, hd
         else: return ctx, Apply(hd, rest)
     elif isSymbol(xs):
-        den = ctx.senv.get(EnvKey(xs))
-        if den is None: den = alias_new(xs); ctx.senv.add(EnvKey(den), xs)
+        den = getDen(ctx.senv, xs); val = ctx.env.get(EnvKey(den))
+        if isTyped(val) and isType(val):
+            ty = type_type(val)
+            if isinstance(ty, ProductType): den = ty.consDen
         return ctx, Var(EnvKey(den))
     elif xs is nil: return ctx, unitExpr
     else: typeErr(ctx, "invalid symbolic expression: '%s'"%pretty(xs))
@@ -194,7 +195,7 @@ def interact(ctx):
     return result
 
 def _test():
-    ctx = primCtx()
+    ctx = primCtx
     interact(ctx)
     print('')
 if __name__ == '__main__': _test()

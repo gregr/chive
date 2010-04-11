@@ -159,7 +159,7 @@ def applyFull(ctx, proc, args):
     while args:
         proc = evalExpr(*cprc) # lifted out here for tail-calls
         if isProc(proc): cprc, args = getVal(proc).apply(ctx, args)
-        else: typeError(ctx, "cannot apply non-procedure: '%s'"%proc)
+        else: typeErr(ctx, "cannot apply non-procedure: '%s'"%proc)
     return cprc
 
 ################################################################
@@ -200,26 +200,132 @@ def constr_new(ctx, ty):
     cty = currySpecificProcType(ty.name, ty.elts, ty)
     body = ConsNode(ty, [Var(nm) for nm in cargs], ctx)
     return proc_new(NativeProc(cty.name, body, cargs), ctx, cty)
-
+################################################################
+# contexts
+class Context:
+    def __init__(self, root, nspace, ops, tenv, senv, env, attr, hist=None):
+        self.root = root; self.nspace = nspace
+        self.ops = ops; self.tenv = tenv; self.senv = senv; self.env = env
+        self.attr = attr; self.hist = hist
+    def __eq__(self, rhs): return self._cmp() == rhs._cmp()
+    def _cmp(self): return (self.ops, self.tenv, self.senv)
+    def copy(self):
+        return Context(self.root, self.nspace,
+                       self.ops, self.tenv, self.senv, self.env,
+                       self.attr, self.hist)
+    def branch(self):
+        ctx = self.copy(); ctx.ops = Env(ctx.ops)
+        ctx.tenv = Env(ctx.tenv); ctx.senv = Env(ctx.senv); return ctx
+    def histAppend(self, form): pass#self.hist = cons(form, self.hist)
+def getDen(xenv, sym):
+    den = xenv.get(EnvKey(sym))
+    if den is None: den = alias_new(sym); xenv.add(EnvKey(sym), den)
+    return den
+def referX(xenvFrom, xenvTo, symFrom, symTo=None):
+    if symTo is None: symTo = symFrom
+    xenvTo.add(EnvKey(symTo), EnvKey(getDen(xenvFrom, symFrom)))
+def referVar(ctxFrom, ctxTo, sym): referX(ctxFrom.senv, ctxTo.senv, sym)
+def getX(xenv, env, sym): return env.get(EnvKey(getDen(xenv, sym)))
+def bindX(xenv, env, sym, xx): env.add(EnvKey(getDen(xenv, sym)), xx)
+def bindVar(ctx, sym, val): bindX(ctx.senv, ctx.env, sym, val)
+def bindTy(ctx, sym, ty): bindX(ctx.tenv, ctx.env, sym, ty)
+def freshCtx(root, nspace):
+    return Context(root, nspace, Env(), Env(), Env(), Env(), None)
+################################################################
+# modules
+def resolvePath(searchPaths, path):
+    curdir = os.getcwd(); ap = None
+    for start in searchPaths:
+        os.chdir(start); ap = os.path.abspath(path)
+        if os.path.exists(ap): break
+        ap = None
+    os.chdir(curdir); return ap
+class Module:
+    def __init__(self, name, path, stream, root):
+        self.name = name; self.path = path; self.root = root
+        self.curNS = Namespace(root, self); self.setStream(stream)
+    def __iter__(self):
+        for expr in self.exprs: yield expr
+        self.active = False
+    def setStream(self, stream):
+        if stream is None: self.exprs = (); self.active = False; return
+        self.exprs = Parser(self.ctx.ops).parse(self.name, stream)
+        self.active = True
+    def isActive(self): return self.active
+    def resolvePath(self, searchPaths, path):
+        return resolvePath(chain((self.path,), searchPaths), path)
+    def getFileModule(self, ctx, path):
+        path = self.resolvePath(path)
+        if path is None:
+            typeErr(ctx, "unable to resolve module path: '%s'"%path)
+        return self.root.getFileModule(path)
+    def newNamespace(self, filter):
+        ns = Namespace(self.root, self); self.curNS.export(ns, filter)
+        self.curNS = ns
+class Namespace:
+    def __init__(self, root, mod):
+        self.mod = mod; self.ctx = freshCtx(root, self)
+        self.exportedNames = set(); self.exporting = True
+    def _addName(self, export, sym):
+        if export or self.exporting: self.exportedNames.add(EnvKey(sym))
+    def refer(self, ctxFrom, symFrom, symTo=None, export=None):
+        self._addName(export, symTo)
+        referVar(ctxFrom, self.ctx, symFrom, symTo)
+    def define(self, sym, val, export=None):
+        self._addName(export, sym); bindVar(self.ctx, sym, val)
+    def defOp(self, sym, op): self.ctx.ops.add(EnvKey(sym), op)
+    def export(self, ns, filter):
+        hideNames, names, rename = filter
+        if hideNames: exports = self.exportedNames-names
+        else: exports = names
+        for name in exports:
+            nnew = rename.get(name)
+            if nnew is None: nnew = name
+            ns.refer(self.ctx, name.sym, nnew.sym)
+            op = self.ctx.ops.get(name)
+            if op is not None: ns.defOp(nnew.sym, op)
+def fileStream(path): return open(path)
+exportAllFilter = (True, set(), {})
+class Root:
+    def __init__(self, coreMod, searchPaths):
+        self.coreMod = coreMod; self.searchPaths = searchPaths
+        self.modules = {}
+    def _makeModule(self, name, path, stream):
+        mod = Module(name, path, stream, self)
+        self.coreMod.export(mod.curNS, exportAllFilter)
+        return mod
+    def getFileModule(self, fpath):
+        name = EnvKey(symbol(fpath)); mod = self.modules.get(name)
+        if mod is None:
+            mod = self._makeModule(name, fpath, fileStream(fpath))
+            self.modules[name] = mod
+        elif mod.isActive(): typeErr(None, "module self-dependency: '%s'"%name)
+        return mod
 ################################################################
 # primitives
-def populator():
-    population = {}
-    def adder(name, val):
-        sym = symbol(name); den = alias_new(sym); nm = EnvKey(sym)
-        assert nm not in population, name; population[nm] = (den, val)
-    return population, adder
-primitives, addPrim = populator()
-primTypes, addPrimTy = populator()
-def primDen(name): return primitives.get(EnvKey(symbol(name)))[0]
+def node(ty, *args): return ty.new(*args)
+primMod = Module(EnvKey(alias_new(symbol('primitives'))), '', None, None)
+primCtx = primMod.curNS.ctx
+def addPrim(name, val):
+    print('adding primitive:', name)
+    primMod.curNS.define(symbol(name), val)
+def addConsDen(ctx, sym, ty):
+    if len(ty.elts) == 0: consVal = node(ty)
+    else: consVal = constr_new(ctx, ty)
+    consDen = alias_new(sym); ty.consDen = consDen
+    ctx.env.add(EnvKey(consDen), consVal)
+    return consVal
+def addPrimTy(name, ty):
+    addPrim(name, type_new(ty))
+    if isinstance(ty, ProductType):
+        return addConsDen(primCtx, symbol(name), ty)
 addPrimTy('#Type', ubTyTy); addPrimTy('Type', tyTy)
 addPrimTy('#Symbol', ubSymTy); addPrimTy('Symbol', symTy)
 addPrimTy('Any', anyTy)
 def prodTy(name, *elts):
     ty = ProductType(name, elts); addPrimTy(name, ty); return ty
-def node(ty, *args): return ty.new(*args)
-def singleton(name):
-    ty = prodTy(name); val = ty.new(); addPrim(name, val); return ty, val
+def singleton(name): ty = ProductType(name, ()); return ty, addPrimTy(name, ty)
+def primDen(name): return getDen(primCtx.senv, symbol(name))
 unitTy, unit = singleton('Unit')
 unitDen = primDen('Unit')
 
@@ -262,54 +368,8 @@ def fromList(xs, repeat=None):
     if repeat is not None: del repeat[:]
 
 ################################################################
-# contexts
-class Context:
-    def __init__(self, root, nspace, ops, tenv, senv, env, attr, hist=nil):
-        self.root = root; self.nspace = nspace
-        self.ops = ops; self.tenv = tenv; self.senv = senv; self.env = env
-        self.attr = attr; self.hist = hist
-    def __eq__(self, rhs): return self._cmp() == rhs._cmp()
-    def _cmp(self): return (self.ops, self.tenv, self.senv)
-    def copy(self):
-        return Context(self.root, self.nspace,
-                       self.ops, self.tenv, self.senv, self.env,
-                       self.attr, self.hist)
-    def branch(self):
-        ctx = self.copy(); ctx.ops = Env(ctx.ops)
-        ctx.tenv = Env(ctx.tenv); ctx.senv = Env(ctx.senv); return ctx
-    def histAppend(self, form): self.hist = cons(form, self.hist)
-ubCtxTy, ctxTy, toCtx, fromCtx = basicTy('Ctx', Context)
-def getDen(xenv, sym):
-    den = xenv.get(EnvKey(sym))
-    if den is None: den = alias_new(sym); xenv.add(EnvKey(sym), den)
-    return den
-def referX(xenvFrom, xenvTo, symFrom, symTo=None):
-    if symTo is None: symTo = symFrom
-    xenvTo.add(EnvKey(symTo), EnvKey(getDen(xenvFrom, symFrom)))
-def referVar(ctxFrom, ctxTo, sym): referX(ctxFrom.senv, ctxTo.senv, sym)
-def getX(xenv, env, sym): return env.get(EnvKey(getDen(xenv, sym)))
-def bindX(xenv, env, sym, xx): env.add(EnvKey(getDen(xenv, sym)), xx)
-def bindVar(ctx, sym, val): bindX(ctx.senv, ctx.env, sym, val)
-def bindTy(ctx, sym, ty): bindX(ctx.tenv, ctx.env, sym, ty)
-
-def setPrims(ctx, xenv, xs, name, extra=lambda a,b,c:None):
-    print('adding primitive %s:'%name)
-    for name, (den, xx) in xs.items():
-        print(name); xenv.add(name, den); ctx.env.add(EnvKey(den), xx)
-        extra(ctx, name, xx)
-def addPrimCons(ctx, name, ty):
-    if isinstance(ty, ProductType) and ty.elts:
-        addPrim(symbol_name(name.sym), constr_new(ctx, ty))
-def freshCtx(root, nspace):
-    return Context(root, nspace, Env(), Env(), Env(), Env(), None)
-def loadPrims(ctx):
-    setPrims(ctx, ctx.tenv, primTypes, 'types', addPrimCons)
-    setPrims(ctx, ctx.senv, primitives, 'values')
-def primCtx(root=None, nspace=None):
-    ctx = freshCtx(root, nspace); loadPrims(ctx); return ctx
-
-################################################################
 # syntactic closures
+ubCtxTy, ctxTy, toCtx, fromCtx = basicTy('Ctx', Context)
 formTy = VariantType()
 syncloTy = prodTy('SynClo', ctxTy, listTy, formTy) # todo
 formTy.init((listTy, symTy, syncloTy, intTy, floatTy, charTy))
@@ -331,7 +391,7 @@ def applySynCloCtx(ctx, sc):
 def syncloExpand(ctx, xs):
     while isSynClo(xs): ctx = applySynCloCtx(ctx, xs); xs = synclo_form(xs)
     return ctx, xs
-
+def primSC(form): return synclo_new(toCtx(primCtx), nil, form)
 ################################################################
 # arrays
 
@@ -434,74 +494,6 @@ def makeStream(s):
     if not isinstance(s, Stream): s = Stream(s)
     return s
 
-def resolvePath(searchPaths, path):
-    curdir = os.getcwd(); ap = None
-    for start in searchPaths:
-        os.chdir(start); ap = os.path.abspath(path)
-        if os.path.exists(ap): break
-        ap = None
-    os.chdir(curdir); return ap
-class Module:
-    def __init__(self, name, path, stream, root):
-        self.name = name; self.path = path; self.root = root
-        self.curNS = Namespace(root, self); self.setStream(stream)
-    def __iter__(self):
-        for expr in self.exprs: yield expr
-        self.active = False
-    def setStream(self, stream):
-        if stream is None: self.exprs = (); self.active = False; return
-        self.exprs = Parser(self.ctx.ops).parse(self.name, stream)
-        self.active = True
-    def isActive(self): return self.active
-    def resolvePath(self, searchPaths, path):
-        return resolvePath(chain((self.path,), searchPaths), path)
-    def getFileModule(self, ctx, path):
-        path = self.resolvePath(path)
-        if path is None:
-            typeErr(ctx, "unable to resolve module path: '%s'"%path)
-        return self.root.getFileModule(path)
-    def newNamespace(self, filter):
-        ns = Namespace(self.root, self); self.curNS.export(ns, filter)
-        self.curNS = ns
-class Namespace:
-    def __init__(self, root, mod):
-        self.mod = mod; self.ctx = freshCtx(root, self)
-        self.exportedNames = set(); self.exporting = True
-    def _addName(self, export, sym):
-        if export or self.exporting: self.exportedNames.add(EnvKey(sym))
-    def refer(self, ctxFrom, symFrom, symTo=None, export=None):
-        self.addName(export, symTo)
-        referVar(ctxFrom, self.ctx, symFrom, symTo)
-    def define(self, sym, val, export=None):
-        self.addName(export, sym); bindVar(self.ctx, self.env, sym, val)
-    def defOp(self, sym, op): self.ctx.ops.add(EnvKey(sym), op)
-    def export(self, ns, filter):
-        hideNames, names, rename = filter
-        if hideNames: exports = self.exportedNames-names
-        else: exports = names
-        for name in exports:
-            nnew = rename.get(name)
-            if nnew is None: nnew = name
-            ns.refer(self.ctx, name.sym, nnew.sym)
-            op = self.ctx.ops.get(name)
-            if op is not None: ns.defOp(nnew.sym, op)
-def fileStream(path): return open(path)
-exportAllFilter = (True, set(), {})
-class Root:
-    def __init__(self, coreMod, searchPaths):
-        self.coreMod = coreMod; self.searchPaths = searchPaths
-        self.modules = {}
-    def _makeModule(self, name, path, stream):
-        mod = Module(name, path, stream, self)
-        self.coreMod.export(mod.curNS, exportAllFilter)
-        return mod
-    def getFileModule(self, fpath):
-        name = EnvKey(symbol(fpath)); mod = self.modules.get(name)
-        if mod is None:
-            mod = self._makeModule(name, fpath, fileStream(fpath))
-            self.modules[name] = mod
-        elif mod.isActive(): typeErr(None, "module self-dependency: '%s'"%name)
-        return mod
 class DepGraph:
     def __init__(self):
         self.deps = {}; self.finished = set()

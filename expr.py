@@ -51,8 +51,8 @@ def getTyCons(ctx, name):
     if isTyCons(ty): return fromTyCons(ty)
     return None
 def tycproc(name):
-    def handleKP(kp): addPrimTy(name, toTyCons(kp)); return kp
-    return handleKP
+    def handleTyCProc(tycp): addPrim(name, toTyCons(tycp)); return tycp
+    return handleTyCProc
 @tycproc('#Product')
 def tyConsProduct(ctx, body, name):
     if name is None: typeErr(ctx, "product type requires a name: '%s'"%body)
