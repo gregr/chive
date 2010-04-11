@@ -44,26 +44,26 @@ class ConsTyProc(ConsTyExpr):
     def eval(self, ctx):
         self.ty.init(self.inTy.eval(ctx), self.outTy.eval(ctx))
         return self.ty
-ubKindTy, kindTy, toKind, fromKind = basicTy('Kind', object)
-def isKind(val): return isTyped(val) and getTy(val) is kindTy
-def getKind(ctx, name):
+ubTyConsTy, tyConsTy, toTyCons, fromTyCons = basicTy('TypeCons', object)
+def isTyCons(val): return isTyped(val) and getTy(val) is tyConsTy
+def getTyCons(ctx, name):
     ty = ctx.env.get(EnvKey(getDen(ctx.tenv, name)))
-    if isKind(ty): return fromKind(ty)
+    if isTyCons(ty): return fromTyCons(ty)
     return None
-def kindproc(name):
-    def handleKP(kp): addPrimTy(name, toKind(kp)); return kp
+def tycproc(name):
+    def handleKP(kp): addPrimTy(name, toTyCons(kp)); return kp
     return handleKP
-@kindproc('#product')
-def kindProduct(ctx, body, name):
+@tycproc('#Product')
+def tyConsProduct(ctx, body, name):
     if name is None: typeErr(ctx, "product type requires a name: '%s'"%body)
     fields = []
     return ConsTyProduct(ctx, EnvKey(name), tuple(parseType(ctx, form, fields)
                                                   for form in body), fields)
-@kindproc('#variant')
-def kindVariant(ctx, body, _):
+@tycproc('#Variant')
+def tyConsVariant(ctx, body, _):
     return ConsTyVariant(ctx, tuple(parseType(ctx, form) for form in body))
-@kindproc('#proc')
-def kindProc(ctx, body, _):
+@tycproc('#Proc')
+def tyConsProc(ctx, body, _):
     if len(body) != 2: typeErr(ctx, "proc type requires two args: '%s'"%body)
     return ConsTyProc(ctx, parseType(ctx, body[0]), parseType(ctx, body[1]))
 def parseType(ctx, body, fields=None, name=None):
@@ -75,10 +75,10 @@ def parseType(ctx, body, fields=None, name=None):
         body = tuple(fromList(body))
         hdCtx, hd = syncloExpand(ctx, body[0]) # todo: copy here too
         if isSymbol(hd):
-            kind = getKind(ctx, hd)
-            if kind is not None:
+            tyCons = getTyCons(ctx, hd)
+            if tyCons is not None:
                 if fields is not None: fields.append(None)
-                return kind(ctx, body[1:], name)
+                return tyCons(ctx, body[1:], name)
         if len(body) == 2:
             ty, field = body
             if fields is not None:

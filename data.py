@@ -45,6 +45,13 @@ class Var(Atom):
         return final(val)
 
 ################################################################
+# type types
+ubTyTy = PyType('#Type', Type)
+tyTy = ProductType('Type', (ubTyTy,))
+def isType(tt): return getTy(tt) is tyTy
+def type_new(tt): return tyTy.new(ubTyTy.new(tt))
+def type_type(tt): return getVal(tyTy.unpackEl(tt, 0))
+################################################################
 # symbols
 ubSymTy = ScalarType('#Symbol')
 nextSymId = 0
@@ -74,7 +81,6 @@ def nameGen(alphabet=[chr(o) for o in range(ord('a'), ord('z')+1)]):
         rep += 1
 def alias_new(sym): return symbol_new(symbol_name(sym))
 def gensym(names=nameGen()): return symbol_new(next(names))
-
 ################################################################
 # envs
 class Env:
@@ -206,7 +212,8 @@ def populator():
 primitives, addPrim = populator()
 primTypes, addPrimTy = populator()
 def primDen(name): return primitives.get(EnvKey(symbol(name)))[0]
-addPrimTy('Symbol', symTy)
+addPrimTy('#Type', ubTyTy); addPrimTy('Type', tyTy)
+addPrimTy('#Symbol', ubSymTy); addPrimTy('Symbol', symTy)
 addPrimTy('Any', anyTy)
 def prodTy(name, *elts):
     ty = ProductType(name, elts); addPrimTy(name, ty); return ty
