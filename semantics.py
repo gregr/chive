@@ -154,10 +154,10 @@ def semConsProc(ctx, form):
                          semantize(bodyCtx, body), paramts, None)
 @semproc('#switch')
 def semSwitch(ctx, form):
-    ty, discrim, *alts = fromList(cons_tail(form))
+    ty, discrim, alts = semArgs(ctx, form, 3)#fromList(cons_tail(form))
     default = None
     dalts = {}
-    for alt in alts:
+    for alt in fromList(alts):
         matches, body = tuple(fromList(alt))
         body = semantize(ctx, body)
         if matches is nil:
@@ -166,8 +166,8 @@ def semSwitch(ctx, form):
             default = body
         else:
             for pat in fromList(matches):
-                if isSymbol(pat): pat = toTy(pat)
-                elif isListCons(pat): assert False
+                if isSymbol(pat): pat = toTy(ctx, pat)
+                elif isListCons(pat): assert False, pat
                 assert pat not in dalts, pat
                 dalts[pat] = body
     return Switch(toTy(ctx, ty), semantize(ctx, discrim), default, dalts)

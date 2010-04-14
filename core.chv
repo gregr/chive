@@ -2,3 +2,6 @@
 #def hd (#proc (xx) (#node-unpack (:) 0 xx))
 #def tl (#proc (xx) (#node-unpack (:) 1 xx))
 #def hello 5
+#def testSwitch
+     #switch Any (1:2:Nil)
+             (((Nil) 3) ((\:) 4))
