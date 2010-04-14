@@ -42,7 +42,7 @@
    '("\\([`~!@$%^&*\\=+|;:,.<>/?-]*\\)" 1 font-lock-variable-name-face)
 ;;    '("\\([`~!@$%^&*\\=+|;:,.<>/?-]\\)" 1 font-lock-function-name-face)
 ;;   '("\\<\\([0-9]+\\)\\>" . font-lock-constant-face)
-;   '("\\(##.*\\)" 0 'font-lock-comment-face)
+   '("\\(##.*\\)" 0 'font-lock-comment-face)
    )
   "Chive mode expression highlighting")
 
@@ -85,7 +85,7 @@
 (defvar chive-mode-syntax-table
   (let ((st (make-syntax-table)))
     (modify-syntax-entry ?_ "w" st)
-;    (modify-syntax-entry ?# ". 12b" st)
+    (modify-syntax-entry ?# ". 12b" st)
     (modify-syntax-entry ?\n "> b" st)
     st))
 
@@ -103,8 +103,8 @@
 (define-derived-mode chive-mode fundamental-mode "Chive"
    "Major mode for editing .chv files"
    :syntax-table chive-mode-syntax-table
-;   (set (make-local-variable 'comment-start) "## ")
-;   (set (make-local-variable 'comment-start-skip) "##+\\s-*") ; todo?
+   (set (make-local-variable 'comment-start) "## ")
+   (set (make-local-variable 'comment-start-skip) "##+\\s-*") ; todo?
 ;;    (set (make-local-variable 'font-lock-keywords)
 ;; 	'(chive-font-lock-keywords))
    (set (make-local-variable 'font-lock-defaults)

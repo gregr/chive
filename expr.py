@@ -20,8 +20,7 @@ class ConsTyExpr:
     def preEval(self): return type_new(self.ty)
     def eval(self, ctx): raise NotImplementedError
 class ConsTyVar(ConsTyExpr):
-    def __init__(self, ctx, name):
-        self.name = EnvKey(getDen(ctx.senv, name))
+    def __init__(self, ctx, name): self.name = EnvKey(getDen(ctx, name))
     def preEval(self): return None
     def eval(self, ctx):
         ty = type_type(ctx.env.get(self.name))
@@ -47,7 +46,7 @@ class ConsTyProc(ConsTyExpr):
 ubTyConsTy, tyConsTy, toTyCons, fromTyCons = basicTy('TypeCons', object)
 def isTyCons(val): return isTyped(val) and getTy(val) is tyConsTy
 def getTyCons(ctx, name):
-    ty = ctx.env.get(EnvKey(getDen(ctx.senv, name)))
+    ty = getVar(ctx, name)
     if isTyCons(ty): return fromTyCons(ty)
     return None
 def tycproc(name):
@@ -143,8 +142,7 @@ class Apply(Expr):
     def eval(self, ctx): return applyFull(ctx, self.proc, self.args)
 # todo: extensible dispatch-proc?
 class Switch(Expr): 
-    def __init__(self, discrimTy, discrim, default, alts):
-        self.discrimTy = discrimTy
+    def __init__(self, discrim, default, alts):
         self.discrim = discrim; self.default = default; self.alts = alts
         # todo: if default is None, default = expr to raise a type error
     def _children(self):
@@ -152,7 +150,7 @@ class Switch(Expr):
     def freeVars(self): return accFreeVars(self._children())
     def subst(self, subs): mapSubst(subs, self._children())
     def eval(self, ctx):
-        discrim = getDiscrim(evalExpr(ctx, self.discrim, self.discrimTy))
+        discrim = getDiscrim(evalExpr(ctx, self.discrim))
         body = self.alts.get(discrim)
         if body is None: body = self.default
         return cont(ctx, body)

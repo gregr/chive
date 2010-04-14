@@ -1,7 +1,18 @@
 #def-op (:) infix right 5
-#def hd (#proc (xx) (#node-unpack (:) 0 xx))
-#def tl (#proc (xx) (#node-unpack (:) 1 xx))
-#def hello 5
+#def hd (#proc (xs) (#node-unpack (:) 0 xs))
+#def tl (#proc (xs) (#node-unpack (:) 1 xs))
 #def testSwitch
-  #switch Any (1:2:Nil)
+  #switch (1:2:Nil)
     (((Nil) 3) ((\:) 4))
+#def id (#proc (x) x)
+#def rev-append
+  #proc (xs ys)
+    #switch ys
+      (((Nil) xs)
+       ((\:) (rev-append (hd ys:xs) (tl ys))))
+#def reverse (#proc (xs) (rev-append Nil xs))
+#def map
+  #proc (f xs)
+    #switch xs
+      (((Nil) Nil)
+       ((\:) (f (hd xs):map f (tl xs))))

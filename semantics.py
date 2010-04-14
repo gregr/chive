@@ -91,7 +91,7 @@ def _semantize(ctx, xs):
         if isinstance(hd, Apply): hd.args.extend(rest); return hd
         else: return Apply(hd, rest)
     elif isSymbol(xs):
-        den = getDen(ctx.senv, xs); val = ctx.env.get(EnvKey(den))
+        den = getDen(ctx, xs); val = ctx.env.get(EnvKey(den))
         if isTyped(val) and isType(val):
             ty = type_type(val)
             if isinstance(ty, ProductType): den = ty.consDen
@@ -148,13 +148,12 @@ def semConsProc(ctx, form):
         else: var = binder; ty = anyTy
         if not isSymbol(var): # todo: synclo?
             typeErr(ctx, "invalid proc binder: '%s'"%pretty(var))
-        den = alias_new(var); bodyCtx.senv.add(EnvKey(var), den)
-        vars.append(EnvKey(den)); paramts.append(ty)
+        vars.append(EnvKey(newDen(bodyCtx.senv, var))); paramts.append(ty)
     return ConsProc(EnvKey(gensym()), vars,
-                         semantize(bodyCtx, body), paramts, None)
+                    semantize(bodyCtx, body), paramts, None)
 @semproc('#switch')
 def semSwitch(ctx, form):
-    ty, discrim, alts = semArgs(ctx, form, 3)#fromList(cons_tail(form))
+    discrim, alts = semArgs(ctx, form, 2)#fromList(cons_tail(form))
     default = None
     dalts = {}
     for alt in fromList(alts):
@@ -170,7 +169,7 @@ def semSwitch(ctx, form):
                 elif isListCons(pat): assert False, pat
                 assert pat not in dalts, pat
                 dalts[pat] = body
-    return Switch(toTy(ctx, ty), semantize(ctx, discrim), default, dalts)
+    return Switch(semantize(ctx, discrim), default, dalts)
 @semproc('#node-unpack')
 def semNodeUnpack(ctx, form):
     return NodeUnpack(*semNodeAccess(ctx, *semArgs(ctx, form, 3)))

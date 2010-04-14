@@ -217,18 +217,17 @@ class Context:
         ctx = self.copy(); ctx.ops = Env(ctx.ops)
         ctx.tenv = Env(ctx.tenv); ctx.senv = Env(ctx.senv); return ctx
     def histAppend(self, form): pass#self.hist = cons(form, self.hist)
-def getDen(xenv, sym):
-    den = xenv.get(EnvKey(sym))
-    if den is None: den = alias_new(sym); xenv.add(EnvKey(sym), den)
+def newDen(xenv, sym):
+    den = alias_new(sym); xenv.add(EnvKey(sym), den); return den
+def getDen(ctx, sym):
+    den = ctx.senv.get(EnvKey(sym))
+    if den is None: den = newDen(ctx.nspace.ctx.senv, sym)
     return den
-def referX(xenvFrom, xenvTo, symFrom, symTo=None):
-    if symTo is None: symTo = symFrom
-    xenvTo.add(EnvKey(symTo), getDen(xenvFrom, symFrom))
 def referVar(ctxFrom, ctxTo, symFrom, symTo=None):
-    referX(ctxFrom.senv, ctxTo.senv, symFrom, symTo)
-def getX(xenv, env, sym): return env.get(EnvKey(getDen(xenv, sym)))
-def bindX(xenv, env, sym, xx): env.add(EnvKey(getDen(xenv, sym)), xx)
-def bindVar(ctx, sym, val): bindX(ctx.senv, ctx.env, sym, val)
+    if symTo is None: symTo = symFrom
+    ctxTo.senv.add(EnvKey(symTo), getDen(ctxFrom, symFrom))
+def getVar(ctx, sym): return ctx.env.get(EnvKey(getDen(ctx, sym)))
+def bindVar(ctx, sym, val): ctx.env.add(EnvKey(getDen(ctx, sym)), val)
 def defVar(ctx, sym, ty): ctx.nspace.define(sym, ty)
 defTy = defVar
 def freshCtx(root, nspace):
@@ -341,7 +340,7 @@ addPrimTy('Any', anyTy)
 def prodTy(name, *elts):
     ty = ProductType(name, elts); addPrimTy(name, ty); return ty
 def singleton(name): ty = ProductType(name, ()); return ty, addPrimTy(name, ty)
-def primDen(name): return getDen(primCtx.senv, symbol(name))
+def primDen(name): return getDen(primCtx, symbol(name))
 unitTy, unit = singleton('Unit')
 unitDen = primDen('Unit')
 
