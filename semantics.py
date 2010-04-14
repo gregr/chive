@@ -175,22 +175,30 @@ def semDefOp(ctx, form):
     name, fixity, assoc, prec = semArgs(ctx, form, 4)
     op = newOperator(name, symbol_name(fixity), assoc, fromInt(prec))
     ctx.nspace.defOp(name, op); return ctx, unitExpr
+def evalModule(mod, onResult=lambda _: None):
+    for expr, attr in mod:
+        result = withSubCtx(evaluate, mod.curNS.ctx, attr, expr)
+        onResult(result)
 def interact(mod):
     from lex import LexError
     from syntax import ParseError, Parser
     from data import Env, makeStream, unit
-    result = unit
+    result = [unit]
+    def onResult(res): result[0] = res; print(pretty(res))
     for stream in interactStreams('%s> '%os.path.basename(str(mod.name))):
         mod.setStream(stream)
-        try:
-            for expr, attr in mod:
-                result = withSubCtx(evaluate, mod.curNS.ctx, attr, expr)
-                print(pretty(result))
+        try: evalModule(mod, onResult)
         except LexError: raise
         except ParseError: raise
         except TypeError: raise
     return result
 def _test():
-    root = Root(()); mod = root.rawModule('test'); interact(mod); print('')
+    import sys
+#    root = Root((os.getcwd(), ))
+    root = Root(())
+    if len(sys.argv) > 1:
+        mod = root.getFileModule(sys.argv[1]); evalModule(mod)
+    else: mod = root.rawModule('test')
+    interact(mod); print('')
     return mod
 if __name__ == '__main__': mod = _test()

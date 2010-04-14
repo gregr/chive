@@ -1,0 +1,3 @@
+## #def-op (:) infix right 5
+#def-op \: infix right 5
+#def hello 5
