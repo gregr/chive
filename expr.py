@@ -146,6 +146,7 @@ class Switch(Expr):
     def __init__(self, discrimTy, discrim, default, alts):
         self.discrimTy = discrimTy
         self.discrim = discrim; self.default = default; self.alts = alts
+        # todo: if default is None, default = expr to raise a type error
     def _children(self):
         return [body for _,body in self.alts]+[self.default, self.discrim]
     def freeVars(self): return accFreeVars(self._children())

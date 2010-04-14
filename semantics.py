@@ -87,22 +87,21 @@ def _semantize(ctx, xs):
                 if val is not None and isSemantic(val):
                     return applySemantic(ctx, val, cons(hd, cons_tail(xs)))
         def semSub(ctx, aa, xx): return withSubCtx(_semantize, ctx, aa, xx)
-        rest = [expr for _,expr in mapRest(semSub, ctx, xs)]
-        hdCtx, hd = _semantize(hdCtx, hd)
-        if isinstance(hd, Apply): hd.args.extend(rest); return ctx, hd
-        else: return ctx, Apply(hd, rest)
+        rest = mapRest(semSub, ctx, xs); hd = _semantize(hdCtx, hd)
+        if isinstance(hd, Apply): hd.args.extend(rest); return hd
+        else: return Apply(hd, rest)
     elif isSymbol(xs):
         den = getDen(ctx.senv, xs); val = ctx.env.get(EnvKey(den))
         if isTyped(val) and isType(val):
             ty = type_type(val)
             if isinstance(ty, ProductType): den = ty.consDen
-        return ctx, Var(EnvKey(den))
-    elif xs is nil: return ctx, unitExpr
+        return Var(EnvKey(den))
+    elif xs is nil: return unitExpr
     else: typeErr(ctx, "invalid symbolic expression: '%s'"%pretty(xs))
 
 def semantize(ctx, xs): return _semantize(*expand(ctx, xs))
 def evaluate(ctx, xs, tag=None):
-    ctx, xs = semantize(ctx, xs); return evalExpr(ctx, xs, tag)
+    xs = semantize(ctx, xs); return evalExpr(ctx, xs, tag)
 
 def semproc(name):
     def install(f): addPrim(name, toSem(f)); return f
@@ -120,12 +119,13 @@ def stripOuterSynClo(xs):
 def semUnbox(ctx, form):
     form = stripOuterSynClo(cons_head(cons_tail(form))); ty = getTy(form)
     if ty in (symTy, intTy, floatTy, charTy):
-        return ctx, PrimVal(ty.unpackEl(form, 0))
+        return PrimVal(ty.unpackEl(form, 0))
     else: typeErr(ctx, "cannot unbox non-literal: '%s'"%form)
 def toTy(ctx, form):
     ctx, form = expand(ctx, form)
     if not isSymbol(form): typeErr(ctx, "invalid type name: '%s'"%form)
     return type_type(ctx.env.get(EnvKey(ctx.senv.get(EnvKey(form)))))
+# todo: semArgsTy
 def semArgs(ctx, form, numArgs):
     args = tuple(fromList(cons_tail(form)))
     if len(args) != numArgs:
@@ -135,7 +135,7 @@ def semArgs(ctx, form, numArgs):
 def semNodeAccess(ctx, ty, idx, node):
     ty = toTy(ctx, ty)
     idx = evaluate(ctx, idx, intTy)
-    ndCtx, node = semantize(ctx, node)
+    node = semantize(ctx, node)
     return ty, fromInt(idx), node, ctx
 @semproc('#proc')
 def semConsProc(ctx, form):
@@ -150,31 +150,50 @@ def semConsProc(ctx, form):
             typeErr(ctx, "invalid proc binder: '%s'"%pretty(var))
         den = alias_new(var); bodyCtx.senv.add(EnvKey(var), den)
         vars.append(EnvKey(den)); paramts.append(ty)
-    return ctx, ConsProc(EnvKey(gensym()), vars,
-                         semantize(bodyCtx, body)[1], paramts, None)
+    return ConsProc(EnvKey(gensym()), vars,
+                         semantize(bodyCtx, body), paramts, None)
+@semproc('#switch')
+def semSwitch(ctx, form):
+    ty, discrim, *alts = fromList(cons_tail(form))
+    default = None
+    dalts = {}
+    for alt in alts:
+        matches, body = tuple(fromList(alt))
+        body = semantize(ctx, body)
+        if matches is nil:
+            if default is not None:
+                typeErr(ctx, 'switch can only have one default')
+            default = body
+        else:
+            for pat in fromList(matches):
+                if isSymbol(pat): pat = toTy(pat)
+                elif isListCons(pat): assert False
+                assert pat not in dalts, pat
+                dalts[pat] = body
+    return Switch(toTy(ctx, ty), semantize(ctx, discrim), default, dalts)
 @semproc('#node-unpack')
 def semNodeUnpack(ctx, form):
-    return ctx, NodeUnpack(*semNodeAccess(ctx, *semArgs(ctx, form, 3)))
+    return NodeUnpack(*semNodeAccess(ctx, *semArgs(ctx, form, 3)))
 @semproc('#node-pack')
 def semNodePack(ctx, form):
-    *rest, rhs = semArgs(ctx, form, 4); rhsCtx, rhs = semantize(ctx, rhs)
-    return ctx, NodePack(rhs, *semNodeAccess(ctx, *rest))
+    *rest, rhs = semArgs(ctx, form, 4); rhs = semantize(ctx, rhs)
+    return NodePack(rhs, *semNodeAccess(ctx, *rest))
 @semproc('#def-types')
 def semDefTypes(ctx, form):
-    bindTypes(ctx, fromList(cons_tail(form))); return ctx, unitExpr
+    bindTypes(ctx, fromList(cons_tail(form))); return unitExpr
 @semproc('#def')
 def semDef(ctx, form):
     binder, body = semArgs(ctx, form, 2)
-    ctx.nspace.define(binder, evaluate(ctx, body)); return ctx, unitExpr
+    ctx.nspace.define(binder, evaluate(ctx, body)); return unitExpr
 @semproc('#refer')
 def semRefer(ctx, form):
     binder1, binder2 = semArgs(ctx, form, 2)
-    ctx.nspace.refer(ctx, binder2, binder1); return ctx, unitExpr
+    ctx.nspace.refer(ctx, binder2, binder1); return unitExpr
 @semproc('#def-op')
 def semDefOp(ctx, form):
     name, fixity, assoc, prec = semArgs(ctx, form, 4)
     op = newOperator(name, symbol_name(fixity), assoc, fromInt(prec))
-    ctx.nspace.defOp(name, op); return ctx, unitExpr
+    ctx.nspace.defOp(name, op); return unitExpr
 def evalModule(mod, onResult=lambda _: None):
     for expr, attr in mod:
         result = withSubCtx(evaluate, mod.curNS.ctx, attr, expr)
