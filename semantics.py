@@ -162,6 +162,14 @@ def semNodePack(ctx, form):
 @semproc('#def-types')
 def semDefTypes(ctx, form):
     bindTypes(ctx, fromList(cons_tail(form))); return ctx, unitExpr
+@semproc('#def')
+def semDef(ctx, form):
+    binder, body = semArgs(ctx, form, 2)
+    ctx.nspace.define(binder, evaluate(ctx, body)); return ctx, unitExpr
+@semproc('#refer')
+def semRefer(ctx, form):
+    binder1, binder2 = semArgs(ctx, form, 2)
+    ctx.nspace.refer(ctx, binder2, binder1); return ctx, unitExpr
 def interact(mod):
     from lex import LexError
     from syntax import ParseError, Parser
