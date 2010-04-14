@@ -62,7 +62,7 @@ def ubSymbol_new(n):
     nextSymId += 1
     return sd
 symTy = ProductType('Symbol', (ubSymTy,))
-def isSymbol(v): return getTy(v) is symTy
+def isSymbol(v): return isTyped(v) and getTy(v) is symTy
 def symbol_new(n): return symTy.new(ubSymTy.new(ubSymbol_new(n)))
 def symbol_prim(s): return getVal(symTy.unpackEl(s, 0))
 def symbol_name(s): return symbol_prim(s)[0]
@@ -107,7 +107,7 @@ class Env:
         while e is not None: yield e; e = e.p
 class EnvKey:
     __slots__ = ['sym']
-    def __init__(self, sym): self.sym = sym
+    def __init__(self, sym): assert isSymbol(sym), sym; self.sym = sym
     def __hash__(self): return symbol_id(self.sym)
     def __eq__(self, n): return hash(self) == hash(n)
     def __repr__(self): return '<EnvKey %r>' % prettySymbol(self.sym)
@@ -223,15 +223,16 @@ def getDen(xenv, sym):
     return den
 def referX(xenvFrom, xenvTo, symFrom, symTo=None):
     if symTo is None: symTo = symFrom
-    xenvTo.add(EnvKey(symTo), EnvKey(getDen(xenvFrom, symFrom)))
-def referVar(ctxFrom, ctxTo, sym): referX(ctxFrom.senv, ctxTo.senv, sym)
+    xenvTo.add(EnvKey(symTo), getDen(xenvFrom, symFrom))
+def referVar(ctxFrom, ctxTo, symFrom, symTo=None):
+    referX(ctxFrom.senv, ctxTo.senv, symFrom, symTo)
 def getX(xenv, env, sym): return env.get(EnvKey(getDen(xenv, sym)))
 def bindX(xenv, env, sym, xx): env.add(EnvKey(getDen(xenv, sym)), xx)
 def bindVar(ctx, sym, val): bindX(ctx.senv, ctx.env, sym, val)
 def defVar(ctx, sym, ty): ctx.nspace.define(sym, ty)
 defTy = defVar
 def freshCtx(root, nspace):
-    return Context(root, nspace, Env(), Env(), Env(), Env(), None)
+    return Context(root, nspace, Env(), Env(), Env(), Root.env, None)
 ################################################################
 # modules
 def resolvePath(searchPaths, path):
@@ -250,7 +251,7 @@ class Module:
         self.active = False
     def setStream(self, stream):
         if stream is None: self.exprs = (); self.active = False; return
-        self.exprs = Parser(self.ctx.ops).parse(self.name, stream)
+        self.exprs = Parser(self.curNS.ctx.ops).parse(self.name, stream)
         self.active = True
     def isActive(self): return self.active
     def resolvePath(self, searchPaths, path):
@@ -288,24 +289,38 @@ class Namespace:
 def fileStream(path): return open(path)
 exportAllFilter = (True, set(), {})
 class Root:
-    def __init__(self, coreMod, searchPaths):
-        self.coreMod = coreMod; self.searchPaths = searchPaths
+    env = Env()
+    def __init__(self, searchPaths):
+        self.coreMod = primMod; self.searchPaths = searchPaths
         self.modules = {}
     def _makeModule(self, name, path, stream):
         mod = Module(name, path, stream, self)
-        self.coreMod.export(mod.curNS, exportAllFilter)
+        self.coreMod.curNS.export(mod.curNS, exportAllFilter)
         return mod
+    def rawModule(self, name):
+        return self._makeModule(EnvKey(symbol_new(name)), os.getcwd(), None)
     def getFileModule(self, fpath):
         name = EnvKey(symbol(fpath)); mod = self.modules.get(name)
         if mod is None:
-            mod = self._makeModule(name, fpath, fileStream(fpath))
+            mod = self._makeModule(name, os.path.dirname(fpath),
+                                   fileStream(fpath))
             self.modules[name] = mod
         elif mod.isActive(): typeErr(None, "module self-dependency: '%s'"%name)
         return mod
+def interactStream(prompt):
+    import readline
+    from io import StringIO
+    buffer = []; prompt2 = ('.'*(len(prompt)-1)) + ' '; line = input(prompt)
+    while line: buffer.append(line+'\n'); line = input(prompt2)
+    return StringIO(''.join(buffer))
+def interactStreams(prompt):
+    try:
+        while True: yield interactStream(prompt)
+    except EOFError: pass
 ################################################################
 # primitives
 def node(ty, *args): return ty.new(*args)
-primMod = Module(EnvKey(alias_new(symbol('primitives'))), '', None, None)
+primMod = Module(EnvKey(symbol_new('primitives')), '', None, None)
 primCtx = primMod.curNS.ctx
 def addPrim(name, val):
     print('adding primitive:', name)
@@ -519,3 +534,5 @@ class DepGraph:
                 self.dfs(seen, component, name, 1)
             self.finish(name)
         return components
+
+from syntax import Parser # todo: syntax is already dependent on this module

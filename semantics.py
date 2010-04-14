@@ -162,40 +162,22 @@ def semNodePack(ctx, form):
 @semproc('#def-types')
 def semDefTypes(ctx, form):
     bindTypes(ctx, fromList(cons_tail(form))); return ctx, unitExpr
-def interactOnce(modName, ctx): # todo: break into smaller pieces
-    import readline
-    from io import StringIO
-    buffer = []
-    prompt1 = '%s> ' % modName
-    prompt2 = ('.'*(len(prompt1)-1)) + ' '
-    line = input(prompt1)
-    while line:
-        buffer.append(line+'\n')
-        line = input(prompt2)
-    return StringIO(''.join(buffer))
-def interact(ctx):
-    modName = 'test' # todo
-    # todo: parser from ctx
+def interact(mod):
     from lex import LexError
     from syntax import ParseError, Parser
     from data import Env, makeStream, unit
-    parser = Parser(Env())
-    try:
-        while True:
-            result = unit
-            exprs = parser.parse(modName, interactOnce(modName, ctx))
-            try:
-                for expr, attr in exprs:
-                    result = withSubCtx(evaluate, ctx, attr, expr)
-                    print(pretty(result))
-            except LexError: raise
-            except ParseError: raise
-            except TypeError: raise
-    except EOFError: pass
+    result = unit
+    for stream in interactStreams('%s> '%os.path.basename(str(mod.name))):
+        mod.setStream(stream)
+        try:
+            for expr, attr in mod:
+                result = withSubCtx(evaluate, mod.curNS.ctx, attr, expr)
+                print(pretty(result))
+        except LexError: raise
+        except ParseError: raise
+        except TypeError: raise
     return result
-
 def _test():
-    ctx = primCtx
-    interact(ctx)
-    print('')
-if __name__ == '__main__': _test()
+    root = Root(()); mod = root.rawModule('test'); interact(mod); print('')
+    return mod
+if __name__ == '__main__': mod = _test()

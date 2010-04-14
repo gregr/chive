@@ -13,7 +13,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
-fix deftypes
 option for direct file-inclusion
 interpreter-agnostic expression evaluation
 import path [modname] [[only (...)]|[hide (...)]] [rename (...)]]
