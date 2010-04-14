@@ -170,6 +170,11 @@ def semDef(ctx, form):
 def semRefer(ctx, form):
     binder1, binder2 = semArgs(ctx, form, 2)
     ctx.nspace.refer(ctx, binder2, binder1); return ctx, unitExpr
+@semproc('#def-op')
+def semDefOp(ctx, form):
+    name, fixity, assoc, prec = semArgs(ctx, form, 4)
+    op = newOperator(name, symbol_name(fixity), assoc, fromInt(prec))
+    ctx.nspace.defOp(name, op); return ctx, unitExpr
 def interact(mod):
     from lex import LexError
     from syntax import ParseError, Parser

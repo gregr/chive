@@ -535,4 +535,4 @@ class DepGraph:
             self.finish(name)
         return components
 
-from syntax import Parser # todo: syntax is already dependent on this module
+from syntax import Parser, newOperator # todo: syntax is already dependent on this module

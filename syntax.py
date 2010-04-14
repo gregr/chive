@@ -166,6 +166,7 @@ class Operator:
         assert isSymbol(sym), sym
         assert type(prec) is int, prec
         assert isSymbol(assoc), assoc
+        assert assoc in [symbol(nm) for nm in ('left', 'right', 'non')]
         self.sym = sym
         self.assocRight = assoc is symbol('right') # todo: non-associative ops
         self.prec = prec
