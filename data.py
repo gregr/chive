@@ -213,15 +213,19 @@ class Context:
         return Context(self.root, self.nspace,
                        self.ops, self.tenv, self.senv, self.env,
                        self.attr, self.hist)
+    def extendSyntax(self):
+        ctx = self.copy(); ctx.senv = Env(self.senv); return ctx
+    def extendValues(self):
+        ctx = self.copy(); ctx.env = Env(self.env); return ctx
     def branch(self):
         ctx = self.copy(); ctx.ops = Env(ctx.ops)
         ctx.tenv = Env(ctx.tenv); ctx.senv = Env(ctx.senv); return ctx
     def histAppend(self, form): pass#self.hist = cons(form, self.hist)
-def newDen(xenv, sym):
-    den = alias_new(sym); xenv.add(EnvKey(sym), den); return den
+def newDen(ctx, sym):
+    den = alias_new(sym); ctx.senv.add(EnvKey(sym), den); return den
 def getDen(ctx, sym):
     den = ctx.senv.get(EnvKey(sym))
-    if den is None: den = newDen(ctx.nspace.ctx.senv, sym)
+    if den is None: den = newDen(ctx.nspace.ctx, sym)
     return den
 def referVar(ctxFrom, ctxTo, symFrom, symTo=None):
     if symTo is None: symTo = symFrom

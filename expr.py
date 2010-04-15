@@ -155,12 +155,13 @@ class Switch(Expr):
         if body is None: body = self.default
         return cont(ctx, body)
 class Let(Expr):
-    def __init__(self, immed, nonrec, rec, body):
-        self.immed = immed # compile-time bindings
+    def __init__(self, nonrec, rec, body):
         self.nonrec = nonrec; self.rec = rec # run-time bindings
         self.body = body
     def eval(self, ctx):
-#        newCtx = ... # todo
+        newCtx = ctx.extendValues()
+        for name, rhs in self.nonrec: newCtx.env.add(name, evalExpr(ctx, rhs))
+        for name, rhs in self.rec: newCtx.env.add(name, evalExpr(newCtx, rhs))
         return cont(newCtx, self.body)
 ################################################################
 class Throw(Expr): pass # could be a proc

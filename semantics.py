@@ -140,15 +140,14 @@ def semNodeAccess(ctx, ty, idx, node):
 @semproc('#proc')
 def semConsProc(ctx, form):
     binders, body = semArgs(ctx, form, 2)
-    vars = []; paramts = []
-    bodyCtx = ctx.copy(); bodyCtx.senv = Env(ctx.senv)
+    vars = []; paramts = []; bodyCtx = ctx.extendSyntax()
     for binder in fromList(binders):
         if isListCons(binder):
             var, ty = tuple(fromList(binder)); ty = toTy(ctx, ty)
         else: var = binder; ty = anyTy
         if not isSymbol(var): # todo: synclo?
             typeErr(ctx, "invalid proc binder: '%s'"%pretty(var))
-        vars.append(EnvKey(newDen(bodyCtx.senv, var))); paramts.append(ty)
+        vars.append(EnvKey(newDen(bodyCtx, var))); paramts.append(ty)
     return ConsProc(EnvKey(gensym()), vars,
                     semantize(bodyCtx, body), paramts, None)
 @semproc('#switch')
@@ -170,6 +169,24 @@ def semSwitch(ctx, form):
                 assert pat not in dalts, pat
                 dalts[pat] = body
     return Switch(semantize(ctx, discrim), default, dalts)
+@semproc('#let')
+def semLet(ctx, form):
+    immed, nonrec, rec, body = semArgs(ctx, form, 4)
+    immedCtx = ctx.extendSyntax(); bodyCtx = immedCtx.extendSyntax()
+    immeds = []; recs = []; nonrecs = []
+    for binding in fromList(immed):
+        binder, rhs = tuple(fromList(binding))
+        immeds.append((EnvKey(newDen(immedCtx, binder)), rhs))
+    for binder, rhs in immeds: ctx.env.add(binder, evaluate(immedCtx, rhs))
+    for binding in fromList(nonrec):
+        binder, rhs = tuple(fromList(binding))
+        nonrecs.append((EnvKey(newDen(bodyCtx, binder)),
+                        semantize(immedCtx, rhs)))
+    for binding in fromList(rec):
+        binder, rhs = tuple(fromList(binding))
+        recs.append([EnvKey(newDen(bodyCtx, binder)), rhs])
+    for recp in recs: recp[1] = semantize(bodyCtx, recp[1])
+    return Let(nonrecs, recs, semantize(bodyCtx, body))
 @semproc('#node-unpack')
 def semNodeUnpack(ctx, form):
     return NodeUnpack(*semNodeAccess(ctx, *semArgs(ctx, form, 3)))

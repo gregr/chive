@@ -18,6 +18,7 @@ interpreter-agnostic expression evaluation
 import path [modname] [[only (...)]|[hide (...)]] [rename (...)]]
 thread interaction with delays, module-loading, etc.
 expansion history (fix) and attributes for definitions
+debugging
 exprs: change expand to a proc; eliminate eval; add letrec
 dynamic dispatch
 AST pretty-printing
