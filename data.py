@@ -418,11 +418,13 @@ def toString(v): return node(stringTy, v)
 
 ################################################################
 # macros and semantics
-macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), formTy))
+#macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), formTy)) # todo
+macroTy = prodTy('Macro', anyTy)#curryProcType((anyTy, anyTy), anyTy))
 def isMacro(v): return isTyped(v) and getTy(v) is macroTy
 def macro_proc(mac): return macroTy.unpackEl(mac, 0)
 def applyMacro(ctx, mac, form):
-    return evalExpr(*applyFull(ctx, macro_proc(mac), [toCtx(ctx), form]))
+    return evalExpr(*applyFull(ctx, PrimVal(macro_proc(mac)),
+                               [PrimVal(toCtx(ctx)), PrimVal(form)]))
 ubSemanticTy, semanticTy, toSem, fromSem = basicTy('Semantic', object)
 def isSemantic(v): return isTyped(v) and getTy(v) is semanticTy
 def applySemantic(ctx, sem, form): return fromSem(sem)(ctx, form)
