@@ -13,12 +13,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+expansion history (fix) and attributes for definitions
+debugging
+gensym
 option for direct file-inclusion
 interpreter-agnostic expression evaluation
 import path [modname] [[only (...)]|[hide (...)]] [rename (...)]]
 thread interaction with delays, module-loading, etc.
-expansion history (fix) and attributes for definitions
-debugging
 exprs: change expand to a proc; eliminate eval; add letrec
 dynamic dispatch
 AST pretty-printing
@@ -32,21 +33,9 @@ dependency analysis
 ================================================================
 = disorganized ideas
 ================================================================
-(#proc (xs ys) ((#proc (a b) (xs)) (#node-pack \: 1 xs (\: ys (\: ys xs))) (#node-pack \: 1 ys xs))) (\: 1 Nil) (\: 5 Nil)
-
-{Root tags modules multimethod-tables?...}
-{Module path dependencies dependants exports op-env senv env}
-#parser hooks? meta-circular debugging and expansion history? tracer hooks?
-
-# how are modules loaded?
-
-binding and aliasing
-
 array-new
 array-length
 array-unpack/pack
-
-gensym
 
 ffi?:
 networking

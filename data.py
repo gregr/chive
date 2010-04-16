@@ -63,7 +63,8 @@ def ubSymbol_new(n):
     return sd
 symTy = ProductType('Symbol', (ubSymTy,))
 def isSymbol(v): return isTyped(v) and getTy(v) is symTy
-def symbol_new(n): return symTy.new(ubSymTy.new(ubSymbol_new(n)))
+def toSymbol(ps): return symTy.new(ubSymTy.new(ps))
+def symbol_new(n): return toSymbol(ubSymbol_new(n))
 def symbol_prim(s): return getVal(symTy.unpackEl(s, 0))
 def symbol_name(s): return symbol_prim(s)[0]
 def symbol_id(s): return symbol_prim(s)[1]
@@ -152,8 +153,8 @@ class PartialApp:
         return final(nextTy.new(PartialApp(self.proc, saved, nextTy))), ()
 def proc_new(proc, ctx, ty):
     return ty.new(PartialApp(NativeClosure(proc, ctx), (), ty))
-def fproc_new(name, code, ty):
-    return ty.new(PartialApp(ForeignProc(name, code), (), ty))
+def fproc_new(name, code, ty, argc):
+    return ty.new(PartialApp(ForeignProc(name, code, argc), (), ty))
 def applyFull(ctx, proc, args):
     cprc = cont(ctx, proc)
     while args:
@@ -289,6 +290,12 @@ class Namespace:
             ns.refer(self.ctx, name.sym, nnew.sym)
             op = self.ctx.ops.get(name)
             if op is not None: ns.defOp(nnew.sym, op)
+    def retrieve(self, sym): # maybe allow hidden names to get through?
+        name = EnvKey(sym); assert name in self.exportedNames, name
+        return getVar(self.ctx, sym)
+    def retrieveSC(self, sym): # maybe allow hidden names to get through?
+        name = EnvKey(sym); assert name in self.exportedNames, name
+        return synclo_new(toCtx(self.ctx), nil, sym)
 def fileStream(path): return open(path)
 exportAllFilter = (True, set(), {})
 class Root:
@@ -389,6 +396,7 @@ def fromList(xs, repeat=None):
 ################################################################
 # syntactic closures
 ubCtxTy, ctxTy, toCtx, fromCtx = basicTy('Ctx', Context)
+ubNspaceTy, nspaceTy, toNspace, fromNspace = basicTy('Namespace', Namespace)
 formTy = VariantType()
 syncloTy = prodTy('SynClo', ctxTy, listTy, formTy) # todo
 formTy.init((listTy, symTy, syncloTy, intTy, floatTy, charTy))

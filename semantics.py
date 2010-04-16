@@ -109,12 +109,39 @@ def semproc(name):
 def primproc(name, *tys):
     def install(f):
         pty = currySpecificProcType(name, tys[:-1], tys[-1])
-        addPrim(name, fproc_new(name, f, pty))
+        addPrim(name, fproc_new(name, f, pty, len(tys)-1))
         return f
     return install
 def stripOuterSynClo(xs):
     while isSynClo(xs): xs = synclo_form(xs)
     return xs
+# todo: semArgsTy
+def semArgs(ctx, form, numArgs):
+    args = tuple(fromList(cons_tail(form)))
+    if len(args) != numArgs:
+        typeErr(ctx, "semantic '%s' takes %d arguments but was given %d"%
+                (pretty(cons_head(form)), numArgs, len(args)))
+    return args
+def repackSymbols(names):
+    return toList(tuple(toSymbol(symbol_prim(name.sym)) for name in names))
+@semproc('#ctx')
+def semContext(ctx, form): semArgs(ctx, form, 0); return PrimVal(toCtx(ctx))
+@primproc('#ctx-locals', ctxTy, listTy)
+def primCtxLocals(ctx):
+    return final(repackSymbols(fromCtx(ctx).senv.bs.keys()))
+@primproc('#ctx-visibles', ctxTy, listTy)
+def primCtxGlobals(ctx):
+    return final(repackSymbols(fromCtx(ctx).senv.bindings().keys()))
+@primproc('#ctx-namespace', ctxTy, nspaceTy)
+def primCtxNspace(ctx):
+    return final(toNspace(fromCtx(ctx).nspace))
+@primproc('#namespace-exports', nspaceTy, listTy)
+def primNspaceExports(ns):
+    return final(repackSymbols(fromNspace(ns).exportedNames))
+@primproc('#namespace-get', nspaceTy, symTy, anyTy) # todo: could return unboxed values?
+def primNspaceGet(ns, sym): return final(fromNspace(ns).retrieve(sym))
+@primproc('#namespace-getsc', nspaceTy, symTy, syncloTy)
+def primNspaceGetSC(ns, sym): return final(fromNspace(ns).retrieveSC(sym))
 @semproc('#unbox')
 def semUnbox(ctx, form):
     form = stripOuterSynClo(cons_head(cons_tail(form))); ty = getTy(form)
@@ -125,13 +152,6 @@ def toTy(ctx, form):
     ctx, form = expand(ctx, form)
     if not isSymbol(form): typeErr(ctx, "invalid type name: '%s'"%form)
     return type_type(ctx.env.get(EnvKey(ctx.senv.get(EnvKey(form)))))
-# todo: semArgsTy
-def semArgs(ctx, form, numArgs):
-    args = tuple(fromList(cons_tail(form)))
-    if len(args) != numArgs:
-        typeErr(ctx, "semantic '%s' takes %d arguments but was given %d"%
-                (pretty(cons_head(form)), numArgs, len(args)))
-    return args
 def semNodeAccess(ctx, ty, idx, node):
     ty = toTy(ctx, ty)
     idx = evaluate(ctx, idx, intTy)
