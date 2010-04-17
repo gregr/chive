@@ -195,8 +195,8 @@ class ProcType(NodeType):
         if outTy is not None: self.init(inTy, outTy)
     def init(self, inTy, outTy): self.inTy = inTy; self.outTy = outTy
     def contains(self, ty, tenv=None):
-        return (isProc(ty) and ty.inTy.contains(self.inTy, tenv) and
-                self.outTy.contains(ty.outTy, tenv))
+        return (isinstance(ty, ProcType) and ty.inTy.contains(self.inTy, tenv)
+                and self.outTy.contains(ty.outTy, tenv))
     def appliedTy(self, remainingApps, arity):
         ty = self; argts = []
         while remainingApps != 0 and arity != 0:
@@ -219,7 +219,6 @@ def uncurryProcType(ty, max=-1):
     return ts, ty
 class SpecificProcType(ProcType):
     def __init__(self, name, *args): super().__init__(*args); self.name = name
-    def contains(self, ty, tenv=None): return self is ty
     def new(self, proc): return typed(self, proc)
     def __str__(self): return ('%s::%s')%(str(self.name), super().__str__())
 def currySpecificProcType(name, paramts, rett):

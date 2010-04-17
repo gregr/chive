@@ -440,7 +440,7 @@ def toString(v): return node(stringTy, v)
 ################################################################
 # macros and semantics
 #macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), formTy)) # todo
-macroTy = prodTy('Macro', anyTy)#curryProcType((anyTy, anyTy), anyTy))
+macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), anyTy))
 def isMacro(v): return isTyped(v) and getTy(v) is macroTy
 def macro_proc(mac): return macroTy.unpackEl(mac, 0)
 def applyMacro(ctx, mac, form):
