@@ -203,11 +203,21 @@ def constr_new(ctx, ty):
     return proc_new(NativeProc(cty.name, body, cargs), ctx, cty)
 ################################################################
 # contexts
+class History:
+    def __init__(self, parent=None):
+        self.parent = parent; self.main = []; self.subs = []
+        self.final = None
+    def add(self, form): self.main.append(form)
+    def newSub(self): sh = History(self); self.subs.append(sh); return sh
+    def finish(self, form):# pass
+        if self.final is None: self.final = form
+        else: assert form is self.final, (pretty(form), pretty(self.final))
+        self.subs = [sh for sh in self.subs if sh.main or sh.subs]
 class Context:
     def __init__(self, root, nspace, ops, tenv, senv, env, attr, hist=None):
         self.root = root; self.nspace = nspace
         self.ops = ops; self.tenv = tenv; self.senv = senv; self.env = env
-        self.attr = attr; self.hist = hist
+        self.attr = attr; self.hist = hist or History()
     def __eq__(self, rhs): return self._cmp() == rhs._cmp()
     def _cmp(self): return (self.ops, self.tenv, self.senv)
     def copy(self):
@@ -221,7 +231,6 @@ class Context:
     def branch(self):
         ctx = self.copy(); ctx.ops = Env(ctx.ops)
         ctx.tenv = Env(ctx.tenv); ctx.senv = Env(ctx.senv); return ctx
-    def histAppend(self, form): pass#self.hist = cons(form, self.hist)
 def newDen(ctx, sym):
     den = alias_new(sym); ctx.senv.add(EnvKey(sym), den); return den
 def getDen(ctx, sym):
@@ -251,7 +260,7 @@ class Module:
         self.name = name; self.path = path; self.root = root
         self.curNS = Namespace(root, self); self.setStream(stream)
     def __iter__(self):
-        for expr in self.exprs: yield expr
+        for expr, attr in self.exprs: yield (attr, expr)
         self.active = False
     def setStream(self, stream):
         if stream is None: self.exprs = (); self.active = False; return

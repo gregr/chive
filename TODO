@@ -15,7 +15,9 @@ limitations under the License.
 ================================================================
 expansion history (fix) and attributes for definitions
 debugging
+namespace encapsulation issue with exposed contexts/macros
 gensym
+seq
 option for direct file-inclusion
 interpreter-agnostic expression evaluation
 import path [modname] [[only (...)]|[hide (...)]] [rename (...)]]

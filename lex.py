@@ -65,7 +65,7 @@ class SrcAttr:
             loc='%d,%d-%d'%(self.start[0], self.start[1], self.end[1])
         else: loc='%d,%d-%d,%d'%(self.start[0], self.start[1],
                                  self.end[0], self.end[1])
-        return self.streamName+' '+loc
+        return str(self.streamName)+' '+loc
     def highlight(self, prefix):
         lead = prefix
         margin = ' '*len(lead)
