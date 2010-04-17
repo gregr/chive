@@ -214,23 +214,19 @@ class History:
         else: assert form is self.final, (pretty(form), pretty(self.final))
         self.subs = [sh for sh in self.subs if sh.main or sh.subs]
 class Context:
-    def __init__(self, root, nspace, ops, tenv, senv, env, attr, hist=None):
+    def __init__(self, root, nspace, ops, senv, env, attr, hist=None):
         self.root = root; self.nspace = nspace
-        self.ops = ops; self.tenv = tenv; self.senv = senv; self.env = env
+        self.ops = ops; self.senv = senv; self.env = env
         self.attr = attr; self.hist = hist or History()
     def __eq__(self, rhs): return self._cmp() == rhs._cmp()
-    def _cmp(self): return (self.ops, self.tenv, self.senv)
+    def _cmp(self): return (self.ops, self.senv)
     def copy(self):
-        return Context(self.root, self.nspace,
-                       self.ops, self.tenv, self.senv, self.env,
+        return Context(self.root, self.nspace, self.ops, self.senv, self.env,
                        self.attr, self.hist)
     def extendSyntax(self):
         ctx = self.copy(); ctx.senv = Env(self.senv); return ctx
     def extendValues(self):
         ctx = self.copy(); ctx.env = Env(self.env); return ctx
-    def branch(self):
-        ctx = self.copy(); ctx.ops = Env(ctx.ops)
-        ctx.tenv = Env(ctx.tenv); ctx.senv = Env(ctx.senv); return ctx
 def newDen(ctx, sym):
     den = alias_new(sym); ctx.senv.add(EnvKey(sym), den); return den
 def getDen(ctx, sym):
@@ -245,7 +241,7 @@ def bindVar(ctx, sym, val): ctx.env.add(EnvKey(getDen(ctx, sym)), val)
 def defVar(ctx, sym, ty): ctx.nspace.define(sym, ty)
 defTy = defVar
 def freshCtx(root, nspace):
-    return Context(root, nspace, Env(), Env(), Env(), Root.env, None)
+    return Context(root, nspace, Env(), Env(), Root.env, None)
 ################################################################
 # modules
 def resolvePath(searchPaths, path):
@@ -423,7 +419,7 @@ def applySynCloCtx(ctx, sc):
         for n in frees:
             n = EnvKey(n); v = ctx.senv.get(n)
             if v is not None: senv.extend(n, v)
-    ctx.tenv = scCtx.tenv; ctx.senv = senv; return ctx
+    ctx.senv = senv; return ctx
 def syncloExpand(ctx, xs):
     while isSynClo(xs): ctx = applySynCloCtx(ctx, xs); xs = synclo_form(xs)
     return ctx, xs

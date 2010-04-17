@@ -18,6 +18,7 @@ debugging
 namespace encapsulation issue with exposed contexts/macros
 gensym
 seq
+optional automatic downcasting with warnings
 option for direct file-inclusion
 interpreter-agnostic expression evaluation
 import path [modname] [[only (...)]|[hide (...)]] [rename (...)]]
