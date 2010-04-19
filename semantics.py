@@ -131,24 +131,25 @@ def semArgs(ctx, form, numArgs):
     return args[1:]
 def repackSymbols(names):
     return toList(tuple(toSymbol(symbol_prim(name.sym)) for name in names))
+def repackEnvSymbols(env):
+    strat = nil
+    for bs in env.stratified(): strat = cons(repackSymbols(bs.keys()), strat)
+    return strat
 @semproc('#ctx')
 def semContext(ctx, form): semArgs(ctx, form, 0); return PrimVal(toCtx(ctx))
-@primproc('#ctx-locals', ctxTy, listTy)
-def primCtxLocals(ctx):
-    return final(repackSymbols(fromCtx(ctx).senv.bs.keys()))
-@primproc('#ctx-visibles', ctxTy, listTy)
-def primCtxGlobals(ctx):
-    return final(repackSymbols(fromCtx(ctx).senv.bindings().keys()))
+@primproc('#ctx-binders', ctxTy, listTy)
+def primCtxBinders(ctx): return final(repackEnvSymbols(fromCtx(ctx).senv))
 @primproc('#ctx-namespace', ctxTy, nspaceTy)
-def primCtxNspace(ctx):
-    return final(toNspace(fromCtx(ctx).nspace))
+def primCtxNspace(ctx): return final(toNspace(fromCtx(ctx).nspace))
+@primproc('#namespace-ctx', nspaceTy, ctxTy)
+def primNspaceCtx(ns): return final(toCtx(fromNspace(ns).ctx))
 @primproc('#namespace-exports', nspaceTy, listTy)
 def primNspaceExports(ns):
     return final(repackSymbols(fromNspace(ns).exportedNames))
-@primproc('#namespace-get', nspaceTy, symTy, anyTy) # todo: could return unboxed values?
-def primNspaceGet(ns, sym): return final(fromNspace(ns).retrieve(sym))
-@primproc('#namespace-getsc', nspaceTy, symTy, syncloTy)
-def primNspaceGetSC(ns, sym): return final(fromNspace(ns).retrieveSC(sym))
+#@primproc('#namespace-get', nspaceTy, symTy, anyTy) # todo: could return unboxed values?
+#def primNspaceGet(ns, sym): return final(fromNspace(ns).retrieve(sym))
+#@primproc('#namespace-getsc', nspaceTy, symTy, syncloTy)
+#def primNspaceGetSC(ns, sym): return final(fromNspace(ns).retrieveSC(sym))
 @semproc('#unbox')
 def semUnbox(ctx, form):
     form = stripOuterSynClo(cons_head(cons_tail(form))); ty = getTy(form)
@@ -249,6 +250,7 @@ def interact(mod):
         except ParseError: raise
         except TypeError: raise
     return result
+splash = """chive 0.0.0: help system is still a work in progress..."""
 def _test():
     import sys
 #    root = Root((os.getcwd(), ))
@@ -256,6 +258,6 @@ def _test():
     if len(sys.argv) > 1:
         mod = root.getFileModule(sys.argv[1]); evalModule(mod)
     else: mod = root.rawModule('test')
-    interact(mod); print('')
+    print(splash); interact(mod); print('')
     return mod
 if __name__ == '__main__': mod = _test()

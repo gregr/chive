@@ -101,6 +101,8 @@ class Env:
         bs = {}
         for e in reversed(tuple(self._lineage())): bs.update(e.bs)
         return bs
+    def stratified(self):
+        for e in reversed(tuple(self._lineage())): yield e.bs
     def show(self): return '\n'.join(repr(e.bs) for e in self._lineage())
     def __repr__(self): return '<Env>'
     def _lineage(self):
