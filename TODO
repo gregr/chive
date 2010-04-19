@@ -13,8 +13,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+expose syntactic closures
 expansion history (fix) and attributes for definitions
-debugging
+debugging (improve)
 namespace encapsulation issue with exposed contexts/macros
 gensym
 seq

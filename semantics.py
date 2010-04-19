@@ -137,13 +137,13 @@ def repackEnvSymbols(env):
     return strat
 @semproc('#ctx')
 def semContext(ctx, form): semArgs(ctx, form, 0); return PrimVal(toCtx(ctx))
-@primproc('#ctx-binders', ctxTy, listTy)
-def primCtxBinders(ctx): return final(repackEnvSymbols(fromCtx(ctx).senv))
-@primproc('#ctx-namespace', ctxTy, nspaceTy)
+@primproc('#ctx-env', ctxTy, listTy)
+def primCtxEnv(ctx): return final(repackEnvSymbols(fromCtx(ctx).senv))
+@primproc('#ctx-ns', ctxTy, nspaceTy)
 def primCtxNspace(ctx): return final(toNspace(fromCtx(ctx).nspace))
-@primproc('#namespace-ctx', nspaceTy, ctxTy)
+@primproc('#ns-ctx', nspaceTy, ctxTy)
 def primNspaceCtx(ns): return final(toCtx(fromNspace(ns).ctx))
-@primproc('#namespace-exports', nspaceTy, listTy)
+@primproc('#ns-exports', nspaceTy, listTy)
 def primNspaceExports(ns):
     return final(repackSymbols(fromNspace(ns).exportedNames))
 #@primproc('#namespace-get', nspaceTy, symTy, anyTy) # todo: could return unboxed values?

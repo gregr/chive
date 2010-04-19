@@ -51,5 +51,5 @@
   #switch xs
     (((Nil) Nil)
      ((\:) (f (hd xs):map f (tl xs))))
-#def ctx (#ctx)
-#def-proc #globals (_) (hd (#ctx-binders (#namespace-ctx (#ctx-namespace ctx))))
+#def-macro #globals (ctx form) ((quote hd):((quote #ctx-env):((quote #ns-ctx):((quote #ctx-ns):((quote #ctx):Nil):Nil):Nil):Nil):Nil)
+#def-macro #locals (ctx form) ((quote #ctx-env):((quote #ctx):Nil):Nil)
