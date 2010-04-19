@@ -55,8 +55,8 @@ def _expand(ctx, xs):
                     if val is not None:
                         if isSemantic(val): break
                         elif isMacro(val):
-                            ctx.hist.add(xs)
-                            xs = applyMacro(ctx, val, cons(hd, cons_tail(xs)))
+                            ctx.hist.add(xs); mfrm = cons(hd, cons_tail(xs))
+                            ctx, xs = applyMacro(ctx, val, mfrm)
                             continue
             def wrap(ctx_, xx):
                 if ctx_ != ctx: xx = synclo_new(toCtx(ctx_), nil, xx)
@@ -65,8 +65,7 @@ def _expand(ctx, xs):
             rest = mapRest(wrapSub, ctx, xs)
             if rest: attr1, xs1 = list(zip(*rest))
             else: attr1, xs1 = [], []
-            xs = cons(wrap(hdCtx, hd), toList(xs1))
-            ctx.attr = toAttr(fromAttr(ctx.attr).copy())
+            xs = cons(wrap(hdCtx, hd), toList(xs1)); ctx = ctx.copyAttr()
             fromAttr(ctx.attr).subs = cons(attr_head(ctx.attr), toList(attr1))
         else:
             ex = litExpanders.get(getTy(xs))

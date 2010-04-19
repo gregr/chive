@@ -223,6 +223,9 @@ class Context:
     def copy(self):
         return Context(self.root, self.nspace, self.ops, self.senv, self.env,
                        self.attr, self.hist)
+    def copyAttr(self):
+        ctx = self.copy(); ctx.attr = toAttr(fromAttr(ctx.attr).copy())
+        return ctx
     def extendSyntax(self):
         ctx = self.copy(); ctx.senv = Env(self.senv); return ctx
     def extendValues(self):
@@ -440,8 +443,8 @@ macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), anyTy))
 def isMacro(v): return isTyped(v) and getTy(v) is macroTy
 def macro_proc(mac): return macroTy.unpackEl(mac, 0)
 def applyMacro(ctx, mac, form):
-    return evalExpr(*applyFull(ctx, PrimVal(macro_proc(mac)),
-                               [PrimVal(toCtx(ctx)), PrimVal(form)]))
+    args = PrimVal(macro_proc(mac)), [PrimVal(toCtx(ctx)), PrimVal(form)]
+    return ctx.copyAttr(), evalExpr(*applyFull(ctx, *args))
 ubSemanticTy, semanticTy, toSem, fromSem = basicTy('Semantic', object)
 def isSemantic(v): return isTyped(v) and getTy(v) is semanticTy
 def applySemantic(ctx, sem, form): return fromSem(sem)(ctx, form)
@@ -553,4 +556,4 @@ class DepGraph:
             self.finish(name)
         return components
 
-from syntax import Parser, newOperator # todo: syntax is already dependent on this module
+from syntax import toAttr, fromAttr, Parser, newOperator # todo: syntax is already dependent on this module
