@@ -42,6 +42,7 @@ def expandBasic(tyn):
     return ex
 litExpanders = dict((ty, expandBasic(ty.name))
                     for ty in (intTy,floatTy,charTy))
+unitExpr = Var(EnvKey(unitTy.consDen))
 def _expand(ctx, xs):
     while True:
         checkIsForm(ctx, xs) 
@@ -73,7 +74,6 @@ def _expand(ctx, xs):
         break
     ctx.hist.finish(xs); return ctx, xs
 
-unitExpr = Var(EnvKey(unitDen))
 def _semantize(ctx, xs):
     ctx, xs = syncloExpand(ctx, xs)
     checkIsForm(ctx, xs)
@@ -249,15 +249,23 @@ def interact(mod):
         except LexError: raise
         except ParseError: raise
         except TypeError: raise
-    return result
+    print(''); return result[0]
+def debugErr(exc, ctx, expr): # todo: exit without resume?
+    root = ctx.nspace.mod.root
+    if root.debugging: return None
+    root.debugging = True; name = ctx.nspace.mod.name
+    print('ERROR:', exc); print(ctx.hist.show()); print(expr) # todo: pretty
+    if input('enter debug mode?: ').lower() in ('n', 'no'): return None
+    mod = root.moduleFromCtx('%s debug'%name, ctx); result = interact(mod)
+    root.debugging = False; return result
 splash = """chive 0.0.0: help system is still a work in progress..."""
 def _test():
     import sys
 #    root = Root((os.getcwd(), ))
-    root = Root(())
+    root = Root(()); root.onErr = debugErr; root.debugging = False
     if len(sys.argv) > 1:
         mod = root.getFileModule(sys.argv[1]); evalModule(mod)
     else: mod = root.rawModule('test')
-    print(splash); interact(mod); print('')
+    print(splash); interact(mod)
     return mod
 if __name__ == '__main__': mod = _test()

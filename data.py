@@ -20,7 +20,12 @@ import os
 def final(val): return None, val
 def cont(ctx, expr): return ctx, expr
 def evalExpr(ctx, expr, ty=None): # tail-call trampoline
-    while ctx is not None: ctx, expr = expr.eval(ctx)
+    try:
+        while ctx is not None: ctx, expr = expr.eval(ctx)
+    except Exception as exc:
+        if ctx.root.onErr is None: raise
+        expr = ctx.root.onErr(exc, ctx, expr)
+        if expr is None: raise
     if ty is not None: ty.checkTy(expr)
     return expr # when ctx is None, expr will be a final value
 class Expr:
@@ -215,6 +220,8 @@ class History:
         if self.final is None: self.final = form
         else: assert form is self.final, (pretty(form), pretty(self.final))
         self.subs = [sh for sh in self.subs if sh.main or sh.subs]
+    def show(self):
+        return '\n'.join(map(pretty, chain(self.main, [self.final])))
 class Context:
     def __init__(self, root, nspace, ops, senv, env, attr, hist=None):
         self.root = root; self.nspace = nspace
@@ -228,8 +235,10 @@ class Context:
     def copyAttr(self):
         ctx = self.copy(); ctx.attr = toAttr(fromAttr(ctx.attr).copy())
         return ctx
-    def extendSyntax(self):
-        ctx = self.copy(); ctx.senv = Env(self.senv); return ctx
+    def extendSyntax(self, ops=False):
+        ctx = self.copy(); ctx.senv = Env(self.senv)
+        if ops: ctx.ops = Env(self.ops)
+        return ctx
     def extendValues(self):
         ctx = self.copy(); ctx.env = Env(self.env); return ctx
 def newDen(ctx, sym):
@@ -309,16 +318,21 @@ class Namespace:
 def fileStream(path): return open(path)
 exportAllFilter = (True, set(), {})
 class Root:
-    env = Env()
+    env = Env(); onErr = None
     def __init__(self, searchPaths):
         self.coreMod = primMod; self.searchPaths = searchPaths
         self.modules = {}
-    def _makeModule(self, name, path, stream):
+    def _makeModule(self, name, path, stream, importCore=True):
         mod = Module(name, path, stream, self)
-        self.coreMod.curNS.export(mod.curNS, exportAllFilter)
+        if importCore: self.coreMod.curNS.export(mod.curNS, exportAllFilter)
         return mod
-    def rawModule(self, name):
-        return self._makeModule(EnvKey(symbol_new(name)), os.getcwd(), None)
+    def rawModule(self, name, importCore=True):
+        return self._makeModule(EnvKey(symbol_new(name)), os.getcwd(), None,
+                                importCore)
+    def moduleFromCtx(self, name, ctx):
+        ctx = ctx.extendSyntax(True); mod = self.rawModule(name, False)
+        mod.curNS.ctx = ctx; ctx.nspace = mod.curNS; return mod
+#        mod = self.rawModule(name, False); mod.curNS.ctx = ctx; return mod
     def getFileModule(self, fpath):
         name = EnvKey(symbol(fpath)); mod = self.modules.get(name)
         if mod is None:
@@ -361,9 +375,7 @@ addPrimTy('Any', anyTy)
 def prodTy(name, *elts):
     ty = ProductType(name, elts); addPrimTy(name, ty); return ty
 def singleton(name): ty = ProductType(name, ()); return ty, addPrimTy(name, ty)
-def primDen(name): return getDen(primCtx, symbol(name))
 unitTy, unit = singleton('Unit')
-unitDen = primDen('Unit')
 
 ################################################################
 # basic values
