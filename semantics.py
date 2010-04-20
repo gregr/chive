@@ -135,6 +135,15 @@ def repackEnvSymbols(env):
     strat = nil
     for bs in env.stratified(): strat = cons(repackSymbols(bs.keys()), strat)
     return strat
+@primproc('#expand', ctxTy, formTy, formTy)
+def primExpand(ctx, form):
+    ctx = fromCtx(ctx); ctx, form = expand(ctx, ctx.attr, form)
+    return final(synclo_new(toCtx(ctx), nil, form))
+@primproc('#eval', ctxTy, formTy, anyTy)
+def primEval(ctx, form):
+    ctx = fromCtx(ctx); return final(evaluate(ctx, ctx.attr, form, anyTy))
+@primproc('#alias', symTy, symTy)
+def primAlias(sym): return final(alias_new(sym))
 @semproc('#ctx')
 def semContext(ctx, form): semArgs(ctx, form, 0); return PrimVal(toCtx(ctx))
 @primproc('#ctx-env', ctxTy, listTy)
@@ -146,10 +155,6 @@ def primNspaceCtx(ns): return final(toCtx(fromNspace(ns).ctx))
 @primproc('#ns-exports', nspaceTy, listTy)
 def primNspaceExports(ns):
     return final(repackSymbols(fromNspace(ns).exportedNames))
-#@primproc('#namespace-get', nspaceTy, symTy, anyTy) # todo: could return unboxed values?
-#def primNspaceGet(ns, sym): return final(fromNspace(ns).retrieve(sym))
-#@primproc('#namespace-getsc', nspaceTy, symTy, syncloTy)
-#def primNspaceGetSC(ns, sym): return final(fromNspace(ns).retrieveSC(sym))
 @semproc('#unbox')
 def semUnbox(ctx, form):
     form = stripOuterSynClo(cons_head(cons_tail(form))); ty = getTy(form)

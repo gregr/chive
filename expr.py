@@ -170,21 +170,3 @@ class Catch(Expr): pass
 ################################################################
 class Delay(Expr): pass
 class Force(Expr): pass # could be a proc (eval then update)
-
-################################################################
-# class Meta(Expr):
-#     def __init__(self, senv, env, form):
-#         self.senv = senv; self.env = env; self.form = form
-#     def _evalArgs(self, ctx):
-#         senv = evalExpr(ctx, self.senv, envTy)
-#         env = evalExpr(ctx, self.env, envTy)
-# form = evalExpr(ctx, self.form) # todo: check proper form tag
-#         ctx = ctx.copy()
-#         ctx.hist = nil
-#         ctx.senv = fromEnv(senv)
-#         ctx.env = fromEnv(env)
-#         return ctx, form
-# class Expand(Meta):
-#     def eval(self, ctx):
-#         ctx, form = expand(*self._evalArgs(ctx))
-#         return final(synclo_new(toCtx(ctx), nil, form))

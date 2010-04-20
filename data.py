@@ -309,12 +309,6 @@ class Namespace:
             ns.refer(self.ctx, name.sym, nnew.sym)
             op = self.ctx.ops.get(name)
             if op is not None: ns.defOp(nnew.sym, op)
-    def retrieve(self, sym): # maybe allow hidden names to get through?
-        name = EnvKey(sym); assert name in self.exportedNames, name
-        return getVar(self.ctx, sym)
-    def retrieveSC(self, sym): # maybe allow hidden names to get through?
-        name = EnvKey(sym); assert name in self.exportedNames, name
-        return synclo_new(toCtx(self.ctx), nil, sym)
 def fileStream(path): return open(path)
 exportAllFilter = (True, set(), {})
 class Root:

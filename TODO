@@ -13,18 +13,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
-expose syntactic closures
 expansion history (fix) and attributes for definitions
 debugging (improve)
-namespace encapsulation issue with exposed contexts/macros
-gensym
 seq
 optional automatic downcasting with warnings
 option for direct file-inclusion
 interpreter-agnostic expression evaluation
 import path [modname] [[only (...)]|[hide (...)]] [rename (...)]]
 thread interaction with delays, module-loading, etc.
-exprs: change expand to a proc; eliminate eval; add letrec
 dynamic dispatch
 AST pretty-printing
 structs/tuples
