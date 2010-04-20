@@ -155,6 +155,10 @@ def primNspaceCtx(ns): return final(toCtx(fromNspace(ns).ctx))
 @primproc('#ns-exports', nspaceTy, listTy)
 def primNspaceExports(ns):
     return final(repackSymbols(fromNspace(ns).exportedNames))
+@semproc('#seq')
+def semSeq(ctx, form):
+    return Seq(tuple(semantize(ctx, *afrm)
+               for afrm in fromAttrForm((ctx.attr, form))[1:]))
 @semproc('#unbox')
 def semUnbox(ctx, form):
     form = stripOuterSynClo(cons_head(cons_tail(form))); ty = getTy(form)

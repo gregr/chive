@@ -15,7 +15,6 @@ limitations under the License.
 ================================================================
 expansion history (fix) and attributes for definitions
 debugging (improve)
-seq
 optional automatic downcasting with warnings
 option for direct file-inclusion
 interpreter-agnostic expression evaluation

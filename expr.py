@@ -130,11 +130,11 @@ class NodePack(NodeAccess):
 # todo: array access
 
 ################################################################
-#class Seq(Expr): # todo: replace with a macro-generated proc?
-#    def __init__(self, exprs): self.exprs = exprs[:-1]; self.last = exprs[-1]
-#    def eval(self, ctx):
-#        for expr in self.exprs: evalExpr(ctx, expr)
-#        return cont(ctx, self.last)
+class Seq(Expr):
+    def __init__(self, exprs): self.exprs = exprs[:-1]; self.last = exprs[-1]
+    def eval(self, ctx):
+        for expr in self.exprs: evalExpr(ctx, expr)
+        return cont(ctx, self.last)
 class Apply(Expr):
     def __init__(self, proc, args): self.proc = proc; self.args = args
     def freeVars(self): return accFreeVars(self.args)
