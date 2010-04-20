@@ -15,32 +15,32 @@
 #def-op (:) infix right 5
 #def hd (#proc (xs) (#node-unpack (:) 0 xs))
 #def tl (#proc (xs) (#node-unpack (:) 1 xs))
+#def synclo-form (#proc (sc) (#node-unpack SynClo 2 sc))
 #def testSwitch
   #switch (1:2:Nil)
     (((Nil) 3) ((\:) 4))
-#def #quote-sym
-  Macro
-    #proc (ctx form)
-      ((Symbol (#unbox Symbol)):
-       ((Symbol (#unbox #unbox)):(hd (tl form)):Nil):Nil)
+#def #quote-sym (Macro (#proc (ctx form)
+  ((SynClo (#ctx) Nil (Symbol (#unbox Symbol))):
+   ((SynClo (#ctx) Nil (Symbol (#unbox #unbox))):(hd (tl form)):Nil):Nil)))
 #def #quote
   #proc (xs)
     #switch xs
       ((() xs)
-       ((Symbol) ((#quote-sym #quote-sym):xs:Nil))
-       ((Nil) (#quote-sym Nil))
-       ((\:) ((#quote-sym \:):(#quote (hd xs)):(#quote (tl xs)):Nil)))
-##       ((SynClo) )
-#def quote
-  Macro
-    #proc (ctx form)
-      #quote (hd (tl form))
-#def #def-macro
-  Macro
-    #proc (ctx form)
-      ((quote #def):(hd (tl form)):((quote Macro):((quote #proc):(tl (tl form))):Nil):Nil)
+       ((Symbol) ((SynClo (#ctx) Nil (#quote-sym #quote-sym)):xs:Nil))
+       ((Nil) (SynClo (#ctx) Nil (#quote-sym Nil)))
+       ((\:) ((SynClo (#ctx) Nil (#quote-sym \:)):
+              (#quote (hd xs)):(#quote (tl xs)):Nil))
+       ((SynClo) (#quote (synclo-form xs))))
+#def quote (Macro (#proc (ctx form) (#quote (hd (tl form)))))
+#def squote (Macro (#proc (ctx form)
+  ((SynClo (#ctx) Nil (quote SynClo)):(SynClo (#ctx) Nil (quote (#ctx))):
+   (SynClo (#ctx) Nil (quote Nil)):
+   ((SynClo (#ctx) Nil (quote quote)):(hd (tl form)):Nil):Nil)))
+#def #def-macro (Macro (#proc (ctx form)
+  ((squote #def):(hd (tl form)):
+   ((squote Macro):((squote #proc):(tl (tl form))):Nil):Nil)))
 #def-macro #def-proc (ctx form)
-  ((quote #def):(hd (tl form)):((quote #proc):(tl (tl form))):Nil)
+  ((squote #def):(hd (tl form)):((squote #proc):(tl (tl form))):Nil)
 #def-proc id (x) x
 #def-proc rev-append (xs ys)
   #switch ys
@@ -51,5 +51,7 @@
   #switch xs
     (((Nil) Nil)
      ((\:) (f (hd xs):map f (tl xs))))
-#def-macro #globals (ctx form) ((quote hd):((quote #ctx-env):((quote #ns-ctx):((quote #ctx-ns):((quote #ctx):Nil):Nil):Nil):Nil):Nil)
-#def-macro #locals (ctx form) ((quote #ctx-env):((quote #ctx):Nil):Nil)
+#def-proc #ns-env (ns) (hd (#ctx-env (#ns-ctx ns)))
+#def-macro #globals (ctx form)
+  ((squote #ns-env):((squote #ctx-ns):(quote (#ctx)):Nil):Nil)
+#def-macro #locals (ctx form) ((squote #ctx-env):(quote (#ctx)):Nil)
