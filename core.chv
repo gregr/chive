@@ -55,3 +55,14 @@
 #def-macro #globals (ctx form)
   ((squote #ns-env):((squote #ctx-ns):(quote (#ctx)):Nil):Nil)
 #def-macro #locals (ctx form) ((squote #ctx-env):(quote (#ctx)):Nil)
+#def-types
+  Bool (#Variant True False)
+  True (#Product)
+  False (#Product)
+#def-proc htl (xs) (hd (tl xs))
+#def-proc httl (xs) (htl (tl xs))
+#def-proc htttl (xs) (httl (tl xs))
+#def-macro #if (ctx form)
+  #let () ((cnd (htl form)) (cnsq (httl form)) (altrn (htttl form))) ()
+    ((squote #switch):cnd:
+     ((squote (True):cnsq:Nil):(squote (False):altrn:Nil):Nil):Nil)

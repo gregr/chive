@@ -66,13 +66,12 @@ def tyConsProc(ctx, body, _):
     if len(body) != 2: typeErr(ctx, "proc type requires two args: '%s'"%body)
     return ConsTyProc(ctx, parseType(ctx, body[0]), parseType(ctx, body[1]))
 def parseType(ctx, body, fields=None, name=None):
-    ctx, body = syncloExpand(ctx, body) # todo: shouldn't have to copy
+    ctx, body = syncloExpand(ctx, body)
     if isSymbol(body):
         if fields is not None: fields.append(None)
         return ConsTyVar(ctx, body)
     elif isListCons(body):
-        body = tuple(fromList(body))
-        hdCtx, hd = syncloExpand(ctx, body[0]) # todo: copy here too
+        body = tuple(fromList(body)); hdCtx, hd = syncloExpand(ctx, body[0])
         if isSymbol(hd):
             tyCons = getTyCons(ctx, hd)
             if tyCons is not None:

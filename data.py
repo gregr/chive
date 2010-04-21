@@ -167,7 +167,7 @@ def applyFull(ctx, proc, args):
     while args:
         proc = evalExpr(*cprc) # lifted out here for tail-calls
         if isProc(proc): cprc, args = getVal(proc).apply(ctx, args)
-        else: typeErr(ctx, "cannot apply non-procedure: '%s'"%proc)
+        else: typeErr(ctx, "cannot apply non-procedure: '%s'"%pretty(proc))
     return cprc
 
 ################################################################
@@ -434,6 +434,10 @@ def applySynCloCtx(ctx, sc):
 def syncloExpand(ctx, xs):
     while isSynClo(xs): ctx = applySynCloCtx(ctx, xs); xs = synclo_form(xs)
     return ctx, xs
+def synclo_maybe(ctx0, ctx, form):
+    if ctx0 != ctx and (isSymbol(form) or isListCons(form)):
+        return synclo_new(toCtx(ctx), nil, form)
+    return form
 def primSC(form): return synclo_new(toCtx(primCtx), nil, form)
 ################################################################
 # arrays

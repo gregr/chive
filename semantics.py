@@ -59,9 +59,7 @@ def _expand(ctx, xs):
                             ctx.hist.add(xs); mfrm = cons(hd, cons_tail(xs))
                             ctx, xs = applyMacro(ctx, val, mfrm)
                             continue
-            def wrap(ctx_, xx):
-                if ctx_ != ctx: xx = synclo_new(toCtx(ctx_), nil, xx)
-                return xx
+            def wrap(ctx_, xx): return synclo_maybe(ctx, ctx_, xx)
             def wrapSub(ctx, aa, xx): return aa, wrap(*expand(ctx, aa, xx))
             rest = mapRest(wrapSub, ctx, xs)
             if rest: attr1, xs1 = list(zip(*rest))
@@ -120,11 +118,12 @@ def fromAttrs(attr, num):
     attrs = tuple(fromList(fromAttr(attr).subs))
     return attrs + (null,)*(num-len(attrs))
 # todo: semArgsTy
-def fromAttrForm(formAttr):
-    attr, form = formAttr; forms = tuple(fromList(form))
+def fromAttrForm(ctx, formAttr):
+    attr, form = formAttr; ctx1, form = syncloExpand(ctx, form)
+    forms = tuple(synclo_maybe(ctx, ctx1, el) for el in fromList(form))
     return tuple(zip(fromAttrs(attr, len(forms)), forms))
 def semArgs(ctx, form, numArgs):
-    args = fromAttrForm((ctx.attr, form))
+    args = fromAttrForm(ctx, (ctx.attr, form))
     if len(args)-1 != numArgs:
         typeErr(ctx, "semantic '%s' takes %d arguments but was given %d"%
                 (pretty(cons_head(form)), numArgs, len(args)-1))
@@ -158,7 +157,7 @@ def primNspaceExports(ns):
 @semproc('#seq')
 def semSeq(ctx, form):
     return Seq(tuple(semantize(ctx, *afrm)
-               for afrm in fromAttrForm((ctx.attr, form))[1:]))
+               for afrm in fromAttrForm(ctx, (ctx.attr, form))[1:]))
 @semproc('#unbox')
 def semUnbox(ctx, form):
     form = stripOuterSynClo(cons_head(cons_tail(form))); ty = getTy(form)
@@ -173,9 +172,9 @@ def toTy(ctx, form):
 def semConsProc(ctx, form):
     binders, body = semArgs(ctx, form, 2)
     vars = []; paramts = []; bodyCtx = ctx.extendSyntax()
-    for binder in fromAttrForm(binders):
+    for binder in fromAttrForm(ctx, binders):
         if isListCons(binder[1]):
-            (_, var), ty = tuple(fromAttrForm(binder)); ty = toTy(ctx, ty)
+            (_,var),ty = tuple(fromAttrForm(ctx, binder)); ty = toTy(ctx, ty)
         else: var = binder[1]; ty = anyTy
         if not isSymbol(var): # todo: synclo?
             typeErr(ctx, "invalid proc binder: '%s'"%pretty(var))
@@ -186,15 +185,16 @@ def semConsProc(ctx, form):
 def semSwitch(ctx, form):
     discrim, alts = semArgs(ctx, form, 2)
     default = None; dalts = {}
-    for alt in fromAttrForm(alts):
-        matches, body = tuple(fromAttrForm(alt))
+    for alt in fromAttrForm(ctx, alts):
+        matches, body = tuple(fromAttrForm(ctx, alt))
         body = semantize(ctx, *body)
         if matches[1] is nil:
             if default is not None:
                 typeErr(ctx, 'switch can only have one default')
             default = body
         else:
-            for patAttr, pat in fromAttrForm(matches):
+            for patAttr, pat in fromAttrForm(ctx, matches):
+                pat = stripOuterSynClo(pat)
                 if isSymbol(pat): pat = toTy(ctx, (patAttr, pat))
                 elif isListCons(pat): assert False, pat
                 assert pat not in dalts, pat
@@ -205,16 +205,16 @@ def semLet(ctx, form):
     immed, nonrec, rec, body = semArgs(ctx, form, 4)
     immedCtx = ctx.extendSyntax(); bodyCtx = immedCtx.extendSyntax()
     immeds = []; recs = []; nonrecs = []
-    for binding in fromAttrForm(immed):
-        (_, binder), rhs = tuple(fromAttrForm(binding))
+    for binding in fromAttrForm(ctx, immed):
+        (_, binder), rhs = tuple(fromAttrForm(ctx, binding))
         immeds.append((EnvKey(newDen(immedCtx, binder)), rhs))
     for binder, rhs in immeds: ctx.env.add(binder, evaluate(immedCtx, *rhs))
-    for binding in fromAttrForm(nonrec):
-        (_, binder), rhs = tuple(fromAttrForm(binding))
+    for binding in fromAttrForm(ctx, nonrec):
+        (_, binder), rhs = tuple(fromAttrForm(ctx, binding))
         nonrecs.append((EnvKey(newDen(bodyCtx, binder)),
                         semantize(immedCtx, *rhs)))
-    for binding in fromAttrForm(rec):
-        (_, binder), rhs = tuple(fromAttrForm(binding))
+    for binding in fromAttrForm(ctx, rec):
+        (_, binder), rhs = tuple(fromAttrForm(ctx, binding))
         recs.append([EnvKey(newDen(bodyCtx, binder)), rhs])
     for recp in recs: recp[1] = semantize(bodyCtx, *recp[1])
     return Let(nonrecs, recs, semantize(bodyCtx, *body))

@@ -13,6 +13,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+throw/catch
+delay/force
+dynamic environment
+thread-local
 expansion history (fix) and attributes for definitions
 debugging (improve)
 optional automatic downcasting with warnings
