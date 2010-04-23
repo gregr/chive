@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from lex import SrcAttr, tokens
-from data import (prodTy, isSymbol, symbol, Env, EnvKey, toList, fromList, pretty,
+from data import (prodTy, isSymbol, symbol, symbol_eq, Env, EnvKey, toList, fromList, pretty,
                   makeStream)
 from type import *
 from itertools import chain
@@ -168,7 +168,7 @@ class Operator:
         assert isSymbol(assoc), assoc
         assert assoc in [symbol(nm) for nm in ('left', 'right', 'none')]
         self.sym = sym
-        self.assocRight = assoc is symbol('right') # todo: non-associative ops
+        self.assocRight = symbol_eq(assoc, symbol('right')) # todo: non-associative ops
         self.prec = prec
     def parse(self, lhs, attr, ts, dats): abstract
 

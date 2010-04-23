@@ -76,9 +76,9 @@ def symbol_id(s): return symbol_prim(s)[1]
 def symbol_eq(s1, s2): return symbol_prim(s1) == symbol_prim(s2)
 symTable = {}
 def symbol(n, table=symTable):
-    s = table.get(n)
-    if s is None: s = symbol_new(n); table[n] = s
-    return s
+    ubs = table.get(n)
+    if ubs is None: ubs = ubSymTy.new(ubSymbol_new(n)); table[n] = ubs
+    return symTy.new(ubs)
 def nameGen(alphabet=[chr(o) for o in range(ord('a'), ord('z')+1)]):
     rep = 0
     while True:
