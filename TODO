@@ -17,6 +17,8 @@ throw/catch
 delay/force
 dynamic environment
 thread-local
+weak ref
+gc-stable ref (related?: distributed refs)
 expansion history (fix) and attributes for definitions
 debugging (improve)
 optional automatic downcasting with warnings
