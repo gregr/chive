@@ -158,12 +158,14 @@ def primNspaceExports(ns):
 def semSeq(ctx, form):
     return Seq(tuple(semantize(ctx, *afrm)
                for afrm in fromAttrForm(ctx, (ctx.attr, form))[1:]))
+def tryUnbox(ctx, form):
+    ty = getTy(form)
+    if ty in (symTy, intTy, floatTy, charTy): return ty.unpackEl(form, 0)
+    else: typeErr(ctx, "cannot unbox non-literal: '%s'"%pretty(form))
 @semproc('#unbox')
 def semUnbox(ctx, form):
-    form = stripOuterSynClo(cons_head(cons_tail(form))); ty = getTy(form)
-    if ty in (symTy, intTy, floatTy, charTy):
-        return PrimVal(ty.unpackEl(form, 0))
-    else: typeErr(ctx, "cannot unbox non-literal: '%s'"%form)
+    form = stripOuterSynClo(cons_head(cons_tail(form)))
+    return PrimVal(tryUnbox(ctx, form))
 def toTy(ctx, form):
     ctx, form = expand(ctx, *form)
     if not isSymbol(form): typeErr(ctx, "invalid type name: '%s'"%form)
@@ -181,6 +183,7 @@ def semConsProc(ctx, form):
         vars.append(EnvKey(newDen(bodyCtx, var))); paramts.append(ty)
     return ConsProc(EnvKey(gensym()), vars,
                     semantize(bodyCtx, *body), paramts, None)
+unboxDen = primDen('#unbox')
 @semproc('#switch')
 def semSwitch(ctx, form):
     discrim, alts = semArgs(ctx, form, 2)
@@ -196,7 +199,13 @@ def semSwitch(ctx, form):
             for patAttr, pat in fromAttrForm(ctx, matches):
                 pat = stripOuterSynClo(pat)
                 if isSymbol(pat): pat = toTy(ctx, (patAttr, pat))
-                elif isListCons(pat): assert False, pat
+                elif isListCons(pat):
+                    xpat = tuple(fromAttrForm(ctx, (patAttr, pat)))
+                    if len(xpat) != 2:
+                        typeErr(ctx, "invalid pattern: '%s'"%pretty(pat))
+                    (_,ubsym), (_,val) = xpat
+                    if symbol_eq(unboxDen, getDen(ctx, ubsym)):
+                        pat = tryUnbox(ctx, val)
                 assert pat not in dalts, pat
                 dalts[pat] = body
     return Switch(semantize(ctx, *discrim), default, dalts)

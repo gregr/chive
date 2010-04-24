@@ -363,6 +363,7 @@ def addPrimTy(name, ty):
     addPrim(name, type_new(ty))
     if isinstance(ty, ProductType):
         return addConsDen(primCtx, symbol(name), ty)
+def primDen(name): return getDen(primCtx, symbol(name))
 addPrimTy('#Type', ubTyTy); addPrimTy('Type', tyTy)
 addPrimTy('#Symbol', ubSymTy); addPrimTy('Symbol', symTy)
 addPrimTy('Any', anyTy)

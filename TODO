@@ -15,10 +15,13 @@ limitations under the License.
 ================================================================
 throw/catch
 delay/force
-dynamic environment
 thread-local
+conditions: signals/restarts
 weak ref
 gc-stable ref (related?: distributed refs)
+module-determined constancy/visibility typing
+explicit full mutability typing
+getTag primitive for explicit dynamic dispatch
 expansion history (fix) and attributes for definitions
 debugging (improve)
 optional automatic downcasting with warnings
@@ -26,7 +29,6 @@ option for direct file-inclusion
 interpreter-agnostic expression evaluation
 import path [modname] [[only (...)]|[hide (...)]] [rename (...)]]
 thread interaction with delays, module-loading, etc.
-dynamic dispatch
 AST pretty-printing
 structs/tuples
 records/row-typing

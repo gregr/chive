@@ -77,7 +77,7 @@ class ScalarType(AtomicUnboxedType):
         if not self.pred(val):
             typeErr(None, "invalid scalar '%s'"%repr(val))
         return typed(self, val)
-    def discrim(self, val): return getVal(val)
+    def discrim(self, val): return val
     def __str__(self): return str(self.name)
 class PyType(ScalarType):
     def __init__(self, name, pyty):
