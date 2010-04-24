@@ -154,6 +154,12 @@ def primNspaceCtx(ns): return final(toCtx(fromNspace(ns).ctx))
 @primproc('#ns-exports', nspaceTy, listTy)
 def primNspaceExports(ns):
     return final(repackSymbols(fromNspace(ns).exportedNames))
+@semproc('#unwind')
+def semUnwind(ctx, form): semArgs(ctx, form, 0); return Unwind()
+@semproc('#catch-unwind')
+def semCatchUnwind(ctx, form):
+    return CatchUnwind(*tuple(semantize(ctx, *frm)
+                              for frm in semArgs(ctx, form, 2)))
 @semproc('#seq')
 def semSeq(ctx, form):
     return Seq(tuple(semantize(ctx, *afrm)

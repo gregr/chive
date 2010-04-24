@@ -163,8 +163,13 @@ class Let(Expr):
         for name, rhs in self.rec: newCtx.env.add(name, evalExpr(newCtx, rhs))
         return cont(newCtx, self.body)
 ################################################################
-class Throw(Expr): pass # could be a proc
-class Catch(Expr): pass
+class Unwind(Expr):
+    def eval(self, ctx): raise UnwindExc
+class CatchUnwind(Expr):
+    def __init__(self, cnsq, altrn): self.cnsq = cnsq; self.altrn = altrn
+    def eval(self, ctx):
+        try: return final(evalExpr(ctx, self.cnsq))
+        except UnwindExc: return cont(ctx, self.altrn)
 
 ################################################################
 class Delay(Expr): pass

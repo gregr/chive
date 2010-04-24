@@ -17,6 +17,7 @@ throw/catch
 delay/force
 thread-local
 conditions: signals/restarts
+type-error hook
 weak ref
 gc-stable ref (related?: distributed refs)
 module-determined constancy/visibility typing

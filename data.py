@@ -17,11 +17,13 @@ from functools import reduce
 from itertools import chain
 import os
 
+class UnwindExc(Exception): pass
 def final(val): return None, val
 def cont(ctx, expr): return ctx, expr
 def evalExpr(ctx, expr, ty=None): # tail-call trampoline
     try:
         while ctx is not None: ctx, expr = expr.eval(ctx)
+    except UnwindExc: raise
     except Exception as exc:
         if ctx.root.onErr is None: raise
         expr = ctx.root.onErr(exc, ctx, expr)
