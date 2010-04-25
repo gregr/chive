@@ -170,7 +170,6 @@ class CatchUnwind(Expr):
     def eval(self, ctx):
         try: return final(evalExpr(ctx, self.cnsq))
         except UnwindExc: return cont(ctx, self.altrn)
-
 ################################################################
 class Delay(Expr): pass
 class Force(Expr): pass # could be a proc (eval then update)

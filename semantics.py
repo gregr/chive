@@ -135,25 +135,35 @@ def repackEnvSymbols(env):
     for bs in env.stratified(): strat = cons(repackSymbols(bs.keys()), strat)
     return strat
 @primproc('#expand', ctxTy, formTy, formTy)
-def primExpand(ctx, form):
-    ctx = fromCtx(ctx); ctx, form = expand(ctx, ctx.attr, form)
+def primExpand(ctx0, ctx, form):
+    ctx = fromCtx(ctx).withThread(ctx0.thread)
+    ctx, form = expand(ctx, ctx.attr, form)
     return final(synclo_new(toCtx(ctx), nil, form))
 @primproc('#eval', ctxTy, formTy, anyTy)
-def primEval(ctx, form):
-    ctx = fromCtx(ctx); return final(evaluate(ctx, ctx.attr, form, anyTy))
+def primEval(ctx0, ctx, form):
+    ctx = fromCtx(ctx).withThread(ctx0.thread)
+    return final(evaluate(ctx, ctx.attr, form, anyTy))
 @primproc('#alias', symTy, symTy)
-def primAlias(sym): return final(alias_new(sym))
+def primAlias(ctx0, sym): return final(alias_new(sym))
 @semproc('#ctx')
 def semContext(ctx, form): semArgs(ctx, form, 0); return PrimVal(toCtx(ctx))
 @primproc('#ctx-env', ctxTy, listTy)
-def primCtxEnv(ctx): return final(repackEnvSymbols(fromCtx(ctx).senv))
+def primCtxEnv(ctx0, ctx):
+    return final(repackEnvSymbols(fromCtx(ctx).senv))
 @primproc('#ctx-ns', ctxTy, nspaceTy)
-def primCtxNspace(ctx): return final(toNspace(fromCtx(ctx).nspace))
+def primCtxNspace(ctx0, ctx): return final(toNspace(fromCtx(ctx).nspace))
 @primproc('#ns-ctx', nspaceTy, ctxTy)
-def primNspaceCtx(ns): return final(toCtx(fromNspace(ns).ctx))
+def primNspaceCtx(ctx0, ns): return final(toCtx(fromNspace(ns).ctx))
 @primproc('#ns-exports', nspaceTy, listTy)
-def primNspaceExports(ns):
+def primNspaceExports(ctx0, ns):
     return final(repackSymbols(fromNspace(ns).exportedNames))
+@primproc('#get-tl-data', symTy, anyTy)
+def primGetTLData(ctx0, key):
+    return final(ctx0.thread.getDataTLS(ctx0, EnvKey(key)))
+@semproc('#init-tl-data')
+def semInitTLData(ctx, form):
+    key, body = semArgs(ctx, form, 2); key = EnvKey(evaluate(ctx, *key))
+    ctx.root.setInitTLS(ctx, key, semantize(ctx, *body)); return unitExpr
 @semproc('#unwind')
 def semUnwind(ctx, form): semArgs(ctx, form, 0); return Unwind()
 @semproc('#catch-unwind')
@@ -259,9 +269,11 @@ def semDefOp(ctx, form):
     name, fixity, assoc, prec = tuple(zip(*semArgs(ctx, form, 4)))[1]
     op = newOperator(name, symbol_name(fixity), assoc, fromInt(prec))
     ctx.nspace.defOp(name, op); return unitExpr
-def evalModule(mod, onResult=lambda _: None):
-    for expr in mod: result = evaluate(mod.curNS.ctx, *expr); onResult(result)
-def interact(mod):
+def evalModule(thread, mod, onResult=lambda _: None):
+    for expr in mod:
+        result = evaluate(mod.curNS.ctx.withThread(thread), *expr)
+        onResult(result)
+def interact(thread, mod):
     from lex import LexError
     from syntax import ParseError, Parser
     from data import Env, makeStream, unit
@@ -269,7 +281,7 @@ def interact(mod):
     def onResult(res): result[0] = res; print(pretty(res))
     for stream in interactStreams('%s> '%os.path.basename(str(mod.name))):
         mod.setStream(stream)
-        try: evalModule(mod, onResult)
+        try: evalModule(thread, mod, onResult)
         except LexError: raise
         except ParseError: raise
         except TypeError: raise
@@ -280,16 +292,18 @@ def debugErr(exc, ctx, expr): # todo: exit without resume?
     root.debugging = True; name = ctx.nspace.mod.name
     print('ERROR:', exc); print(ctx.hist.show()); print(expr) # todo: pretty
     if input('enter debug mode?: ').lower() in ('n', 'no'): return None
-    mod = root.moduleFromCtx('%s debug'%name, ctx); result = interact(mod)
+    mod = root.moduleFromCtx('%s debug'%name, ctx)
+    result = interact(ctx.thread, mod)
     root.debugging = False; return result
 splash = """chive 0.0.0: help system is still a work in progress..."""
 def _test():
     import sys
 #    root = Root((os.getcwd(), ))
     root = Root(()); root.onErr = debugErr; root.debugging = False
+    thread = Thread(root)
     if len(sys.argv) > 1:
-        mod = root.getFileModule(sys.argv[1]); evalModule(mod)
+        mod = root.getFileModule(sys.argv[1]); evalModule(thread, mod)
     else: mod = root.rawModule('test')
-    print(splash); interact(mod)
+    print(splash); interact(thread, mod)
     return mod
 if __name__ == '__main__': mod = _test()

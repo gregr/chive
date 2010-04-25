@@ -50,7 +50,6 @@ class Var(Atom):
         val = ctx.env.get(self.name)
         if val is None: typeErr(ctx, "unbound variable '%s'"%self.name)
         return final(val)
-
 ################################################################
 # type types
 ubTyTy = PyType('#Type', Type)
@@ -133,20 +132,21 @@ class NativeProc:
         subs = dict((old, new) for old, new in subs if old not in self.binders)
         self.code.subst(subs)
     def call(self, ctx, args):
-        ctx = ctx.copy(); ctx.env = Env(ctx.env)
+        ctx = ctx.extendValues()
         for binder, arg in zip(self.binders, args): ctx.env.add(binder, arg)
         return self.code.eval(ctx)
     def arity(self): return len(self.binders)
 class NativeClosure:
     def __init__(self, proc, ctx): self.proc = proc; self.ctx = ctx
     def __str__(self): return str(self.proc.name)
-    def call(self, args): return self.proc.call(self.ctx, args)
+    def call(self, ctx, args):
+        return self.proc.call(self.ctx.withThread(ctx.thread), args)
     def arity(self): return self.proc.arity()
 class ForeignProc:
     def __init__(self, name, code, argc):
         self.name = name; self.code = code; self.argc = argc
     def __str__(self): return str(self.name)
-    def call(self, args): return self.code(*args)
+    def call(self, ctx, args): return self.code(ctx, *args)
     def arity(self): return self.argc
 class PartialApp:
     def __init__(self, proc, saved, ty):
@@ -158,7 +158,7 @@ class PartialApp:
         nextTy, argts, nextArity = self.ty.appliedTy(len(args), self.arity())
         saved = self.saved+tuple(evalExpr(ctx, arg, argt)
                                  for argt, arg in zip(argts, args))
-        if nextArity == 0: return self.proc.call(saved), args[len(argts):]
+        if nextArity == 0: return self.proc.call(ctx,saved), args[len(argts):]
         return final(nextTy.new(PartialApp(self.proc, saved, nextTy))), ()
 def proc_new(proc, ctx, ty):
     return ty.new(PartialApp(NativeClosure(proc, ctx), (), ty))
@@ -225,18 +225,20 @@ class History:
     def show(self):
         return '\n'.join(map(pretty, chain(self.main, [self.final])))
 class Context:
-    def __init__(self, root, nspace, ops, senv, env, attr, hist=None):
-        self.root = root; self.nspace = nspace
+    def __init__(self, root, thread, nspace, ops, senv, env, attr, hist=None):
+        self.root = root; self.thread = thread; self.nspace = nspace
         self.ops = ops; self.senv = senv; self.env = env
         self.attr = attr; self.hist = hist or History()
     def __eq__(self, rhs): return self._cmp() == rhs._cmp()
     def _cmp(self): return (self.ops, self.senv)
     def copy(self):
-        return Context(self.root, self.nspace, self.ops, self.senv, self.env,
-                       self.attr, self.hist)
+        return Context(self.root, self.thread, self.nspace,
+                       self.ops, self.senv, self.env, self.attr, self.hist)
     def copyAttr(self):
         ctx = self.copy(); ctx.attr = toAttr(fromAttr(ctx.attr).copy())
         return ctx
+    def withThread(self, thread):
+        ctx = self.copy(); ctx.thread = thread; return ctx
     def extendSyntax(self, ops=False):
         ctx = self.copy(); ctx.senv = Env(self.senv)
         if ops: ctx.ops = Env(self.ops)
@@ -257,7 +259,7 @@ def bindVar(ctx, sym, val): ctx.env.add(EnvKey(getDen(ctx, sym)), val)
 def defVar(ctx, sym, ty): ctx.nspace.define(sym, ty)
 defTy = defVar
 def freshCtx(root, nspace):
-    return Context(root, nspace, Env(), Env(), Root.env, None)
+    return Context(root, None, nspace, Env(), Env(), Root.env, None)
 ################################################################
 # modules
 def resolvePath(searchPaths, path):
@@ -313,11 +315,34 @@ class Namespace:
             if op is not None: ns.defOp(nnew.sym, op)
 def fileStream(path): return open(path)
 exportAllFilter = (True, set(), {})
+class Thunk:
+    def __init__(self, ctx, code): self.ctx = ctx; self.code = code
+    def _eval(self, ctx):
+        return evalExpr(self.ctx.withThread(ctx.thread), self.code)
+    def force(self, ctx):
+        if self.ctx is not None: self.code = self._eval(ctx)
+        return self.code
+class Thread:
+    def __init__(self, root): self.root = root; self.tid = None; self.tls = {}
+    def getDataTLS(self, ctx, key):
+        data = self.tls.get(key)
+        if data is None:
+            thunk = self.root.getInitTLS(ctx, key)
+            data = thunk._eval(ctx); self.tls[key] = data
+        return data
 class Root:
     env = Env(); onErr = None
     def __init__(self, searchPaths):
         self.coreMod = primMod; self.searchPaths = searchPaths
-        self.modules = {}
+        self.modules = {}; self.tlsInit = {}
+    def getInitTLS(self, ctx, key):
+        thunk = self.tlsInit.get(key)
+        if thunk is None: typeErr(ctx, "invalid thread-local key '%s'"%key)
+        return thunk
+    def setInitTLS(self, ctx, key, code):
+        assert key not in self.tlsInit, key
+        # todo: code should rely only on constants
+        self.tlsInit[key] = Thunk(ctx, code)
     def _makeModule(self, name, path, stream, importCore=True):
         mod = Module(name, path, stream, self)
         if importCore: self.coreMod.curNS.export(mod.curNS, exportAllFilter)
