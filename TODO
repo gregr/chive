@@ -13,7 +13,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
-delay/force
 conditions: signals/restarts
 type-error hook
 weak ref
@@ -21,6 +20,7 @@ gc-stable ref (related?: distributed refs)
 module-determined constancy/visibility typing
 explicit full mutability typing
 getTag primitive for explicit dynamic dispatch
+smarter thunk-creation
 fix future bugs due to lack of Context.withThread where required
 expansion history (fix) and attributes for definitions
 debugging (improve)

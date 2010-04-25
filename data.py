@@ -171,7 +171,21 @@ def applyFull(ctx, proc, args):
         if isProc(proc): cprc, args = getVal(proc).apply(ctx, args)
         else: typeErr(ctx, "cannot apply non-procedure: '%s'"%pretty(proc))
     return cprc
-
+################################################################
+# thunks
+class Thunk:
+    def __init__(self, ctx, code):
+        self.ty = anyTy; self.ctx = ctx; self.code = code
+    def expectTy(self, ty):
+        if self.ty.contains(ty): self.ty = ty
+    def _eval(self, ctx):
+        return evalExpr(self.ctx.withThread(ctx.thread), self.code, self.ty)
+    def force(self, ctx, box):
+        if self.ctx is not None: self.code = self._eval(ctx)
+        box[:] = self.code[:]; return self.code
+def force(ctx, box):
+    if isThunk(box): box = getVal(box).force(ctx, box)
+    return box
 ################################################################
 class Constr(Expr): pass
 class ConsProc(Constr):
@@ -192,6 +206,12 @@ class ConsProc(Constr):
 def accFreeVars(xs): return reduce(set.union,(x.freeVars() for x in xs),set())
 def mapSubst(subs, xs):
     for xx in xs: xx.subst(subs)
+class ConsThunk(Constr):
+    def __init__(self, name, body):
+        self.ty = ThunkType(name); self.body = body
+    def freeVars(self): return self.body.freeVars()
+    def subst(self, subs): self.body.subst(subs)
+    def eval(self, ctx): return final(self.ty.new(Thunk(ctx, self.body)))
 class ConsNode(Constr):
     def __init__(self, ty, cargs, ctx=None):
         if not isinstance(ty, ProductType):
@@ -199,7 +219,7 @@ class ConsNode(Constr):
         ty.checkIndex(len(cargs),
                       'incorrect number of constructor arguments:', True)
         self.ty = ty; self.cargs = cargs
-    def freeVars(self): return accFreeVars(xs)
+    def freeVars(self): return accFreeVars(self.cargs)
     def subst(self, subs): mapSubst(subs, self.cargs)
     def eval(self, ctx):
         cargs = [evalExpr(ctx, carg) for carg in self.cargs]
@@ -315,13 +335,6 @@ class Namespace:
             if op is not None: ns.defOp(nnew.sym, op)
 def fileStream(path): return open(path)
 exportAllFilter = (True, set(), {})
-class Thunk:
-    def __init__(self, ctx, code): self.ctx = ctx; self.code = code
-    def _eval(self, ctx):
-        return evalExpr(self.ctx.withThread(ctx.thread), self.code)
-    def force(self, ctx):
-        if self.ctx is not None: self.code = self._eval(ctx)
-        return self.code
 class Thread:
     def __init__(self, root): self.root = root; self.tid = None; self.tls = {}
     def getDataTLS(self, ctx, key):
@@ -398,7 +411,6 @@ def prodTy(name, *elts):
     ty = ProductType(name, elts); addPrimTy(name, ty); return ty
 def singleton(name): ty = ProductType(name, ()); return ty, addPrimTy(name, ty)
 unitTy, unit = singleton('Unit')
-
 ################################################################
 # basic values
 def basicTy(name, pyty):
@@ -411,7 +423,6 @@ def basicTy(name, pyty):
 ubIntTy, intTy, toInt, fromInt = basicTy('Int', int)
 ubFloatTy, floatTy, toFloat, fromFloat = basicTy('Float', float)
 ubCharTy, charTy, toChar, fromChar = basicTy('Char', str)
-
 ################################################################
 # lists
 listTy = VariantType()
@@ -427,12 +438,14 @@ def isList(x): return x is nil or isListCons(x)
 def toList(args, tail=nil):
     for x in reversed(args): tail = cons(x, tail)
     return tail
+class LazyList(Exception): pass
 def fromList(xs, repeat=None):
     assert isList(xs), xs
     while xs is not nil:
         if repeat is not None:
             if id(xs) in repeat: return
             repeat.append(id(xs))
+        if isThunk(xs): raise LazyList(xs)
         yield cons_head(xs)
         xs = cons_tail(xs)
     if repeat is not None: del repeat[:]
@@ -493,8 +506,10 @@ def applySemantic(ctx, sem, form): return fromSem(sem)(ctx, form)
 # pretty printing
 def prettyList(xs, seen):
     seen.append(id(xs)); shown = []; repeat = []
-    for x in fromList(xs, repeat): shown.append(pretty(x, seen))
-    if repeat: shown.append('...')
+    try:
+        for x in fromList(xs, repeat): shown.append(pretty(x, seen))
+        if repeat: shown.append('...')
+    except LazyList as ll: shown.append('...%s'%pretty(ll.args[0]))
     seen.remove(id(xs)); return '[%s]'%' '.join(shown)
 def prettySymbol(s, _=None): return symbol_name(s)
 def prettySynClo(s, seen):
@@ -542,6 +557,7 @@ def pretty(v, seen=None):
                 els = ' '.join(pretty(ty.unpackEl(v, idx), seen)
                                for idx in range(ty.numIndices()))
                 seen.remove(id(v)); return '(%s)'%('%s %s'%(ty, els)).rstrip()
+            elif isinstance(getTy(v), ThunkType): return '(%s)'%str(getTy(v))
             return '<%s %s>'%(getTy(v), getVal(v))
         else: return pp(v, seen)
     else: return '<ugly %s>'%repr(v)

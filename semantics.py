@@ -186,6 +186,12 @@ def toTy(ctx, form):
     ctx, form = expand(ctx, *form)
     if not isSymbol(form): typeErr(ctx, "invalid type name: '%s'"%form)
     return type_type(getVar(ctx, form))
+@primproc('#force', anyTy, anyTy)
+def primForce(ctx0, boxed): return final(force(ctx0, boxed))
+@semproc('#delay') # todo: choose whether it's worth making a thunk
+def semDelay(ctx, form):
+    return ConsThunk(EnvKey(gensym()),
+                     semantize(ctx, *semArgs(ctx, form, 1)[0]))
 @semproc('#proc')
 def semConsProc(ctx, form):
     binders, body = semArgs(ctx, form, 2)

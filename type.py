@@ -26,9 +26,10 @@ def mem_copy(dst, src, sz):
 # types
 class TypeError(Exception): pass
 def typeErr(ctx, msg): raise TypeError(ctx, msg)
-def isTyped(val): return (isinstance(val, tuple) and len(val)>0 and
+def isTyped(val): return (isinstance(val, list) and len(val)>0 and
                           isinstance(getTy(val), Type))
-def typed(ty, val): return (ty, val)
+def typed(ty, val): return [ty, val]
+#def typed(ty, val): return (ty, val)
 def getTy(val): return val[0]
 def getVal(val): return val[1]
 def getDiscrim(val): return getTy(val).discrim(val)
@@ -134,11 +135,15 @@ structType = cachedType(StructType)
 ################################################################
 # boxed types (runtime tagging without parametric polymorphism for now)
 class BoxedType(Type):
+    def checkTy(self, val):
+        if isinstance(getTy(val), ThunkType): return True
+        super().checkTy(val)
     def size(self): return 1
     def unpack(self, mem, offset):
         box = mem_read(mem, offset); self.checkTy(box); return box
     def pack(self, mem, offset, box):
-        self.checkTy(box); mem_write(mem, offset, box)
+        if self.checkTy(box): getVal(box).expectTy(self)
+        mem_write(mem, offset, box)
 class AnyType(BoxedType):
     def contains(self, ty, tenv=None): return isinstance(ty, BoxedType)
     def __str__(self): return 'Any'
@@ -161,6 +166,7 @@ class VariantType(BoxedType):
         else: return any(elt.contains(ty) for elt in self.elts)
 class NodeType(BoxedType):
     def discrim(self, val): return getTy(val)
+    def contains(self, ty, tenv=None): return ty is self
 class ProductType(NodeType):
     def __init__(self, name, elts=None, fields=()):
         self.name = name
@@ -175,7 +181,6 @@ class ProductType(NodeType):
                 typeErr(None, "type '%s' has duplicate field name: '%s'"
                               %(self.name, fname))
             self.fields[fname] = idx
-    def contains(self, ty, tenv=None): return ty is self
     def checkValid(self):
         if self.elts is None:
             typeErr(None, "attempted to use undefined tag: '%s'"%self.name)
@@ -190,6 +195,11 @@ class ProductType(NodeType):
             elt.pack(mem, offset, arg); offset += elt.size()
         return typed(self, mem)
     def __str__(self): return str(self.name)
+class ThunkType(NodeType):
+    def __init__(self, name): self.name = name
+    def new(self, thunk): return typed(self, thunk)
+    def __str__(self): return '%s::thunk'%self.name
+def isThunk(v): return isTyped(v) and isinstance(getTy(v), ThunkType)
 class ProcType(NodeType):
     def __init__(self, inTy=None, outTy=None):
         if outTy is not None: self.init(inTy, outTy)
