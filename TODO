@@ -13,6 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+reader macros/importing them
+nicer list syntax using reader macros
 rename primitives without using leading-#
 conditions: signals/restarts
 type-error hook
@@ -35,7 +37,6 @@ arrays
 strings
 structs/tuples
 records/row-typing
-reader macros/importing them
 dependency analysis
            -driving the eval order of non-sequenced exprs/typedefs
            -searching mutually-recursive modules for missing dependencies

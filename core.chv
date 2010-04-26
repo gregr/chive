@@ -51,6 +51,12 @@
   #switch xs
     (((Nil) Nil)
      ((\:) (f (hd xs):map f (tl xs))))
+#def-proc strip-synclo (frm)
+  #switch frm (((SynClo) (synclo-form frm)) (() frm))
+#def-proc strip-synclos (frm)
+  #switch frm (((\:) (map strip-synclos frm))
+               ((SynClo) (strip-synclos (strip-synclo frm)))
+               (() frm))
 #def-proc #ns-env (ns) (hd (#ctx-env (#ns-ctx ns)))
 #def-macro #globals (ctx form)
   ((squote #ns-env):((squote #ctx-ns):(quote (#ctx)):Nil):Nil)
@@ -69,27 +75,61 @@
     ((squote #switch):cnd:
      ((squote (True):cnsq:Nil):(squote (False):altrn:Nil):Nil):Nil)
 #def-proc gensym (_) (#alias (quote \#gsym))
-#def-macro #def-tl-data (ctx form)
-  #let () ((name (htl form)) (body (httl form))
-           (key (((squote quote):gensym():Nil)))) ()
-    ((squote #seq):((squote #def):name:key:Nil):
-     ((squote #init-tl-data):key:body:Nil):Nil)
-#def-types
-  Ref (#Product Any)
+#def-types (Ref (#Product Any))
 #def-proc ref-get (ref) (#node-unpack Ref 0 ref)
 #def-proc ref-set (ref val) (#node-pack Ref 0 ref val)
-#def-proc default-cond-handler (_) (#unwind)
-#def-proc pred-true (_) True
-#def-proc mk-cond-handler (pred handler) (pred:handler:Nil)
-#def-tl-data cond-handler-state
-  Ref (mk-cond-handler pred-true default-cond-handler:Nil)
+
+#def-macro #def-tl-data (ctx form)
+  #let () ((name (htl form)) (body (httl form))
+           (key (((squote quote):gensym ():Nil)))) ()
+    ((squote #seq):((squote #def):name:key:Nil):
+     ((squote #init-tl-data):key:body:Nil):Nil)
+
+#def-proc default-cond-handler (cnd continue unravel) (unravel ())
+
+#def-tl-data cond-handler-state (Ref (default-cond-handler:Nil))
+#def-proc get-cond-handler-state (_) (#get-tl-data cond-handler-state)
+#def-proc get-cond-handlers (_) (ref-get (#get-tl-data cond-handler-state))
 #def-proc push-cond-handler (c-h)
-  #let () ((ref (#get-tl-data cond-handler-state))) ()
+  #let () ((ref (get-cond-handler-state ()))) ()
     ref-set ref (c-h:ref-get ref)
 #def-proc pop-cond-handler (_)
-  #let () ((ref (#get-tl-data cond-handler-state))) ()
+  #let () ((ref (get-cond-handler-state ()))) ()
     ref-set ref (tl (ref-get ref))
-#def-proc #match-cond-handler (cnd)
-  #let () ((c-h (pop-cond-handler()))) ((pred (hd c-h)) (handler (htl c-h)))
-    #if (pred cnd) handler
-      #match-cond-handler cnd
+#def-proc set-cond-handlers (hs) (ref-set (get-cond-handler-state ()) hs)
+
+#def-tl-data restart-state (Ref Nil)
+#def-proc get-restarts (_) (#get-tl-data restart-state)
+#def-proc push-restarts (restarts)
+  #let () ((ref (get-restarts ()))) ()
+    ref-set ref (restarts:(ref-get ref))
+#def-proc pop-restarts (_)
+  #let () ((ref (get-restarts ()))) ()
+    ref-set ref (tl (ref-get ref))
+
+#def-proc apply-cond-handler (cnd hs)
+  #let () ((handler (hd hs)) (rest (tl hs)))
+    ((continue (#proc (_) (apply-cond-handler cnd rest)))
+     (unravel (#proc (_) (#seq (set-cond-handlers hs) (#unwind)))))
+    handler cnd continue unravel
+#def-proc signal (cnd) (apply-cond-handler cnd (get-cond-handlers ()))
+
+#def-macro bind-cond-handler (ctx form)
+  #let () ((body (htl form)) (handler (httl form)) (altern (htttl form))
+           (pop ((squote pop-cond-handler):Nil:Nil)) (val (gensym ()))) ()
+    ((squote #seq):((squote push-cond-handler):handler:Nil):
+     ((squote #catch-unwind):
+      ((squote #let):Nil:((val:body:Nil):Nil):Nil:
+       ((squote #seq):pop:val:Nil):Nil):
+      ((squote #seq):pop:altern:Nil):Nil):Nil)
+
+#def tc-result (Ref ())
+#def-proc test-cond (xs ys)
+  bind-cond-handler
+    bind-cond-handler
+      signal 42
+      (#proc (cnd continue unravel) (continue ()))
+      (#unwind)
+    (#proc (cnd continue unravel)
+      (#seq (ref-set tc-result (quote alt0)) (unravel ())))
+    37
