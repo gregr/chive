@@ -74,3 +74,22 @@
            (key (((squote quote):gensym():Nil)))) ()
     ((squote #seq):((squote #def):name:key:Nil):
      ((squote #init-tl-data):key:body:Nil):Nil)
+#def-types
+  Ref (#Product Any)
+#def-proc ref-get (ref) (#node-unpack Ref 0 ref)
+#def-proc ref-set (ref val) (#node-pack Ref 0 ref val)
+#def-proc default-cond-handler (_) (#unwind)
+#def-proc pred-true (_) True
+#def-proc mk-cond-handler (pred handler) (pred:handler:Nil)
+#def-tl-data cond-handler-state
+  Ref (mk-cond-handler pred-true default-cond-handler:Nil)
+#def-proc push-cond-handler (c-h)
+  #let () ((ref (#get-tl-data cond-handler-state))) ()
+    ref-set ref (c-h:ref-get ref)
+#def-proc pop-cond-handler (_)
+  #let () ((ref (#get-tl-data cond-handler-state))) ()
+    ref-set ref (tl (ref-get ref))
+#def-proc #match-cond-handler (cnd)
+  #let () ((c-h (pop-cond-handler()))) ((pred (hd c-h)) (handler (htl c-h)))
+    #if (pred cnd) handler
+      #match-cond-handler cnd
