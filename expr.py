@@ -71,7 +71,8 @@ def parseType(ctx, body, fields=None, name=None):
         if fields is not None: fields.append(None)
         return ConsTyVar(ctx, body)
     elif isListCons(body):
-        body = tuple(fromList(body)); hdCtx, hd = syncloExpand(ctx, body[0])
+        body = tuple(fromList(body, ctx))
+        hdCtx, hd = syncloExpand(ctx, body[0])
         if isSymbol(hd):
             tyCons = getTyCons(ctx, hd)
             if tyCons is not None:
@@ -89,7 +90,7 @@ def bindTypes(ctx, consTyForms):
     exprs = []; aliases = []
     for form in consTyForms:
         if isListCons(form):
-            form = tuple(fromList(form))
+            form = tuple(fromList(form, ctx))
             if len(form) == 2:
                 name, body = form
                 expr = parseType(ctx, body, name=name)

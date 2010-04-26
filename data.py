@@ -439,13 +439,15 @@ def toList(args, tail=nil):
     for x in reversed(args): tail = cons(x, tail)
     return tail
 class LazyList(Exception): pass
-def fromList(xs, repeat=None):
+def fromList(xs, ctx=None, repeat=None):
     assert isList(xs), xs
     while xs is not nil:
         if repeat is not None:
             if id(xs) in repeat: return
             repeat.append(id(xs))
-        if isThunk(xs): raise LazyList(xs)
+        if isThunk(xs):
+            if ctx is not None: xs = force(ctx, xs); continue
+            raise LazyList(xs)
         yield cons_head(xs)
         xs = cons_tail(xs)
     if repeat is not None: del repeat[:]
@@ -465,7 +467,7 @@ def synclo_frees(s): return syncloTy.unpackEl(s, 1)
 def synclo_form(s): return syncloTy.unpackEl(s, 2)
 def applySynCloCtx(ctx, sc):
     ctx = ctx.copy(); scCtx = fromCtx(synclo_ctx(sc)); senv = scCtx.senv
-    frees = fromList(synclo_frees(sc))
+    frees = fromList(synclo_frees(sc), ctx)
     if frees:
         senv = Env(senv)
         for n in frees:
@@ -507,7 +509,7 @@ def applySemantic(ctx, sem, form): return fromSem(sem)(ctx, form)
 def prettyList(xs, seen):
     seen.append(id(xs)); shown = []; repeat = []
     try:
-        for x in fromList(xs, repeat): shown.append(pretty(x, seen))
+        for x in fromList(xs, None, repeat): shown.append(pretty(x, seen))
         if repeat: shown.append('...')
     except LazyList as ll: shown.append('...%s'%pretty(ll.args[0]))
     seen.remove(id(xs)); return '[%s]'%' '.join(shown)

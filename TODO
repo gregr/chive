@@ -30,6 +30,8 @@ interpreter-agnostic expression evaluation
 import path [modname] [[only (...)]|[hide (...)]] [rename (...)]]
 thread interaction with delays, module-loading, etc.
 AST pretty-printing
+arrays
+strings
 structs/tuples
 records/row-typing
 reader macros/importing them
@@ -40,10 +42,6 @@ dependency analysis
 ================================================================
 = disorganized ideas
 ================================================================
-array-new
-array-length
-array-unpack/pack
-
 ffi?:
 networking
 filesystem/stdio/os

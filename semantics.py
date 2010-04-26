@@ -28,8 +28,8 @@ def withSubCtx(f, ctx, attr, xs):
 def headSubCtx(f, ctx, xs):
     return withSubCtx(f, ctx, attr_head(ctx.attr), cons_head(xs))
 def mapRest(f, ctx, xs):
-    xs0 = list(fromList(cons_tail(xs)))
-    attr0 = list(fromList(attr_tail(ctx.attr)))
+    xs0 = list(fromList(cons_tail(xs), ctx))
+    attr0 = list(fromList(attr_tail(ctx.attr), ctx))
     attr0 += [ctx.attr]*(len(xs0)-len(attr0))
     return [f(ctx, aa, xx) for aa, xx in zip(attr0, xs0)]
 def checkIsForm(ctx, xs):
@@ -113,15 +113,15 @@ def primproc(name, *tys):
 def stripOuterSynClo(xs):
     while isSynClo(xs): xs = synclo_form(xs)
     return xs
-def fromAttrs(attr, num):
+def fromAttrs(ctx, attr, num):
     null = toAttr(fromAttr(attr).copy())
-    attrs = tuple(fromList(fromAttr(attr).subs))
+    attrs = tuple(fromList(fromAttr(attr).subs, ctx))
     return attrs + (null,)*(num-len(attrs))
 # todo: semArgsTy
 def fromAttrForm(ctx, formAttr):
     attr, form = formAttr; ctx1, form = syncloExpand(ctx, form)
-    forms = tuple(synclo_maybe(ctx, ctx1, el) for el in fromList(form))
-    return tuple(zip(fromAttrs(attr, len(forms)), forms))
+    forms = tuple(synclo_maybe(ctx, ctx1, el) for el in fromList(form, ctx1))
+    return tuple(zip(fromAttrs(ctx1, attr, len(forms)), forms))
 def semArgs(ctx, form, numArgs):
     args = fromAttrForm(ctx, (ctx.attr, form))
     if len(args)-1 != numArgs:
@@ -261,7 +261,7 @@ def semNodePack(ctx, form):
     return NodePack(rhs, *semNodeAccess(ctx, *rest))
 @semproc('#def-types')
 def semDefTypes(ctx, form):
-    bindTypes(ctx, fromList(cons_tail(form))); return unitExpr
+    bindTypes(ctx, fromList(cons_tail(form), ctx)); return unitExpr
 @semproc('#def')
 def semDef(ctx, form):
     (_, binder), body = semArgs(ctx, form, 2)
