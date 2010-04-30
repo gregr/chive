@@ -13,6 +13,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+don't truncate handler stack upon finding a handler
+      -unwound handlers pop themselves
+derive throw and build on that
+restart lists need to be segmented by interleaved handler pushes
+
+notion of tags separate from types/constructors (and used for dispatch)
+capabilities/effects
+encapsulation of namespace contexts
+  -separation of the invoking context vs. invoked
 reader macros/importing them
 nicer list syntax using reader macros
 rename primitives without using leading-#
@@ -40,6 +49,21 @@ records/row-typing
 dependency analysis
            -driving the eval order of non-sequenced exprs/typedefs
            -searching mutually-recursive modules for missing dependencies
+
+OOP:
+  -constructors build a new record containing method closures and data attrs
+  -constructor-impls take any record containing the required slots
+    -inheritance:
+      -new constructor applies old constructor-impl to new record type
+        -allows more efficient polymorphic delegation than a layered approach
+        -mixins seem easy enough
+        -takes advantage of row-typing for records
+        -extensibility?
+  -orthogonal dynamic properties?
+  -prototypes?
+reflection:
+  -show field names
+  -show field names with short or full value descriptions
 
 ================================================================
 = disorganized ideas
