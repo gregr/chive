@@ -13,10 +13,34 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+more flexible environment linking
+explicit module construction
+separable module interfaces from definitions
+parametric modules
+security implications of ctx argument to macros?
+null ctx for fully expanded syntax?
+limited expand privileges?
+constancy vs. mutability
+import-safe/unsafe
+auditing for global communication channels
+safety of exceptions or conditions/restarts
+resource limits
+thread state
+
+protection of macro inputs and outputs
+forms given to macros that don't name identifiers, but are identifier objects that can optionally be converted to names? (unforgeable identifiers, no direct access to caller's context)
+sealed macro expansions that cannot be embedded in forms without being unsealed
+
+privileged scope (master of the machine) contains operators to inspect/debug/modify/execute anything subordinate to it
+implies virtual machine hierarchies: machines that simulate machines that simulate machines...
+parent machines do not need to trust child machines
+
 don't truncate handler stack upon finding a handler
       -unwound handlers pop themselves
 derive throw and build on that
 restart lists need to be segmented by interleaved handler pushes
+
+thunk/strict-typing
 
 notion of tags separate from types/constructors (and used for dispatch)
 capabilities/effects
