@@ -17,10 +17,30 @@ more flexible environment linking
 explicit module construction
 separable module interfaces from definitions
 parametric modules
+parser
+        default reader as a parser with configurable read-table
+        reader macros: importing/exporting them
+
+make-foo a b c =
+         module
+                compound-interface
+                        interface (x y) (macros) (ops and readtable-strings)
+                        interface (z)
+                namespace
+                        import (a b c std)
+                        open [core std]
+                        source
+                                d e f = ...
+                                g = ...
+                        files ["blah" "bleh"]
+                        text "j k = ..."
+
+constancy vs. mutability
+thunk/strict-typing
+
 security implications of ctx argument to macros?
 null ctx for fully expanded syntax?
 limited expand privileges?
-constancy vs. mutability
 import-safe/unsafe
 auditing for global communication channels
 safety of exceptions or conditions/restarts
@@ -40,13 +60,10 @@ don't truncate handler stack upon finding a handler
 derive throw and build on that
 restart lists need to be segmented by interleaved handler pushes
 
-thunk/strict-typing
-
 notion of tags separate from types/constructors (and used for dispatch)
 capabilities/effects
 encapsulation of namespace contexts
   -separation of the invoking context vs. invoked
-reader macros/importing them
 nicer list syntax using reader macros
 rename primitives without using leading-#
 conditions: signals/restarts
