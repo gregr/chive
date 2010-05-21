@@ -13,6 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+module/environment-annotated symbols rather than gensym for renaming?
 more flexible environment linking
 explicit module construction
 separable module interfaces from definitions
@@ -24,10 +25,10 @@ parser
 make-foo a b c =
          module
                 compound-interface
-                        interface (x y) (macros) (ops and readtable-strings)
+                        interface (x y) (macros and types) (ops and readtable-strings)
                         interface (z)
                 namespace
-                        import (a b c std)
+                        import (a b c)
                         open [core std]
                         source
                                 d e f = ...

@@ -244,7 +244,7 @@ class History:
         self.subs = [sh for sh in self.subs if sh.main or sh.subs]
     def show(self):
         return '\n'.join(map(pretty, chain(self.main, [self.final])))
-class Context:
+class Context: # current file resolution dir
     def __init__(self, root, thread, nspace, ops, senv, env, attr, hist=None):
         self.root = root; self.thread = thread; self.nspace = nspace
         self.ops = ops; self.senv = senv; self.env = env
@@ -289,52 +289,90 @@ def resolvePath(searchPaths, path):
         if os.path.exists(ap): break
         ap = None
     os.chdir(curdir); return ap
+# class OldModule:
+#     def __init__(self, name, path, stream, root):
+#         self.name = name; self.path = path; self.root = root
+#         self.curNS = Namespace(root); self.setStream(stream)
+#     def __iter__(self):
+#         for expr, attr in self.exprs: yield (attr, expr)
+#         self.active = False
+#     def setStream(self, stream):
+#         if stream is None: self.exprs = (); self.active = False; return
+#         self.exprs = Parser(self.curNS.ctx.ops).parse(self.name, stream)
+#         self.active = True
+#     def isActive(self): return self.active
+#     def resolvePath(self, searchPaths, path):
+#         return resolvePath(chain((self.path,), searchPaths), path)
+#     def getFileModule(self, ctx, path):
+#         path = self.resolvePath(path)
+#         if path is None:
+#             typeErr(ctx, "unable to resolve module path: '%s'"%path)
+#         return self.root.getFileModule(path)
 class Module:
-    def __init__(self, name, path, stream, root):
-        self.name = name; self.path = path; self.root = root
-        self.curNS = Namespace(root, self); self.setStream(stream)
-    def __iter__(self):
-        for expr, attr in self.exprs: yield (attr, expr)
-        self.active = False
-    def setStream(self, stream):
-        if stream is None: self.exprs = (); self.active = False; return
-        self.exprs = Parser(self.curNS.ctx.ops).parse(self.name, stream)
-        self.active = True
-    def isActive(self): return self.active
-    def resolvePath(self, searchPaths, path):
-        return resolvePath(chain((self.path,), searchPaths), path)
-    def getFileModule(self, ctx, path):
-        path = self.resolvePath(path)
-        if path is None:
-            typeErr(ctx, "unable to resolve module path: '%s'"%path)
-        return self.root.getFileModule(path)
-    def newNamespace(self, filter):
-        ns = Namespace(self.root, self); self.curNS.export(ns, filter)
-        self.curNS = ns
+    gnames = nameGen(['top'])
+    def __init__(self, iface, nspace):
+        self.iface = iface; self.nspace = nspace; self.name = next(self.gnames)
+    def names(self): return self.iface.names(self.nspace) # todo: syntax/lexes
+    def resolve(self, sym): return self.iface.resolve(self.nspace, sym)
+    def openIn(self, nspace): # todo: lexables
+        for nm in self.names(): nspace.refer(self.nspace.ctx, nm.sym)
+# generalize to ModifiedModule?
+# HidingModule
+# class RenamedModule:
+#     def __init__(self, iface, remap): self.iface = iface; self.nameMap = remap
+#     def names(self): return set(self.nameMap.keys())
+#     def resolve(self, nspace, sym):
+#         sym = self.nameMap.get(EnvKey(sym))
+#         if sym is not None: return self.iface.resolve(nspace, sym)
+class FullInterface: # only use internally?
+    def names(self, nspace): return nspace.names()
+    def resolve(self, nspace, sym): return nspace.resolve(sym)
+class Interface:
+    def __init__(self, valueNames, syntaxNames, lexables):
+        self.vns = set(valueNames)|set(syntaxNames)
+        self.sns = syntaxNames; self.lexes = lexables
+    def names(self, nspace): return self.vns
+    def resolve(self, nspace, sym):
+        if EnvKey(sym) in self.vns: return nspace.resolve(sym) # todo: check
+class CompoundInterface:
+    def __init__(self, ifaces): self.ifaces = ifaces
+    def names(self, nspace):
+        return reduce(set.union, (ifc.names(nspace) for ifc in self.ifaces))
+    def resolve(self, nspace, sym):
+        for ifc in self.ifaces:
+            val = ifc.resolve(nspace, sym)
+            if val is not None: return val
 class Namespace:
-    def __init__(self, root, mod):
-        self.mod = mod; self.ctx = freshCtx(root, self)
-        self.exportedNames = set(); self.exporting = True
-    def _addName(self, export, sym):
-        if export or self.exporting: self.exportedNames.add(EnvKey(sym))
-    def refer(self, ctxFrom, symFrom, symTo=None, export=None):
-        self._addName(export, symTo)
+    def __init__(self, root): self.ctx = freshCtx(root, self)
+    def names(self): return self.ctx.senv.bindings().keys()
+    def resolve(self, sym): return getVar(self.ctx, sym)
+    def refer(self, ctxFrom, symFrom, symTo=None):
         referVar(ctxFrom, self.ctx, symFrom, symTo)
-    def define(self, sym, val, export=None):
-        self._addName(export, sym); bindVar(self.ctx, sym, val)
+    def define(self, sym, val): bindVar(self.ctx, sym, val)
     def defOp(self, sym, op): self.ctx.ops.add(EnvKey(sym), op)
-    def export(self, ns, filter):
-        hideNames, names, rename = filter
-        if hideNames: exports = self.exportedNames-names
-        else: exports = names
-        for name in exports:
-            nnew = rename.get(name)
-            if nnew is None: nnew = name
-            ns.refer(self.ctx, name.sym, nnew.sym)
-            op = self.ctx.ops.get(name)
-            if op is not None: ns.defOp(nnew.sym, op)
-def fileStream(path): return open(path)
-exportAllFilter = (True, set(), {})
+class Source:
+    def __init__(self, nspace): self.nspace = nspace
+    def eval(self, evaluate): # todo: only eval on demand
+        for expr in self.exprs(): evaluate(self.nspace.ctx, *expr)
+class DirectSource(Source):
+    def __init__(self, nspace, exprs):
+        super().__init__(nspace); self._exprs = exprs
+    def exprs(self): return self._exprs
+class StreamSource(Source):
+    def exprs(self): # todo: configurable parser
+        parser = Parser(self.nspace.ctx.ops)
+        for ex, at in parser.parse(self.name(), self.stream()): yield (at, ex)
+class DirectStreamSource(StreamSource):
+    def __init__(self, nspace, name, stream):
+        super().__init__(nspace); self._name = name; self._stream = stream
+    def name(self): return self._name
+    def stream(self): return self._stream
+class FileSource(StreamSource):
+    def __init__(self, nspace, absPath): # ctx with current file resolution dir
+        super().__init__(nspace); self.absPath = absPath
+    def name(self): return self.absPath
+    def stream(self): return open(self.name())
+
 class Thread:
     def __init__(self, root): self.root = root; self.tid = None; self.tls = {}
     def getDataTLS(self, ctx, key):
@@ -346,8 +384,7 @@ class Thread:
 class Root:
     env = Env(); onErr = None
     def __init__(self, searchPaths):
-        self.coreMod = primMod; self.searchPaths = searchPaths
-        self.modules = {}; self.tlsInit = {}
+        self.searchPaths = searchPaths; self.tlsInit = {}
     def getInitTLS(self, ctx, key):
         thunk = self.tlsInit.get(key)
         if thunk is None: typeErr(ctx, "invalid thread-local key '%s'"%key)
@@ -356,25 +393,19 @@ class Root:
         assert key not in self.tlsInit, key
         # todo: code should rely only on constants
         self.tlsInit[key] = Thunk(ctx, code)
-    def _makeModule(self, name, path, stream, importCore=True):
-        mod = Module(name, path, stream, self)
-        if importCore: self.coreMod.curNS.export(mod.curNS, exportAllFilter)
-        return mod
-    def rawModule(self, name, importCore=True):
-        return self._makeModule(EnvKey(symbol_new(name)), os.getcwd(), None,
-                                importCore)
-    def moduleFromCtx(self, name, ctx):
-        ctx = ctx.extendSyntax(True); mod = self.rawModule(name, False)
-        mod.curNS.ctx = ctx; ctx.nspace = mod.curNS; return mod
-#        mod = self.rawModule(name, False); mod.curNS.ctx = ctx; return mod
-    def getFileModule(self, fpath):
-        name = EnvKey(symbol(fpath)); mod = self.modules.get(name)
-        if mod is None:
-            mod = self._makeModule(name, os.path.dirname(fpath),
-                                   fileStream(fpath))
-            self.modules[name] = mod
-        elif mod.isActive(): typeErr(None, "module self-dependency: '%s'"%name)
-        return mod
+    def emptyModule(self): return Module(Interface((),(),()), Namespace(self))
+#     def moduleFromCtx(self, name, ctx):
+#         ctx = ctx.extendSyntax(True); mod = self.rawModule(name, False)
+#         mod.curNS.ctx = ctx; ctx.nspace = mod.curNS; return mod
+# #        mod = self.rawModule(name, False); mod.curNS.ctx = ctx; return mod
+#     def getFileModule(self, fpath):
+#         name = EnvKey(symbol(fpath)); mod = self.modules.get(name)
+#         if mod is None:
+#             mod = self._makeModule(name, os.path.dirname(fpath),
+#                                    fileStream(fpath))
+#             self.modules[name] = mod
+#         elif mod.isActive(): typeErr(None, "module self-dependency: '%s'"%name)
+#         return mod
 def interactStream(prompt):
     import readline
     from io import StringIO
@@ -388,11 +419,12 @@ def interactStreams(prompt):
 ################################################################
 # primitives
 def node(ty, *args): return ty.new(*args)
-primMod = Module(EnvKey(symbol_new('primitives')), '', None, None)
-primCtx = primMod.curNS.ctx
+#primMod = OldModule(EnvKey(symbol_new('primitives')), '', None, None)
+primNS = Namespace(None); primCtx = primNS.ctx
+def makePrimMod(): return Module(FullInterface(), primNS)
 def addPrim(name, val):
     print('adding primitive:', name)
-    primMod.curNS.define(symbol(name), val)
+    primNS.define(symbol(name), val)
 def addConsDen(ctx, sym, ty):
     if len(ty.elts) == 0: consVal = node(ty)
     else: consVal = constr_new(ctx, ty)
