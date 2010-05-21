@@ -52,16 +52,16 @@ def getTyCons(ctx, name):
 def tycproc(name):
     def handleTyCProc(tycp): addPrim(name, toTyCons(tycp)); return tycp
     return handleTyCProc
-@tycproc('#Product')
+@tycproc('_Product')
 def tyConsProduct(ctx, body, name):
     if name is None: typeErr(ctx, "product type requires a name: '%s'"%body)
     fields = []
     return ConsTyProduct(ctx, EnvKey(name), tuple(parseType(ctx, form, fields)
                                                   for form in body), fields)
-@tycproc('#Variant')
+@tycproc('_Variant')
 def tyConsVariant(ctx, body, _):
     return ConsTyVariant(ctx, tuple(parseType(ctx, form) for form in body))
-@tycproc('#Proc')
+@tycproc('_Proc')
 def tyConsProc(ctx, body, _):
     if len(body) != 2: typeErr(ctx, "proc type requires two args: '%s'"%body)
     return ConsTyProc(ctx, parseType(ctx, body[0]), parseType(ctx, body[1]))

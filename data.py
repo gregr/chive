@@ -52,14 +52,14 @@ class Var(Atom):
         return final(val)
 ################################################################
 # type types
-ubTyTy = PyType('#Type', Type)
+ubTyTy = PyType('_Type', Type)
 tyTy = ProductType('Type', (ubTyTy,))
 def isType(tt): return getTy(tt) is tyTy
 def type_new(tt): return tyTy.new(ubTyTy.new(tt))
 def type_type(tt): return getVal(tyTy.unpackEl(tt, 0))
 ################################################################
 # symbols
-ubSymTy = ScalarType('#Symbol')
+ubSymTy = ScalarType('_Symbol')
 nextSymId = 0
 def ubSymbol_new(n):
     global nextSymId
@@ -324,17 +324,19 @@ class Module:
 #     def resolve(self, nspace, sym):
 #         sym = self.nameMap.get(EnvKey(sym))
 #         if sym is not None: return self.iface.resolve(nspace, sym)
-class FullInterface: # only use internally?
+class Interface: pass
+class FullInterface(Interface): # only use internally?
     def names(self, nspace): return nspace.names()
     def resolve(self, nspace, sym): return nspace.resolve(sym)
-class Interface:
-    def __init__(self, valueNames, syntaxNames, lexables):
-        self.vns = set(valueNames)|set(syntaxNames)
+class ExportInterface(Interface):
+    def __init__(self, valueSyms, syntaxSyms, lexables):
+        syntaxNames = set(map(EnvKey, syntaxSyms))
+        self.vns = set(map(EnvKey, valueSyms))|syntaxNames
         self.sns = syntaxNames; self.lexes = lexables
     def names(self, nspace): return self.vns
     def resolve(self, nspace, sym):
         if EnvKey(sym) in self.vns: return nspace.resolve(sym) # todo: check
-class CompoundInterface:
+class CompoundInterface(Interface):
     def __init__(self, ifaces): self.ifaces = ifaces
     def names(self, nspace):
         return reduce(set.union, (ifc.names(nspace) for ifc in self.ifaces))
@@ -393,7 +395,8 @@ class Root:
         assert key not in self.tlsInit, key
         # todo: code should rely only on constants
         self.tlsInit[key] = Thunk(ctx, code)
-    def emptyModule(self): return Module(Interface((),(),()), Namespace(self))
+    def emptyModule(self):
+        return Module(ExportInterface((),(),()), Namespace(self))
 #     def moduleFromCtx(self, name, ctx):
 #         ctx = ctx.extendSyntax(True); mod = self.rawModule(name, False)
 #         mod.curNS.ctx = ctx; ctx.nspace = mod.curNS; return mod
@@ -436,8 +439,8 @@ def addPrimTy(name, ty):
     if isinstance(ty, ProductType):
         return addConsDen(primCtx, symbol(name), ty)
 def primDen(name): return getDen(primCtx, symbol(name))
-addPrimTy('#Type', ubTyTy); addPrimTy('Type', tyTy)
-addPrimTy('#Symbol', ubSymTy); addPrimTy('Symbol', symTy)
+addPrimTy('_Type', ubTyTy); addPrimTy('Type', tyTy)
+addPrimTy('_Symbol', ubSymTy); addPrimTy('Symbol', symTy)
 addPrimTy('Any', anyTy)
 def prodTy(name, *elts):
     ty = ProductType(name, elts); addPrimTy(name, ty); return ty
@@ -446,7 +449,7 @@ unitTy, unit = singleton('Unit')
 ################################################################
 # basic values
 def basicTy(name, pyty):
-    ubTy = PyType('#'+name, pyty); addPrimTy('#'+name, ubTy)
+    ubTy = PyType('_'+name, pyty); addPrimTy('_'+name, ubTy)
     ty = prodTy(name, ubTy)
 #    def isX(v): return node_tag(v) is tag
     def toX(v): return ty.new(ubTy.new(v))
@@ -487,7 +490,9 @@ def fromList(xs, ctx=None, repeat=None):
 ################################################################
 # syntactic closures
 ubCtxTy, ctxTy, toCtx, fromCtx = basicTy('Ctx', Context)
+ubIfaceTy, ifaceTy, toIface, fromIface = basicTy('Interface', Interface)
 ubNspaceTy, nspaceTy, toNspace, fromNspace = basicTy('Namespace', Namespace)
+ubModTy, modTy, toMod, fromMod = basicTy('Module', Module)
 formTy = VariantType()
 syncloTy = prodTy('SynClo', ctxTy, listTy, formTy) # todo
 formTy.init((listTy, symTy, syncloTy, intTy, floatTy, charTy))

@@ -14,6 +14,7 @@ limitations under the License.
 
 ================================================================
 module/environment-annotated symbols rather than gensym for renaming?
+../ and ./ relative paths, / absolute path, otherwise use search path
 more flexible environment linking
 explicit module construction
 separable module interfaces from definitions
@@ -25,12 +26,12 @@ parser
 make-foo a b c =
          module
                 compound-interface
-                        interface (x y) (macros and types) (ops and readtable-strings)
-                        interface (z)
+                        export (x y) (macros and types) (ops and readtable-strings)
+                        export (z)
                 namespace
                         import (a b c)
                         open [core std]
-                        source
+                        inline
                                 d e f = ...
                                 g = ...
                         files ["blah" "bleh"]

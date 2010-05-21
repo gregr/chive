@@ -175,7 +175,7 @@ class Operator:
 class NullOp(Operator): # undeclared op
     def parse(self, lhs, attr, ts, dats):
         if not lhs and ts.empty(): return [(self.sym, attr)]
-        else: parseErr(attr, "unknown operator '%s'"%prettySymbol(self.sym))
+        else: parseErr(attr, "unknown operator '%s'"%pretty(self.sym))
 
 class PrefixOp(Operator):
     def parse(self, lhs, attr, ts, dats):
