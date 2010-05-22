@@ -21,17 +21,34 @@ def mem_read(mem, idx): return mem[1][mem_offset_(mem, idx)]
 def mem_write(mem, idx, val): mem[1][mem_offset_(mem, idx)] = val
 def mem_copy(dst, src, sz):
     doff, ddat = dst; soff, sdat = src; ddat[doff:doff+sz]=sdat[soff:soff+sz]
-
+################################################################
+# regions
+class Region:
+    def __init__(self): self._mutable = None
+    def mutable(self):
+        if self._mutable == False: typeErr(None, 'mutable(): constant region')
+        self._mutable = True
+    def constant(self):
+        if self._mutable: typeErr(None, 'constant(): mutable region')
+        self._mutable = False
+    def __str__(self):
+        if self._mutable: return 'Mutable'
+        elif self._mutable == False: return 'Constant'
+        return 'Unknown'
 ################################################################
 # types
 class TypeError(Exception): pass
 def typeErr(ctx, msg): raise TypeError(ctx, msg)
 def isTyped(val): return (isinstance(val, list) and len(val)>0 and
                           isinstance(getTy(val), Type))
-def typed(ty, val): return [ty, val]
+def typed(ty, val, const=None):
+    rgn = Region(); tv = [rgn, ty, val]
+    if const: rgn.constant()
+    return tv
 #def typed(ty, val): return (ty, val)
-def getTy(val): return val[0]
-def getVal(val): return val[1]
+def getRgn(val): return val[0]
+def getTy(val): return val[1]
+def getVal(val): return val[2]
 def getDiscrim(val): return getTy(val).discrim(val)
 class Type:
     def contains(self, ty, tenv=None): return self is ty
@@ -53,7 +70,7 @@ class Type:
         self.checkTy(agg); elt, off = self.index(idx)
         return elt.unpack(getVal(agg), off)
     def packEl(self, agg, idx, val):
-        self.checkTy(agg); elt, off = self.index(idx);
+        getRgn(agg).mutable(); self.checkTy(agg); elt, off = self.index(idx);
         elt.pack(getVal(agg), off, val)
     def discrim(self, val): raise NotImplementedError
     def finiteDesc(self, seen): return [str(self)]
@@ -175,8 +192,8 @@ class NodeType(BoxedType):
     def discrim(self, val): return getTy(val)
     def contains(self, ty, tenv=None): return ty is self
 class ProductType(NodeType):
-    def __init__(self, name, elts=None, fields=()):
-        self.name = name
+    def __init__(self, name, elts=None, fields=(), const=None):
+        self.name = name; self.const = const
         if elts is not None: return self.init(elts, fields)
         self.elts = None; self.fields = {}; self.consDen = None
     def init(self, elts, fields=()):
@@ -200,7 +217,7 @@ class ProductType(NodeType):
         offset = 0
         for elt, arg in zip(self.elts, args):
             elt.pack(mem, offset, arg); offset += elt.size()
-        return typed(self, mem)
+        return typed(self, mem, self.const)
     def __str__(self): return str(self.name)
 class ThunkType(NodeType):
     def __init__(self, name): self.name = name
@@ -236,7 +253,7 @@ def uncurryProcType(ty, max=-1):
     return ts, ty
 class SpecificProcType(ProcType):
     def __init__(self, name, *args): super().__init__(*args); self.name = name
-    def new(self, proc): return typed(self, proc)
+    def new(self, proc): return typed(self, proc, True)
     def __str__(self): return ('%s::%s')%(str(self.name), super().__str__())
 def currySpecificProcType(name, paramts, rett):
     return curryProcType(paramts, rett,

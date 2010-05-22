@@ -13,12 +13,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+arrays
+strings
 module/environment-annotated symbols rather than gensym for renaming?
 ../ and ./ relative paths, / absolute path, otherwise use search path
 more flexible environment linking
-explicit module construction
-separable module interfaces from definitions
-parametric modules
 parser
         default reader as a parser with configurable read-table
         reader macros: importing/exporting them
@@ -37,13 +36,8 @@ make-foo a b c =
                         files ["blah" "bleh"]
                         text "j k = ..."
 
-constancy vs. mutability
-thunk/strict-typing
-
 security implications of ctx argument to macros?
-null ctx for fully expanded syntax?
 limited expand privileges?
-import-safe/unsafe
 auditing for global communication channels
 safety of exceptions or conditions/restarts
 resource limits
@@ -63,32 +57,29 @@ derive throw and build on that
 restart lists need to be segmented by interleaved handler pushes
 
 notion of tags separate from types/constructors (and used for dispatch)
+field projection operator
 capabilities/effects
-encapsulation of namespace contexts
-  -separation of the invoking context vs. invoked
 nicer list syntax using reader macros
-rename primitives without using leading-#
 conditions: signals/restarts
 type-error hook
 weak ref
 gc-stable ref (related?: distributed refs)
 module-determined constancy/visibility typing
-explicit full mutability typing
 getTag primitive for explicit dynamic dispatch
 smarter thunk-creation
 fix future bugs due to lack of Context.withThread where required
 expansion history (fix) and attributes for definitions
-debugging (improve)
 optional automatic downcasting with warnings
-option for direct file-inclusion
 interpreter-agnostic expression evaluation
-import path [modname] [[only (...)]|[hide (...)]] [rename (...)]]
 thread interaction with delays, module-loading, etc.
 AST pretty-printing
-arrays
-strings
+debugging inspector
+
 structs/tuples
 records/row-typing
+constancy vs. mutability
+thunk/strict-typing
+
 dependency analysis
            -driving the eval order of non-sequenced exprs/typedefs
            -searching mutually-recursive modules for missing dependencies

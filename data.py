@@ -53,7 +53,7 @@ class Var(Atom):
 ################################################################
 # type types
 ubTyTy = PyType('_Type', Type)
-tyTy = ProductType('Type', (ubTyTy,))
+tyTy = ProductType('Type', (ubTyTy,), const=True)
 def isType(tt): return getTy(tt) is tyTy
 def type_new(tt): return tyTy.new(ubTyTy.new(tt))
 def type_type(tt): return getVal(tyTy.unpackEl(tt, 0))
@@ -442,15 +442,15 @@ def primDen(name): return getDen(primCtx, symbol(name))
 addPrimTy('_Type', ubTyTy); addPrimTy('Type', tyTy)
 addPrimTy('_Symbol', ubSymTy); addPrimTy('Symbol', symTy)
 addPrimTy('Any', anyTy)
-def prodTy(name, *elts):
-    ty = ProductType(name, elts); addPrimTy(name, ty); return ty
+def prodTy(name, *elts, const=None):
+    ty = ProductType(name, elts, const=const); addPrimTy(name, ty); return ty
 def singleton(name): ty = ProductType(name, ()); return ty, addPrimTy(name, ty)
 unitTy, unit = singleton('Unit')
 ################################################################
 # basic values
 def basicTy(name, pyty):
     ubTy = PyType('_'+name, pyty); addPrimTy('_'+name, ubTy)
-    ty = prodTy(name, ubTy)
+    ty = prodTy(name, ubTy, const=True)
 #    def isX(v): return node_tag(v) is tag
     def toX(v): return ty.new(ubTy.new(v))
     def fromX(v): return getVal(ty.unpackEl(v, 0))
@@ -494,7 +494,7 @@ ubIfaceTy, ifaceTy, toIface, fromIface = basicTy('Interface', Interface)
 ubNspaceTy, nspaceTy, toNspace, fromNspace = basicTy('Namespace', Namespace)
 ubModTy, modTy, toMod, fromMod = basicTy('Module', Module)
 formTy = VariantType()
-syncloTy = prodTy('SynClo', ctxTy, listTy, formTy) # todo
+syncloTy = prodTy('SynClo', ctxTy, listTy, formTy, const=True) # todo
 formTy.init((listTy, symTy, syncloTy, intTy, floatTy, charTy))
 addPrimTy('SynForm', formTy)
 def isSynClo(s): return getTy(s) is syncloTy
@@ -530,8 +530,8 @@ def toString(v): return node(stringTy, v)
 
 ################################################################
 # macros and semantics
-#macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), formTy)) # todo
-macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), anyTy))
+#macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), formTy), const=True) # todo
+macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), anyTy), const=True)
 def isMacro(v): return isTyped(v) and getTy(v) is macroTy
 def macro_proc(mac): return macroTy.unpackEl(mac, 0)
 def applyMacro(ctx, mac, form):
