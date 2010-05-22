@@ -144,6 +144,13 @@ class BoxedType(Type):
     def pack(self, mem, offset, box):
         if self.checkTy(box): getVal(box).expectTy(self)
         mem_write(mem, offset, box)
+class StrictType(BoxedType):
+    def __init__(self, ty): self.ty = ty
+    def __getattr__(self, attr): return getattr(self.ty, attr)
+    def __str__(self): return '$%s' % str(self.ty)
+    def checkTy(self, val):
+        if isinstance(getTy(val), ThunkType): return False
+        self.ty.checkTy(val)
 class AnyType(BoxedType):
     def contains(self, ty, tenv=None): return isinstance(ty, BoxedType)
     def __str__(self): return 'Any'
