@@ -444,6 +444,7 @@ addPrimTy('_Symbol', ubSymTy); addPrimTy('Symbol', symTy)
 addPrimTy('Any', anyTy)
 def prodTy(name, *elts, const=None):
     ty = ProductType(name, elts, const=const); addPrimTy(name, ty); return ty
+def arrTy(name, elt): ty = ArrayType(name, elt); addPrimTy(name, ty); return ty
 def singleton(name): ty = ProductType(name, ()); return ty, addPrimTy(name, ty)
 unitTy, unit = singleton('Unit')
 ################################################################
@@ -486,7 +487,16 @@ def fromList(xs, ctx=None, repeat=None):
         yield cons_head(xs)
         xs = cons_tail(xs)
     if repeat is not None: del repeat[:]
-
+################################################################
+# arrays for boxed values
+arrayTy = arrTy('Array', anyTy)
+################################################################
+# strings
+stringTy = arrTy('String', ubCharTy)
+def isString(val): return getTy(val) is stringTy
+def toString(pyStr): return stringTy.new(ubCharTy.new(ch) for ch in pyStr)
+def fromString(chStr): return ''.join(arrToList(chStr))
+def copyString(chStr): return toString(fromString(chStr))
 ################################################################
 # syntactic closures
 ubCtxTy, ctxTy, toCtx, fromCtx = basicTy('Ctx', Context)
@@ -495,7 +505,7 @@ ubNspaceTy, nspaceTy, toNspace, fromNspace = basicTy('Namespace', Namespace)
 ubModTy, modTy, toMod, fromMod = basicTy('Module', Module)
 formTy = VariantType()
 syncloTy = prodTy('SynClo', ctxTy, listTy, formTy, const=True) # todo
-formTy.init((listTy, symTy, syncloTy, intTy, floatTy, charTy))
+formTy.init((listTy, symTy, syncloTy, intTy, floatTy, charTy, stringTy))
 addPrimTy('SynForm', formTy)
 def isSynClo(s): return getTy(s) is syncloTy
 def synclo_new(ctx, frees, form): return syncloTy.new(ctx, frees, form)
@@ -519,15 +529,6 @@ def synclo_maybe(ctx0, ctx, form):
         return synclo_new(toCtx(ctx), nil, form)
     return form
 def primSC(form): return synclo_new(toCtx(primCtx), nil, form)
-################################################################
-# arrays
-
-################################################################
-# strings
-#stringTy = prodTy('String', None) # todo
-def toString(v): return node(stringTy, v)
-#def fromString(v): assert isString(v), v; return v[1]
-
 ################################################################
 # macros and semantics
 #macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), formTy), const=True) # todo
@@ -583,7 +584,7 @@ tagToPretty = {nilTy: prettyList, consTy: prettyList,
                syncloTy: prettySynClo,
                unitTy: lambda _,__: '()',
                intTy: prettyInt, floatTy: prettyFloat, charTy: prettyChar,
-               #stringTy: prettyString,
+               stringTy: prettyString,
                }
 def pretty(v, seen=None):
     if seen is None: seen = []

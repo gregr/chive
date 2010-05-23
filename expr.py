@@ -52,16 +52,16 @@ def getTyCons(ctx, name):
 def tycproc(name):
     def handleTyCProc(tycp): addPrim(name, toTyCons(tycp)); return tycp
     return handleTyCProc
-@tycproc('_Product')
+@tycproc('_Ty-Product')
 def tyConsProduct(ctx, body, name):
     if name is None: typeErr(ctx, "product type requires a name: '%s'"%body)
     fields = []
     return ConsTyProduct(ctx, EnvKey(name), tuple(parseType(ctx, form, fields)
                                                   for form in body), fields)
-@tycproc('_Variant')
+@tycproc('_Ty-Variant')
 def tyConsVariant(ctx, body, _):
     return ConsTyVariant(ctx, tuple(parseType(ctx, form) for form in body))
-@tycproc('_Proc')
+@tycproc('_Ty-Proc')
 def tyConsProc(ctx, body, _):
     if len(body) != 2: typeErr(ctx, "proc type requires two args: '%s'"%body)
     return ConsTyProc(ctx, parseType(ctx, body[0]), parseType(ctx, body[1]))
@@ -111,24 +111,39 @@ class NodeAccess(Access):
     def __init__(self, ty, index, node, ctx):
         ty.checkIndex(index, 'node index out of bounds:')
         self.ty = ty; self.index = index; self.node = node
-    def _evalNode(self, ctx):
-        return evalExpr(ctx, self.node, self.ty)
+    def _evalNode(self, ctx): return evalExpr(ctx, self.node, self.ty)
     def freeVars(self): return self.node.freeVars()
     def subst(self, subs): self.node.subst(subs)
 class NodeUnpack(NodeAccess):
     def eval(self, ctx):
         return final(self.ty.unpackEl(self._evalNode(ctx), self.index))
 class NodePack(NodeAccess):
-    def __init__(self, rhs, *args):
-        super().__init__(*args); self.rhs = rhs
+    def __init__(self, rhs, *args): super().__init__(*args); self.rhs = rhs
     def freeVars(self): return super().freeVars()+self.rhs.freeVars()
     def subst(self, subs): super().subst(subs); self.rhs.subst(subs)
     def eval(self, ctx):
-        self.ty.packEl(self._evalNode(ctx), self.index,
-                       evalExpr(ctx, self.rhs))
-        return final(unit)
-# todo: array access
-
+        rh = evalExpr(ctx, self.rhs)
+        self.ty.packEl(self._evalNode(ctx), self.index, rh); return final(unit)
+class ArrayAccess(Access):
+    def __init__(self, idx, arr): self.idx = idx; self.arr = arr
+    def _evalNode(self, ctx):
+        arr = evalExpr(ctx, self.arr)
+        if not isArray(arr):
+            typeErr(ctx, "expected array, found '%s'"%pretty(arr))
+        getTy(arr).checkBounds(arr, self.idx); return arr
+    def freeVars(self): return self.arr.freeVars()
+    def subst(self, subs): self.arr.subst(subs)
+class ArrayUnpack(ArrayAccess):
+    def eval(self, ctx):
+        arr = self._evalNode(ctx)
+        return final(getTy(arr).unpackEl(arr, self.idx))
+class ArrayPack(ArrayAccess):
+    def __init__(self, rhs, *args): super().__init__(*args); self.rhs = rhs
+    def freeVars(self): return super().freeVars()+self.rhs.freeVars()
+    def subst(self, subs): super().subst(subs); self.rhs.subst(subs)
+    def eval(self, ctx):
+        arr = self._evalNode(ctx); rhs = evalExpr(ctx, self.rhs)
+        getTy(arr).packEl(arr, self.index, rhs); return final(unit)
 ################################################################
 class Seq(Expr):
     def __init__(self, exprs): self.exprs = exprs[:-1]; self.last = exprs[-1]

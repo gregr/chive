@@ -19,8 +19,8 @@ def mem_offset_(mem, off): return mem[0]+off
 def mem_offset(mem, off): return (mem_offset_(mem, off), mem[1])
 def mem_read(mem, idx): return mem[1][mem_offset_(mem, idx)]
 def mem_write(mem, idx, val): mem[1][mem_offset_(mem, idx)] = val
-def mem_copy(dst, src, sz):
-    doff, ddat = dst; soff, sdat = src; ddat[doff:doff+sz]=sdat[soff:soff+sz]
+def mem_copy(dst, src, sz): off, dat = dst; dat[off:off+sz]=mem_toList(src, sz)
+def mem_toList(mem, sz): off, dat = mem; return dat[off:off+sz]
 ################################################################
 # regions
 class Region:
@@ -70,14 +70,15 @@ class Type:
         self.checkTy(agg); elt, off = self.index(idx)
         return elt.unpack(getVal(agg), off)
     def packEl(self, agg, idx, val):
-        getRgn(agg).mutable(); self.checkTy(agg); elt, off = self.index(idx);
-        elt.pack(getVal(agg), off, val)
+        getRgn(agg).mutable(); self.checkTy(agg); self.checkBounds(agg, idx)
+        elt, off = self.index(idx); elt.pack(getVal(agg), off, val)
     def discrim(self, val): raise NotImplementedError
     def finiteDesc(self, seen): return [str(self)]
     def __str__(self): raise NotImplementedError
     def __repr__(self): return '<%s %s>'%(self.__class__.__name__, self)
 ################################################################
 # unboxed types
+atomicSize = 1 # fixed size due to python
 class UnboxedType(Type):
     def unpack(self, mem, offs): return typed(self, self._unpack(mem, offs))
     def _unpack(self, mem, offs): raise NotImplementedError
@@ -85,7 +86,7 @@ class UnboxedType(Type):
         self.checkTy(val); self._pack(mem, offs, getVal(val))
     def _pack(self, mem, offset, val): raise NotImplementedError
 class AtomicUnboxedType(UnboxedType):
-    def size(self): return 1 # fixed size due to python
+    def size(self): return atomicSize
     def _unpack(self, mem, offset): return mem_read(mem, offset)
     def _pack(self, mem, offset, val): mem_write(mem, offset, val)
 class ScalarType(AtomicUnboxedType):
@@ -117,7 +118,7 @@ class AggUnboxedType(UnboxedType):
     def _unpack(self, mem, offset): return mem_offset(mem, offset)
     def _pack(self, mem, offset, val):
         mem_copy(mem_offset(mem, offset), val, self.size())
-class ArrayType(AggUnboxedType):
+class UnboxedArrayType(AggUnboxedType):
     def __init__(self, elt, cnt=None): self.elt = elt; self.cnt = cnt
     def contains(self, ty, tenv=None):
         return (type(ty) is type(self) and self.elt.contains(ty.elt, tenv)
@@ -134,7 +135,7 @@ class ArrayType(AggUnboxedType):
         if self.cnt is None: pref = '';
         else: pref = '%d * '%self.cnt
         return '#[%s]'%(pref+self.elt)
-arrayType = cachedType(ArrayType)
+unboxedArrayType = cachedType(UnboxedArrayType)
 def struct_index(struct, idx):
     struct.checkIndex(idx, 'invalid index')
     return struct.elts[idx], sum(elt.size() for elt in struct.elts[:idx])
@@ -155,7 +156,7 @@ class BoxedType(Type):
     def checkTy(self, val):
         if isinstance(getTy(val), ThunkType): return True
         super().checkTy(val)
-    def size(self): return 1
+    def size(self): return atomicSize
     def unpack(self, mem, offset):
         box = mem_read(mem, offset); self.checkTy(box); return box
     def pack(self, mem, offset, box):
@@ -219,6 +220,24 @@ class ProductType(NodeType):
             elt.pack(mem, offset, arg); offset += elt.size()
         return typed(self, mem, self.const)
     def __str__(self): return str(self.name)
+class ArrayType(NodeType):
+    def __init__(self, name, elt): self.elt = elt
+    def checkBounds(self, ctx, arr, idx):
+        cnt = arrLen(arr)
+        if idx >= cnt:
+            typeErr(ctx, "array '%s' with length '%d' indexed at '%d': "
+                    %(self.name, idx, cnt))
+    def index(self, idx): return self.elt, (idx*self.elt.size() + atomicSize)
+    def new(self, els):
+        els = tuple(els); cnt = len(els); offset = atomicSize
+        mem = mem_alloc(cnt*self.elt.size()+atomicSize); mem_write(mem, 0, cnt)
+        for e in els: self.elt.pack(mem, offset, e); offset += self.elt.size()
+        return typed(self, mem)
+    def __str__(self): return str(self.name)
+def arrLen(arr): assert isArray(arr); return mem_read(getVal(arr), 0)
+def arrToList(arr):
+    return mem_toList(mem_offset(getVal(arr), atomicSize), arrLen(arr))
+def isArray(v): return isTyped(v) and isinstance(getTy(v), ArrayType)
 class ThunkType(NodeType):
     def __init__(self, name): self.name = name
     def new(self, thunk): return typed(self, thunk)

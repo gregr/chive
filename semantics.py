@@ -93,6 +93,7 @@ def _semantize(ctx, xs):
             ty = type_type(val)
             if isinstance(ty, ProductType): den = ty.consDen
         return Var(EnvKey(den))
+    elif isString(xs): return PrimVal(copyString(xs))
     elif xs is nil: return unitExpr
     else: typeErr(ctx, "invalid symbolic expression: '%s'"%pretty(xs))
 
