@@ -64,7 +64,6 @@ conditions: signals/restarts
 type-error hook
 weak ref
 gc-stable ref (related?: distributed refs)
-module-determined constancy/visibility typing
 getTag primitive for explicit dynamic dispatch
 smarter thunk-creation
 fix future bugs due to lack of Context.withThread where required
@@ -78,6 +77,8 @@ debugging inspector
 structs/tuples
 records/row-typing
 constancy vs. mutability
+          -type annotations that include regions?
+          -to freeze existing values, copy/pray? (hope for optimization)
 thunk/strict-typing
 
 dependency analysis

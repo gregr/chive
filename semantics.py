@@ -278,6 +278,34 @@ def semNodeUnpack(ctx, form):
 def semNodePack(ctx, form):
     *rest, rhs = semArgs(ctx, form, 4); rhs = semantize(ctx, *rhs)
     return NodePack(rhs, *semNodeAccess(ctx, *rest))
+def semArrayAccess(ctx, ty, idx, node):
+    ty = toTy(ctx, ty); idx = semantize(ctx, *idx)
+    node = semantize(ctx, *node); return ty, idx, node
+@semproc('_array-ty-unpack')
+def semArrayUnpack(ctx, form):
+    return ArrayUnpack(*semArrayAccess(ctx, *semArgs(ctx, form, 3)))
+@semproc('_array-ty-pack')
+def semArrayPack(ctx, form):
+    *rest, rhs = semArgs(ctx, form, 4); rhs = semantize(ctx, *rhs)
+    return ArrayPack(rhs, *semArrayAccess(ctx, *rest))
+# todo: empty array/string constr w/ capacity hint
+# and push/pop/concat/slice(pack/unpack)/truncate
+# then remove from/to-list primitives
+# todo: semantic forms for these?
+@primproc('_array-length', arrayTy, intTy)
+def primArrayLength(ctx0, arr): return final(toInt(arrLen(arr)))
+@primproc('_array-from-list', listTy, arrayTy)
+def primArrayFromList(ctx0, xs): return final(arrayTy.new(fromList(xs)))
+@primproc('_array-to-list', arrayTy, listTy)
+def primArrayToList(ctx0, arr): return final(toList(arrToList(arr)))
+@primproc('_string-length', stringTy, intTy)
+def primStringLength(ctx0, chs): return final(toInt(arrLen(chs)))
+@primproc('_string-from-list', listTy, stringTy)
+def primStringFromList(ctx0, xs):
+    return final(stringTy.new(charTy.unpackEl(ch, 0) for ch in fromList(xs)))
+@primproc('_string-to-list', stringTy, listTy)
+def primStringToList(ctx0, chs):
+    return final(toList(tuple(toChar(ch) for ch in arrToList(chs))))
 @semproc('_def-types')
 def semDefTypes(ctx, form):
     bindTypes(ctx, fromList(cons_tail(form), ctx)); return unitExpr

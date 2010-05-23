@@ -107,6 +107,7 @@ class ConsArray(Constr): pass
 
 ################################################################
 class Access(Expr): pass
+# node operations
 class NodeAccess(Access):
     def __init__(self, ty, index, node, ctx):
         ty.checkIndex(index, 'node index out of bounds:')
@@ -124,26 +125,27 @@ class NodePack(NodeAccess):
     def eval(self, ctx):
         rh = evalExpr(ctx, self.rhs)
         self.ty.packEl(self._evalNode(ctx), self.index, rh); return final(unit)
+# array operations
 class ArrayAccess(Access):
-    def __init__(self, idx, arr): self.idx = idx; self.arr = arr
-    def _evalNode(self, ctx):
-        arr = evalExpr(ctx, self.arr)
-        if not isArray(arr):
-            typeErr(ctx, "expected array, found '%s'"%pretty(arr))
-        getTy(arr).checkBounds(arr, self.idx); return arr
+    def __init__(self, ty, idx, arr):
+        self.ty = ty; self.idx = idx; self.arr = arr
+    def _eval(self, ctx):
+        arr = evalExpr(ctx, self.arr, self.ty)
+        idx = fromInt(evalExpr(ctx, self.idx, intTy))
+        self.ty.checkBounds(ctx, arr, idx); return arr, idx
     def freeVars(self): return self.arr.freeVars()
     def subst(self, subs): self.arr.subst(subs)
 class ArrayUnpack(ArrayAccess):
     def eval(self, ctx):
-        arr = self._evalNode(ctx)
-        return final(getTy(arr).unpackEl(arr, self.idx))
+        arr, idx = self._eval(ctx)
+        return final(getTy(arr).unpackEl(arr, idx))
 class ArrayPack(ArrayAccess):
     def __init__(self, rhs, *args): super().__init__(*args); self.rhs = rhs
     def freeVars(self): return super().freeVars()+self.rhs.freeVars()
     def subst(self, subs): super().subst(subs); self.rhs.subst(subs)
     def eval(self, ctx):
-        arr = self._evalNode(ctx); rhs = evalExpr(ctx, self.rhs)
-        getTy(arr).packEl(arr, self.index, rhs); return final(unit)
+        arr, idx = self._eval(ctx); rhs = evalExpr(ctx, self.rhs)
+        self.ty.packEl(arr, idx, rhs); return final(unit)
 ################################################################
 class Seq(Expr):
     def __init__(self, exprs): self.exprs = exprs[:-1]; self.last = exprs[-1]

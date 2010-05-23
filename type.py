@@ -70,7 +70,7 @@ class Type:
         self.checkTy(agg); elt, off = self.index(idx)
         return elt.unpack(getVal(agg), off)
     def packEl(self, agg, idx, val):
-        getRgn(agg).mutable(); self.checkTy(agg); self.checkBounds(agg, idx)
+        getRgn(agg).mutable(); self.checkTy(agg)
         elt, off = self.index(idx); elt.pack(getVal(agg), off, val)
     def discrim(self, val): raise NotImplementedError
     def finiteDesc(self, seen): return [str(self)]
@@ -221,11 +221,11 @@ class ProductType(NodeType):
         return typed(self, mem, self.const)
     def __str__(self): return str(self.name)
 class ArrayType(NodeType):
-    def __init__(self, name, elt): self.elt = elt
+    def __init__(self, name, elt): self.name = name; self.elt = elt
     def checkBounds(self, ctx, arr, idx):
         cnt = arrLen(arr)
         if idx >= cnt:
-            typeErr(ctx, "array '%s' with length '%d' indexed at '%d': "
+            typeErr(ctx, "%s with length '%d' indexed outside bounds at '%d'"
                     %(self.name, idx, cnt))
     def index(self, idx): return self.elt, (idx*self.elt.size() + atomicSize)
     def new(self, els):

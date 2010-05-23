@@ -579,12 +579,15 @@ def prettyChar(c, _=None): return "'%s'"%''.join(escaped(c, "'")
                                                  for c in fromChar(c))
 def prettyString(s, _=None):
     return '"%s"'%''.join(escaped(c, '"') for c in fromString(s))
+def prettyArray(arr, _=None):
+    return '#[%s]'%' '.join(map(pretty, arrToList(arr)))
 tagToPretty = {nilTy: prettyList, consTy: prettyList,
                symTy: prettySymbol,
                syncloTy: prettySynClo,
                unitTy: lambda _,__: '()',
                intTy: prettyInt, floatTy: prettyFloat, charTy: prettyChar,
                stringTy: prettyString,
+               arrayTy: prettyArray,
                }
 def pretty(v, seen=None):
     if seen is None: seen = []
