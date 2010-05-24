@@ -67,7 +67,7 @@ def ubSymbol_new(n):
     sd = (n, nextSymId)
     nextSymId += 1
     return sd
-symTy = ProductType('Symbol', (ubSymTy,))
+symTy = ProductType('Symbol', (ubSymTy,), const=True)
 def isSymbol(v): return isTyped(v) and getTy(v) is symTy
 def toSymbol(ps): return symTy.new(ubSymTy.new(ps))
 def symbol_new(n): return toSymbol(ubSymbol_new(n))
@@ -342,7 +342,9 @@ class ExportInterface(Interface):
         self.sns = syntaxNames; self.lexes = lexables
     def names(self, nspace): return self.vns
     def resolve(self, nspace, sym):
-        if EnvKey(sym) in self.vns: return nspace.resolve(sym) # todo: check
+        if EnvKey(sym) in self.vns: return nspace.resolve(sym)
+        else: typeErr(None, "no resolution for symbol '%s'; exports: '%s'"
+                      %(EnvKey(sym), self.names()))
 class CompoundInterface(Interface):
     def __init__(self, ifaces): self.ifaces = ifaces
     def names(self, nspace):
@@ -431,7 +433,6 @@ def interactStreams(prompt):
 def node(ty, *args): return ty.new(*args)
 #primMod = OldModule(EnvKey(symbol_new('primitives')), '', None, None)
 primNS = Namespace(None); primCtx = primNS.ctx
-def makePrimMod(): return Module(FullInterface(), primNS)
 def addPrim(name, val):
     print('adding primitive:', name)
     primNS.define(symbol(name), val)
@@ -511,6 +512,7 @@ ubCtxTy, ctxTy, toCtx, fromCtx = basicTy('Ctx', Context)
 ubIfaceTy, ifaceTy, toIface, fromIface = basicTy('Interface', Interface)
 ubNspaceTy, nspaceTy, toNspace, fromNspace = basicTy('Namespace', Namespace)
 ubModTy, modTy, toMod, fromMod = basicTy('Module', Module)
+primMod = Module(FullInterface(),primNS); addPrim('primitives', toMod(primMod))
 formTy = VariantType()
 syncloTy = prodTy('SynClo', ctxTy, listTy, formTy, const=True) # todo
 formTy.init((listTy, symTy, syncloTy, intTy, floatTy, charTy, stringTy))

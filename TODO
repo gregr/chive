@@ -13,11 +13,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
-arrays
-strings
+startup sequence
+        boot script builds core module from primitives (optionally skip)
+        then starts user program with core (with primitives if boot is skipped)
 module/environment-annotated symbols rather than gensym for renaming?
 ../ and ./ relative paths, / absolute path, otherwise use search path
 more flexible environment linking
+     changes in opened modules should become visible in client modules
 parser
         default reader as a parser with configurable read-table
         reader macros: importing/exporting them

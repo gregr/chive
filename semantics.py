@@ -161,13 +161,19 @@ def primCtxEnv(ctx0, ctx):
     return final(repackEnvSymbols(fromCtx(ctx).senv))
 ################################################################
 # modules
+@primproc('_module', ifaceTy, nspaceTy, modTy)
+def primModule(ctx0, iface, nspace):
+    return final(toMod(Module(fromIface(iface), fromNspace(nspace))))
 @primproc('_mod-iface', modTy, ifaceTy)
 def primModIface(ctx0, mod): return final(toIface(fromMod(mod).iface))
 @primproc('_mod-nspace', modTy, nspaceTy)
 def primModNspace(ctx0, mod): return final(toNspace(fromMod(mod).nspace))
-@primproc('_module', ifaceTy, nspaceTy, modTy)
-def primModule(ctx0, iface, nspace):
-    return final(toMod(Module(fromIface(iface), fromNspace(nspace))))
+@primproc('_mod-names', modTy, listTy)
+def primModNames(ctx0, mod):
+    return final(toList([nm.sym for nm in fromMod(mod).names()]))
+@primproc('_mod-resolve', modTy, symTy, anyTy)
+def primModResolve(ctx0, mod, sym): return final(fromMod(mod).resolve(sym))
+# todo: interface (exports?) and namespace (components?) introspection
 @primproc('_export', listTy, ifaceTy)
 def primExport(ctx0, names):
     return final(toIface(ExportInterface(fromList(names), (), ())))
@@ -176,9 +182,12 @@ def primNspace(ctx0, _): return final(toNspace(Namespace(ctx0.root)))
 @primproc('_open', modTy, nspaceTy, unitTy)
 def primOpen(ctx0, mod, nspace):
     fromMod(mod).openIn(fromNspace(nspace)); return final(unit)
-#@primproc('_file', strTy, nspaceTy, unitTy) # todo: need strings!
-#def primFile(ctx0, path, nspace): return final(unit)
-# todo: _compound-iface, _file, _import, _inline, _text
+@primproc('_file', stringTy, nspaceTy, unitTy)
+def primFile(ctx0, path, nspace):
+    # todo: path lookup
+    FileSource(fromNspace(nspace), fromString(path)).eval(evaluate)
+    return final(unit)
+# todo: _compound-iface, _import, _inline, _text
 # @primproc('_ctx-ns', ctxTy, nspaceTy)
 # def primCtxNspace(ctx0, ctx): return final(toNspace(fromCtx(ctx).nspace))
 # @primproc('_ns-ctx', nspaceTy, ctxTy)
@@ -375,7 +384,6 @@ def _test():
     # if len(sys.argv) > 1:
     #     mod = root.getFileModule(sys.argv[1]); evalModule(thread, mod)
     # else: mod = root.rawModule('test')
-    primMod = makePrimMod()
     mod = root.emptyModule(); primMod.openIn(mod.nspace); mod.name = 'repl'
     print(splash); interact(thread, mod)
     return mod
