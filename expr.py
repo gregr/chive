@@ -102,9 +102,6 @@ def bindTypes(ctx, consTyForms):
     # todo: try sorting aliases topologically, otherwise error
     for name, expr in aliases: defTy(ctx, name, expr.eval(ctx))
     for expr in exprs: expr.eval(ctx)
-
-class ConsArray(Constr): pass
-
 ################################################################
 class Access(Expr): pass
 # node operations
@@ -127,25 +124,63 @@ class NodePack(NodeAccess):
         self.ty.packEl(self._evalNode(ctx), self.index, rh); return final(unit)
 # array operations
 class ArrayAccess(Access):
-    def __init__(self, ty, idx, arr):
-        self.ty = ty; self.idx = idx; self.arr = arr
-    def _eval(self, ctx):
-        arr = evalExpr(ctx, self.arr, self.ty)
-        idx = fromInt(evalExpr(ctx, self.idx, intTy))
-        self.ty.checkBounds(ctx, arr, idx); return arr, idx
+    def __init__(self, ty, arr): self.ty = ty; self.arr = arr
+    def _evalArr(self, ctx): return evalExpr(ctx, self.arr, self.ty)
     def freeVars(self): return self.arr.freeVars()
     def subst(self, subs): self.arr.subst(subs)
-class ArrayUnpack(ArrayAccess):
+class ArrayAccessIndex(ArrayAccess):
+    def __init__(self, idx, *args): super().__init__(*args); self.idx = idx
+    def freeVars(self): return super().freeVars()+self.idx.freeVars()
+    def subst(self, subs): super().subst(subs); self.idx.subst(subs)
+    def _eval(self, ctx):
+        arr = self._evalArr(ctx); idx = fromInt(evalExpr(ctx, self.idx, intTy))
+        self.ty.checkBounds(ctx, arr, idx); return arr, idx
+class ArrayUnpack(ArrayAccessIndex):
     def eval(self, ctx):
-        arr, idx = self._eval(ctx)
-        return final(getTy(arr).unpackEl(arr, idx))
-class ArrayPack(ArrayAccess):
+        arr, idx = self._eval(ctx); return final(getTy(arr).unpackEl(arr, idx))
+class ArrayPack(ArrayAccessIndex):
     def __init__(self, rhs, *args): super().__init__(*args); self.rhs = rhs
     def freeVars(self): return super().freeVars()+self.rhs.freeVars()
     def subst(self, subs): super().subst(subs); self.rhs.subst(subs)
     def eval(self, ctx):
         arr, idx = self._eval(ctx); rhs = evalExpr(ctx, self.rhs)
         self.ty.packEl(arr, idx, rhs); return final(unit)
+class ArrayAccessSlice(ArrayAccess):
+    def __init__(self, start, end, *args):
+        super().__init__(*args); self.start = start; self.end = end
+    def freeVars(self):
+        return super().freeVars()+self.start.freeVars()+self.end.freeVars()
+    def subst(self, subs):
+        super().subst(subs); self.start.subst(subs); self.end.subst(subs)
+    def _eval(self, ctx):
+        start = fromInt(evalExpr(ctx, self.start, intTy))
+        end = fromInt(evalExpr(ctx, self.end, intTy))
+        arr = self._evalArr(ctx); self.ty.checkBounds(ctx, arr, start)
+        self.ty.checkBounds(ctx, arr, start); return arr, start, end
+class ArraySliceUnpack(ArrayAccessSlice):
+    def eval(self, ctx):
+        arr, start, end = self._eval(ctx)
+        return final(arrSliceUnpack(ctx, arr, start, end))
+class ArraySlicePack(ArrayAccessSlice):
+    def __init__(self, rhs, *args): super().__init__(*args); self.rhs = rhs
+    def freeVars(self): return super().freeVars()+self.rhs.freeVars()
+    def subst(self, subs): super().subst(subs); self.rhs.subst(subs)
+    def eval(self, ctx):
+        arr, start, end = self._eval(ctx)
+        rhs = evalExpr(ctx, self.rhs, self.ty)
+        arrSlicePack(ctx, arr, start, end, rhs); return final(unit)
+class ArrayLength(ArrayAccess):
+    def __init__(self, *args): super().__init__(*args)
+    def eval(self, ctx): return final(toInt(arrLen(self._evalArr(ctx))))
+class ArrayPop(ArrayAccess):
+    def __init__(self, *args): super().__init__(*args)
+    def eval(self, ctx): arrPop(ctx, self._evalArr(ctx)); return final(unit)
+class ArrayPush(ArrayAccess):
+    def __init__(self, rhs, *args): super().__init__(*args); self.rhs = rhs
+    def freeVars(self): return super().freeVars()+self.rhs.freeVars()
+    def subst(self, subs): super().subst(subs); self.rhs.subst(subs)
+    def eval(self, ctx):
+        arrPush(self._evalArr(ctx), evalExpr(ctx,self.rhs)); return final(unit)
 ################################################################
 class Seq(Expr):
     def __init__(self, exprs): self.exprs = exprs[:-1]; self.last = exprs[-1]

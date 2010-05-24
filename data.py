@@ -230,6 +230,13 @@ def constr_new(ctx, ty):
     cty = currySpecificProcType(ty.name, ty.elts, ty)
     body = ConsNode(ty, [Var(nm) for nm in cargs], ctx)
     return proc_new(NativeProc(cty.name, body, cargs), ctx, cty)
+class ConsArray(Constr):
+    def __init__(self, ty, ctx=None):
+        self.ty = ty
+        if not isinstance(ty, ArrayType):
+            typeErr(ctx, "invalid array type: '%s'"%ty)
+    def eval(self, ctx): return final(self.ty.new())
+
 ################################################################
 # contexts
 class History:
@@ -494,7 +501,8 @@ arrayTy = arrTy('Array', anyTy)
 # strings
 stringTy = arrTy('String', ubCharTy)
 def isString(val): return getTy(val) is stringTy
-def toString(pyStr): return stringTy.new(ubCharTy.new(ch) for ch in pyStr)
+def toString(pyStr):
+    cs = stringTy.new(); arrConcatList(cs, list(pyStr)); return cs
 def fromString(chStr): return ''.join(arrToList(chStr))
 def copyString(chStr): return toString(fromString(chStr))
 ################################################################

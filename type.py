@@ -276,11 +276,8 @@ class ArrayType(NodeType):
             typeErr(ctx, "%s with length '%d' indexed outside bounds at '%d'"
                     %(self.name, cnt, idx))
     def index(self, idx): return self.elt, (idx*self.elt.size() + atomicSize)
-    def new(self, els, cntHint=0):
-        els = tuple(els); cnt = len(els); offset = atomicSize
-        mem = mem_alloc(cnt*self.elt.size()+atomicSize); mem_write(mem, 0, cnt)
-        for e in els: self.elt.pack(mem, offset, e); offset += self.elt.size()
-        return typed(self, mem)
+    def new(self):
+        arr = typed(self, mem_alloc(atomicSize)); arrSetLen(arr, 0); return arr
     def __str__(self): return str(self.name)
 # todo: shrink at 1/4?
 def arrElSize(arr): return getTy(arr).elt.size()
@@ -315,6 +312,10 @@ def arrSlicePack(ctx, arr, start, end, arg):
     mem = getVal(arr); start = arrIdx(arr, start); end = arrIdx(arr, end)
     src = mem_slice_get(getVal(arg), arrIdx(arg, 0), arrIdx(arg, arrLen(arg)))
     mem_slice_set(mem, start, end, src); arrSetLen(arr, newLen)
+# do not expose
 def arrToList(arr):
     return mem_toList(mem_offset(getVal(arr), atomicSize), arrLen(arr))
+def arrConcatList(arr, xs):
+    al = arrLen(arr); idx = arrIdx(arr, al)
+    mem_slice_set(getVal(arr), idx, idx, (0, xs)); arrSetLen(arr, al+len(xs))
 def isArray(v): return isTyped(v) and isinstance(getTy(v), ArrayType)

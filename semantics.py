@@ -129,12 +129,14 @@ def semArgs(ctx, form, numArgs):
         typeErr(ctx, "semantic '%s' takes %d arguments but was given %d"%
                 (pretty(cons_head(form)), numArgs, len(args)-1))
     return args[1:]
-def repackSymbols(names):
-    return toList(tuple(toSymbol(symbol_prim(name.sym)) for name in names))
-def repackEnvSymbols(env):
-    strat = nil
-    for bs in env.stratified(): strat = cons(repackSymbols(bs.keys()), strat)
-    return strat
+def tryUnbox(ctx, form):
+    ty = getTy(form)
+    if ty in (symTy, intTy, floatTy, charTy): return ty.unpackEl(form, 0)
+    else: typeErr(ctx, "cannot unbox non-literal: '%s'"%pretty(form))
+@semproc('_unbox')
+def semUnbox(ctx, form):
+    form = stripOuterSynClo(cons_head(cons_tail(form)))
+    return PrimVal(tryUnbox(ctx, form))
 @primproc('_expand', ctxTy, formTy, formTy)
 def primExpand(ctx0, ctx, form):
     ctx = fromCtx(ctx).withThread(ctx0.thread)
@@ -146,11 +148,19 @@ def primEval(ctx0, ctx, form):
     return final(evaluate(ctx, ctx.attr, form, anyTy))
 @primproc('_alias', symTy, symTy)
 def primAlias(ctx0, sym): return final(alias_new(sym))
+def repackSymbols(names):
+    return toList(tuple(toSymbol(symbol_prim(name.sym)) for name in names))
+def repackEnvSymbols(env):
+    strat = nil
+    for bs in env.stratified(): strat = cons(repackSymbols(bs.keys()), strat)
+    return strat
 @semproc('_ctx')
 def semContext(ctx, form): semArgs(ctx, form, 0); return PrimVal(toCtx(ctx))
 @primproc('_ctx-env', ctxTy, listTy)
 def primCtxEnv(ctx0, ctx):
     return final(repackEnvSymbols(fromCtx(ctx).senv))
+################################################################
+# modules
 @primproc('_mod-iface', modTy, ifaceTy)
 def primModIface(ctx0, mod): return final(toIface(fromMod(mod).iface))
 @primproc('_mod-nspace', modTy, nspaceTy)
@@ -176,6 +186,8 @@ def primOpen(ctx0, mod, nspace):
 # @primproc('_ns-exports', nspaceTy, listTy)
 # def primNspaceExports(ctx0, ns):
 #     return final(repackSymbols(fromNspace(ns).exportedNames))
+################################################################
+# thread-local data
 @primproc('_get-tl-data', symTy, anyTy)
 def primGetTLData(ctx0, key):
     return final(ctx0.thread.getDataTLS(ctx0, EnvKey(key)))
@@ -183,6 +195,8 @@ def primGetTLData(ctx0, key):
 def semInitTLData(ctx, form):
     key, body = semArgs(ctx, form, 2); key = EnvKey(evaluate(ctx, *key))
     ctx.root.setInitTLS(ctx, key, semantize(ctx, *body)); return unitExpr
+################################################################
+# control flow
 @semproc('_unwind')
 def semUnwind(ctx, form): semArgs(ctx, form, 0); return Unwind()
 @semproc('_catch-unwind')
@@ -193,14 +207,6 @@ def semCatchUnwind(ctx, form):
 def semSeq(ctx, form):
     return Seq(tuple(semantize(ctx, *afrm)
                for afrm in fromAttrForm(ctx, (ctx.attr, form))[1:]))
-def tryUnbox(ctx, form):
-    ty = getTy(form)
-    if ty in (symTy, intTy, floatTy, charTy): return ty.unpackEl(form, 0)
-    else: typeErr(ctx, "cannot unbox non-literal: '%s'"%pretty(form))
-@semproc('_unbox')
-def semUnbox(ctx, form):
-    form = stripOuterSynClo(cons_head(cons_tail(form)))
-    return PrimVal(tryUnbox(ctx, form))
 def toTy(ctx, form):
     ctx, form = expand(ctx, *form)
     if not isSymbol(form): typeErr(ctx, "invalid type name: '%s'"%form)
@@ -268,6 +274,8 @@ def semLet(ctx, form):
         recs.append([EnvKey(newDen(bodyCtx, binder)), rhs])
     for recp in recs: recp[1] = semantize(bodyCtx, *recp[1])
     return Let(nonrecs, recs, semantize(bodyCtx, *body))
+################################################################
+# nodes
 def semNodeAccess(ctx, ty, idx, node):
     ty = toTy(ctx, ty); idx = evaluate(ctx, *idx, ty=intTy)
     node = semantize(ctx, *node); return ty, fromInt(idx), node, ctx
@@ -278,34 +286,46 @@ def semNodeUnpack(ctx, form):
 def semNodePack(ctx, form):
     *rest, rhs = semArgs(ctx, form, 4); rhs = semantize(ctx, *rhs)
     return NodePack(rhs, *semNodeAccess(ctx, *rest))
-def semArrayAccess(ctx, ty, idx, node):
+################################################################
+# arrays
+@semproc('_array-new') # todo: capacity hint?
+def semArrayNew(ctx, form):
+    ty = toTy(ctx, semArgs(ctx, form, 1)[0]); return ConsArray(ty, ctx)
+def semArrayAccess(ctx, ty, node):
+    ty = toTy(ctx, ty); node = semantize(ctx, *node); return ty, node
+@semproc('_array-length')
+def semArrayLength(ctx, form):
+    return ArrayLength(*semArrayAccess(ctx, *semArgs(ctx, form, 2)))
+@semproc('_array-pop')
+def semArrayPop(ctx, form):
+    return ArrayPop(*semArrayAccess(ctx, *semArgs(ctx, form, 2)))
+@semproc('_array-push')
+def semArrayPush(ctx, form):
+    *rest, rhs = semArgs(ctx, form, 3); rhs = semantize(ctx, *rhs)
+    return ArrayPush(rhs, *semArrayAccess(ctx, *rest))
+def semArrayAccessIndex(ctx, ty, idx, node):
     ty = toTy(ctx, ty); idx = semantize(ctx, *idx)
-    node = semantize(ctx, *node); return ty, idx, node
-@semproc('_array-ty-unpack')
+    node = semantize(ctx, *node); return idx, ty, node
+@semproc('_array-unpack')
 def semArrayUnpack(ctx, form):
-    return ArrayUnpack(*semArrayAccess(ctx, *semArgs(ctx, form, 3)))
-@semproc('_array-ty-pack')
+    return ArrayUnpack(*semArrayAccessIndex(ctx, *semArgs(ctx, form, 3)))
+@semproc('_array-pack')
 def semArrayPack(ctx, form):
     *rest, rhs = semArgs(ctx, form, 4); rhs = semantize(ctx, *rhs)
-    return ArrayPack(rhs, *semArrayAccess(ctx, *rest))
-# todo: empty array/string constr w/ capacity hint
-# and push/pop/concat/slice(pack/unpack)/truncate
-# then remove from/to-list primitives
-# todo: semantic forms for these?
-@primproc('_array-length', arrayTy, intTy)
-def primArrayLength(ctx0, arr): return final(toInt(arrLen(arr)))
-@primproc('_array-from-list', listTy, arrayTy)
-def primArrayFromList(ctx0, xs): return final(arrayTy.new(fromList(xs)))
-@primproc('_array-to-list', arrayTy, listTy)
-def primArrayToList(ctx0, arr): return final(toList(arrToList(arr)))
-@primproc('_string-length', stringTy, intTy)
-def primStringLength(ctx0, chs): return final(toInt(arrLen(chs)))
-@primproc('_string-from-list', listTy, stringTy)
-def primStringFromList(ctx0, xs):
-    return final(stringTy.new(charTy.unpackEl(ch, 0) for ch in fromList(xs)))
-@primproc('_string-to-list', stringTy, listTy)
-def primStringToList(ctx0, chs):
-    return final(toList(tuple(toChar(ch) for ch in arrToList(chs))))
+    return ArrayPack(rhs, *semArrayAccessIndex(ctx, *rest))
+def semArrayAccessSlice(ctx, ty, start, end, node):
+    start = semantize(ctx, *start); end = semantize(ctx, *end)
+    ty = toTy(ctx, ty); node = semantize(ctx, *node)
+    return start, end, ty, node
+@semproc('_array-slice-unpack')
+def semArraySliceUnpack(ctx, form):
+    return ArraySliceUnpack(*semArrayAccessSlice(ctx, *semArgs(ctx, form, 4)))
+@semproc('_array-slice-pack')
+def semArraySlicePack(ctx, form):
+    *rest, rhs = semArgs(ctx, form, 5); rhs = semantize(ctx, *rhs)
+    return ArraySlicePack(rhs, *semArrayAccessSlice(ctx, *rest))
+################################################################
+# definitions
 @semproc('_def-types')
 def semDefTypes(ctx, form):
     bindTypes(ctx, fromList(cons_tail(form), ctx)); return unitExpr
@@ -322,6 +342,7 @@ def semDefOp(ctx, form):
     name, fixity, assoc, prec = tuple(zip(*semArgs(ctx, form, 4)))[1]
     op = newOperator(name, symbol_name(fixity), assoc, fromInt(prec))
     ctx.nspace.defOp(name, op); return unitExpr
+################################################################
 def interact(thread, mod):
     from lex import LexError
     from syntax import ParseError, Parser
@@ -358,7 +379,7 @@ def _test():
     mod = root.emptyModule(); primMod.openIn(mod.nspace); mod.name = 'repl'
     print(splash); interact(thread, mod)
     return mod
-# arr = arrayTy.new(())
+# arr = arrayTy.new()
 # for x in range(1,6): arrPush(arr, toInt(x))
 # arr2 = arrSliceUnpack(None, arr, 0, 5)
 # arrSlicePack(None, arr2, 1, 3, arr)
