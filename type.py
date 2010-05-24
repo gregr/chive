@@ -15,11 +15,20 @@
 ################################################################
 # storage
 def mem_alloc(sz): return (0, [None]*sz)
+def mem_realloc(mem, sz):
+    off, dat = mem; dlen = len(dat); assert off == 0, (off, dat)
+    if dlen > sz: dat[:] = dat[:sz]
+    elif dlen < sz: dat[:] = dat+[None]*(sz-dlen)
+def mem_size(mem): return len(mem[1])
 def mem_offset_(mem, off): return mem[0]+off
 def mem_offset(mem, off): return (mem_offset_(mem, off), mem[1])
 def mem_read(mem, idx): return mem[1][mem_offset_(mem, idx)]
 def mem_write(mem, idx, val): mem[1][mem_offset_(mem, idx)] = val
 def mem_copy(dst, src, sz): off, dat = dst; dat[off:off+sz]=mem_toList(src, sz)
+def mem_slice_get(mem, start, end):
+    off, dat = mem; return (0, dat[off+start:off+end])
+def mem_slice_set(dst, start, end, src):
+    off, dat = dst; dat[off+start:off+end]=src[1][src[0]:]
 def mem_toList(mem, sz): off, dat = mem; return dat[off:off+sz]
 ################################################################
 # regions
@@ -220,24 +229,6 @@ class ProductType(NodeType):
             elt.pack(mem, offset, arg); offset += elt.size()
         return typed(self, mem, self.const)
     def __str__(self): return str(self.name)
-class ArrayType(NodeType):
-    def __init__(self, name, elt): self.name = name; self.elt = elt
-    def checkBounds(self, ctx, arr, idx):
-        cnt = arrLen(arr)
-        if idx >= cnt:
-            typeErr(ctx, "%s with length '%d' indexed outside bounds at '%d'"
-                    %(self.name, idx, cnt))
-    def index(self, idx): return self.elt, (idx*self.elt.size() + atomicSize)
-    def new(self, els):
-        els = tuple(els); cnt = len(els); offset = atomicSize
-        mem = mem_alloc(cnt*self.elt.size()+atomicSize); mem_write(mem, 0, cnt)
-        for e in els: self.elt.pack(mem, offset, e); offset += self.elt.size()
-        return typed(self, mem)
-    def __str__(self): return str(self.name)
-def arrLen(arr): assert isArray(arr); return mem_read(getVal(arr), 0)
-def arrToList(arr):
-    return mem_toList(mem_offset(getVal(arr), atomicSize), arrLen(arr))
-def isArray(v): return isTyped(v) and isinstance(getTy(v), ArrayType)
 class ThunkType(NodeType):
     def __init__(self, name): self.name = name
     def new(self, thunk): return typed(self, thunk)
@@ -277,3 +268,53 @@ class SpecificProcType(ProcType):
 def currySpecificProcType(name, paramts, rett):
     return curryProcType(paramts, rett,
                          (lambda *args: SpecificProcType(name, *args)))
+class ArrayType(NodeType):
+    def __init__(self, name, elt): self.name = name; self.elt = elt
+    def checkBounds(self, ctx, arr, idx):
+        cnt = arrLen(arr)
+        if idx >= cnt:
+            typeErr(ctx, "%s with length '%d' indexed outside bounds at '%d'"
+                    %(self.name, cnt, idx))
+    def index(self, idx): return self.elt, (idx*self.elt.size() + atomicSize)
+    def new(self, els, cntHint=0):
+        els = tuple(els); cnt = len(els); offset = atomicSize
+        mem = mem_alloc(cnt*self.elt.size()+atomicSize); mem_write(mem, 0, cnt)
+        for e in els: self.elt.pack(mem, offset, e); offset += self.elt.size()
+        return typed(self, mem)
+    def __str__(self): return str(self.name)
+# todo: shrink at 1/4?
+def arrElSize(arr): return getTy(arr).elt.size()
+def arrIdx(arr, idx): return getTy(arr).index(idx)[1]
+def arrGrow(arr, sz):
+    mem = getVal(arr); mem_realloc(mem, max(sz, mem_size(mem)*2))
+def arrCapacity(arr):
+    return (mem_size(getVal(arr))-atomicSize)/arrElSize(arr)
+def arrRequire(arr, cnt):
+    if arrCapacity(arr) < cnt: arrGrow(arr, cnt*arrElSize(arr)+atomicSize)
+def arrLen(arr): return mem_read(getVal(arr), 0)
+def arrSetLen(arr, cnt): return mem_write(getVal(arr), 0, cnt)
+def arrPush(arr, el):
+    al = arrLen(arr); arrRequire(arr, al+1); getTy(arr).packEl(arr, al, el);
+    arrSetLen(arr, al+1)
+def arrPop(ctx, arr):
+    al = arrLen(arr)
+    if al < 1: typeErr(ctx, "popped empty array") # todo
+    arrSetLen(arr, al-1)
+#def arrConcat(arr, arg): al = arrLen(arr); return arrSlicePack(arr,al,al,arg)
+def arrCheckSlice(ctx, arr, start, end):
+    getTy(arr).checkBounds(ctx, arr, start-1)
+    getTy(arr).checkBounds(ctx, arr, end-1)
+    if start > end: typeErr(ctx, "invalid array slice: (%d,%d)"%(start, end))
+def arrSliceUnpack(ctx, arr, start, end):
+    arrCheckSlice(ctx, arr, start, end)
+    mem = getVal(arr); start = arrIdx(arr, start); end = arrIdx(arr, end)
+    return typed(getTy(arr), (0,[end-start]+mem_slice_get(mem, start, end)[1]))
+def arrSlicePack(ctx, arr, start, end, arg):
+    arrCheckSlice(ctx, arr, start, end)
+    newLen = arrLen(arr)+arrLen(arg)-(end-start)
+    mem = getVal(arr); start = arrIdx(arr, start); end = arrIdx(arr, end)
+    src = mem_slice_get(getVal(arg), arrIdx(arg, 0), arrIdx(arg, arrLen(arg)))
+    mem_slice_set(mem, start, end, src); arrSetLen(arr, newLen)
+def arrToList(arr):
+    return mem_toList(mem_offset(getVal(arr), atomicSize), arrLen(arr))
+def isArray(v): return isTyped(v) and isinstance(getTy(v), ArrayType)

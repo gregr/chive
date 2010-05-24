@@ -358,4 +358,8 @@ def _test():
     mod = root.emptyModule(); primMod.openIn(mod.nspace); mod.name = 'repl'
     print(splash); interact(thread, mod)
     return mod
+# arr = arrayTy.new(())
+# for x in range(1,6): arrPush(arr, toInt(x))
+# arr2 = arrSliceUnpack(None, arr, 0, 5)
+# arrSlicePack(None, arr2, 1, 3, arr)
 if __name__ == '__main__': mod = _test()
