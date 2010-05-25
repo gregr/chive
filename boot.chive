@@ -1,0 +1,133 @@
+## Copyright 2010 Gregory L. Rosenblatt
+
+## Licensed under the Apache License, Version 2.0 (the "License");
+## you may not use this file except in compliance with the License.
+## You may obtain a copy of the License at
+
+##     http://www.apache.org/licenses/LICENSE-2.0
+
+## Unless required by applicable law or agreed to in writing, software
+## distributed under the License is distributed on an "AS IS" BASIS,
+## WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+## See the License for the specific language governing permissions and
+## limitations under the License.
+ 
+_def-op (:) infix right 5
+_def hd (_proc (xs) (_node-unpack (:) 0 xs))
+_def tl (_proc (xs) (_node-unpack (:) 1 xs))
+_def synclo-form (_proc (sc) (_node-unpack SynClo 2 sc))
+_def testSwitch
+  _switch (1:2:Nil)
+    (((Nil) 3) ((\:) 4))
+_def _quote-sym (Macro (_proc (ctx form)
+  ((SynClo (_ctx) Nil (Symbol (_unbox Symbol))):
+   ((SynClo (_ctx) Nil (Symbol (_unbox _unbox))):(hd (tl form)):Nil):Nil)))
+_def _quote
+  _proc (xs)
+    _switch xs
+      ((() xs)
+       ((Symbol) ((SynClo (_ctx) Nil (_quote-sym _quote-sym)):xs:Nil))
+       ((Nil) (SynClo (_ctx) Nil (_quote-sym Nil)))
+       ((\:) ((SynClo (_ctx) Nil (_quote-sym \:)):
+              (_quote (hd xs)):(_quote (tl xs)):Nil))
+       ((SynClo) (_quote (synclo-form xs))))
+_def quote (Macro (_proc (ctx form) (_quote (hd (tl form)))))
+_def squote (Macro (_proc (ctx form)
+  ((SynClo (_ctx) Nil (quote SynClo)):(SynClo (_ctx) Nil (quote (_ctx))):
+   (SynClo (_ctx) Nil (quote Nil)):
+   ((SynClo (_ctx) Nil (quote quote)):(hd (tl form)):Nil):Nil)))
+_def _def-macro (Macro (_proc (ctx form)
+  ((squote _def):(hd (tl form)):
+   ((squote Macro):((squote _proc):(tl (tl form))):Nil):Nil)))
+_def-macro _def-proc (ctx form)
+  ((squote _def):(hd (tl form)):((squote _proc):(tl (tl form))):Nil)
+_def-proc id (x) x
+_def-proc rev-append (xs ys)
+  _switch ys
+    (((Nil) xs)
+     ((\:) (rev-append (hd ys:xs) (tl ys))))
+_def-proc reverse (xs) (rev-append Nil xs)
+_def-proc map (f xs)
+  _switch xs
+    (((Nil) Nil)
+     ((\:) (f (hd xs):map f (tl xs))))
+_def-proc strip-synclo (frm)
+  _switch frm (((SynClo) (synclo-form frm)) (() frm))
+_def-proc strip-synclos (frm)
+  _switch frm (((\:) (map strip-synclos frm))
+               ((SynClo) (strip-synclos (strip-synclo frm)))
+               (() frm))
+_def-macro _locals (ctx form) ((squote _ctx-env):(quote (_ctx)):Nil)
+_def-types
+  Bool (_Ty-Variant True False)
+  True (_Ty-Product)
+  False (_Ty-Product)
+_def-proc ttl (xs) (tl (tl xs))
+_def-proc tttl (xs) (tl (ttl xs))
+_def-proc htl (xs) (hd (tl xs))
+_def-proc httl (xs) (hd (ttl xs))
+_def-proc htttl (xs) (hd (tttl xs))
+_def-macro _if (ctx form)
+  _let () ((cnd (htl form)) (cnsq (httl form)) (altrn (htttl form))) ()
+    ((squote _switch):cnd:
+     ((squote (True):cnsq:Nil):(squote (False):altrn:Nil):Nil):Nil)
+_def-proc gensym (_) (_alias (quote \_gsym))
+_def-types (Ref (_Ty-Product Any))
+_def-proc ref-get (ref) (_node-unpack Ref 0 ref)
+_def-proc ref-set (ref val) (_node-pack Ref 0 ref val)
+
+_def-macro _def-tl-data (ctx form)
+  _let () ((name (htl form)) (body (httl form))
+           (key (((squote quote):gensym ():Nil)))) ()
+    ((squote _seq):((squote _def):name:key:Nil):
+     ((squote _init-tl-data):key:body:Nil):Nil)
+
+## todo: review the following
+_def-proc default-cond-handler (cnd continue unravel) (unravel ())
+
+_def-tl-data cond-handler-state (Ref (default-cond-handler:Nil))
+_def-proc get-cond-handler-state (_) (_get-tl-data cond-handler-state)
+_def-proc get-cond-handlers (_) (ref-get (_get-tl-data cond-handler-state))
+_def-proc push-cond-handler (c-h)
+  _let () ((ref (get-cond-handler-state ()))) ()
+    ref-set ref (c-h:ref-get ref)
+_def-proc pop-cond-handler (_)
+  _let () ((ref (get-cond-handler-state ()))) ()
+    ref-set ref (tl (ref-get ref))
+_def-proc set-cond-handlers (hs) (ref-set (get-cond-handler-state ()) hs)
+
+_def-tl-data restart-state (Ref Nil)
+_def-proc get-restarts (_) (_get-tl-data restart-state)
+_def-proc push-restarts (restarts)
+  _let () ((ref (get-restarts ()))) ()
+    ref-set ref (restarts:(ref-get ref))
+_def-proc pop-restarts (_)
+  _let () ((ref (get-restarts ()))) ()
+    ref-set ref (tl (ref-get ref))
+
+_def-proc apply-cond-handler (cnd hs)
+  _let () ((handler (hd hs)) (rest (tl hs)))
+    ((continue (_proc (_) (apply-cond-handler cnd rest)))
+     (unravel (_proc (_) (_seq (set-cond-handlers hs) (_unwind)))))
+    handler cnd continue unravel
+_def-proc signal (cnd) (apply-cond-handler cnd (get-cond-handlers ()))
+
+_def-macro bind-cond-handler (ctx form)
+  _let () ((body (htl form)) (handler (httl form)) (altern (htttl form))
+           (pop ((squote pop-cond-handler):Nil:Nil)) (val (gensym ()))) ()
+    ((squote _seq):((squote push-cond-handler):handler:Nil):
+     ((squote _catch-unwind):
+      ((squote _let):Nil:((val:body:Nil):Nil):Nil:
+       ((squote _seq):pop:val:Nil):Nil):
+      ((squote _seq):pop:altern:Nil):Nil):Nil)
+
+_def tc-result (Ref ())
+_def-proc test-cond (xs ys)
+  bind-cond-handler
+    bind-cond-handler
+      signal 42
+      (_proc (cnd continue unravel) (continue ()))
+      (_unwind)
+    (_proc (cnd continue unravel)
+      (_seq (ref-set tc-result (quote alt0)) (unravel ())))
+    37
