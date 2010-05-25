@@ -32,8 +32,7 @@ def run(opts, args):
     bootMod.name = 'boot'
     if opts.bootstrap: mod = bootMod
     else:
-#        coreMod = evalFile(thread, bootMod, 'boot.chive') # todo
-        coreMod = primMod # for now
+        coreMod = fromMod(evalFile(thread, bootMod, 'boot.chive'))
         mod = root.emptyModule(); coreMod.openIn(mod.nspace); mod.name = 'user'
     if len(args) > 0: evalFile(thread, mod, args[0])
     if opts.interact: print(splash); interact(thread, mod)

@@ -59,6 +59,7 @@ don't truncate handler stack upon finding a handler
 derive throw and build on that
 restart lists need to be segmented by interleaved handler pushes
 
+underscore symbol is special (allow it to be repeated as an arg; don't bind it)
 notion of tags separate from types/constructors (and used for dispatch)
 field projection operator
 capabilities/effects
