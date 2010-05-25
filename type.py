@@ -46,8 +46,8 @@ class Region:
         return 'Unknown'
 ################################################################
 # types
-class TypeError(Exception): pass
-def typeErr(ctx, msg): raise TypeError(ctx, msg)
+class TyError(Exception): pass
+def typeErr(ctx, msg): raise TyError(ctx, msg)
 def isTyped(val): return (isinstance(val, list) and len(val)>0 and
                           isinstance(getTy(val), Type))
 def typed(ty, val, const=None):

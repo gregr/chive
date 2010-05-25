@@ -352,20 +352,27 @@ def semDefOp(ctx, form):
     op = newOperator(name, symbol_name(fixity), assoc, fromInt(prec))
     ctx.nspace.defOp(name, op); return unitExpr
 ################################################################
+# interaction
+from lex import LexError
+from syntax import ParseError, Parser
+from data import Env, makeStream, unit
 def interact(thread, mod):
-    from lex import LexError
-    from syntax import ParseError, Parser
-    from data import Env, makeStream, unit
     result = [unit]
-    def onResult(res): result[0] = res; print(pretty(res))
-    def evalStream(ctx, attr, expr):
-        result = evaluate(ctx.withThread(thread), attr, expr); onResult(result)
+    def evalPrint(ctx, attr, expr):
+        res = evaluate(ctx.withThread(thread), attr, expr)
+        result[0] = res; print(pretty(res))
     for stream in interactStreams('%s> '%mod.name):
-        try: DirectStreamSource(mod.nspace, mod.name, stream).eval(evalStream)
+        try: DirectStreamSource(mod.nspace, mod.name, stream).eval(evalPrint)
         except LexError: raise
         except ParseError: raise
-        except TypeError: raise
+        except TyError: raise
     print(''); return result[0]
+def evalFile(thread, mod, absPath):
+    result = [unit]
+    def evalSave(ctx, attr, expr):
+        result[0] = evaluate(ctx.withThread(thread), attr, expr)
+    FileSource(mod.nspace, absPath).eval(evalSave)
+    return result[0]
 # def debugErr(exc, ctx, expr): # todo: exit without resume?
 #     root = ctx.nspace.mod.root
 #     if root.debugging: return None
@@ -375,20 +382,3 @@ def interact(thread, mod):
 #     mod = root.moduleFromCtx('%s debug'%name, ctx)
 #     result = interact(ctx.thread, mod)
 #     root.debugging = False; return result
-splash = """chive 0.0.0: help system is still a work in progress..."""
-def _test():
-    import sys
-#    root = Root((os.getcwd(), ))
-    root = Root(())#; root.onErr = debugErr; root.debugging = False
-    thread = Thread(root)
-    # if len(sys.argv) > 1:
-    #     mod = root.getFileModule(sys.argv[1]); evalModule(thread, mod)
-    # else: mod = root.rawModule('test')
-    mod = root.emptyModule(); primMod.openIn(mod.nspace); mod.name = 'repl'
-    print(splash); interact(thread, mod)
-    return mod
-# arr = arrayTy.new()
-# for x in range(1,6): arrPush(arr, toInt(x))
-# arr2 = arrSliceUnpack(None, arr, 0, 5)
-# arrSlicePack(None, arr2, 1, 3, arr)
-if __name__ == '__main__': mod = _test()

@@ -13,13 +13,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
-startup sequence
+current startup sequence
         boot script builds core module from primitives (optionally skip)
-        then starts user program with core (with primitives if boot is skipped)
+        start user program with core (with primitives if boot is skipped)
+future startup options
+        1. run a boot script to build a basic program image from primitives
+        2. load and execute an existing image (possibly with less privileges)
 module/environment-annotated symbols rather than gensym for renaming?
 ../ and ./ relative paths, / absolute path, otherwise use search path
 more flexible environment linking
      changes in opened modules should become visible in client modules
+     allow for namespace reloading
 parser
         default reader as a parser with configurable read-table
         reader macros: importing/exporting them
@@ -39,15 +43,12 @@ make-foo a b c =
                         text "j k = ..."
 
 security implications of ctx argument to macros?
-limited expand privileges?
+limited expand privileges? sealed expansions?
+hygienic macro auditing
 auditing for global communication channels
 safety of exceptions or conditions/restarts
 resource limits
 thread state
-
-protection of macro inputs and outputs
-forms given to macros that don't name identifiers, but are identifier objects that can optionally be converted to names? (unforgeable identifiers, no direct access to caller's context)
-sealed macro expansions that cannot be embedded in forms without being unsealed
 
 privileged scope (master of the machine) contains operators to inspect/debug/modify/execute anything subordinate to it
 implies virtual machine hierarchies: machines that simulate machines that simulate machines...
