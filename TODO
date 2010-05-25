@@ -13,13 +13,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
-current startup sequence
-        boot script builds core module from primitives (optionally skip)
-        start user program with core (with primitives if boot is skipped)
-future startup options
-        1. run a boot script to build a basic program image from primitives
-        2. load and execute an existing image (possibly with less privileges)
-module/environment-annotated symbols rather than gensym for renaming?
+readtable-based parsing
+nicer list syntax using reader macros
+underscore symbol is special (allow it to be repeated as an arg; don't bind it)
+notion of tags separate from types/constructors (and used for dispatch)
+getTag primitive for explicit dynamic dispatch
+field projection operator
+AST pretty-printing
+no ad-hoc local environment or namespace access
+   they can still be explicitly constructed/passed around
+debugging inspector
+          should not require eval to operate on local environments
+                 eval should operate on namespaces
+          therefore needs implementation-specific introspection privileges
+expansion history (fix) and attributes for definitions
+
+================================================================
+= modules
+================================================================
 ../ and ./ relative paths, / absolute path, otherwise use search path
 more flexible environment linking
      changes in opened modules should become visible in client modules
@@ -42,7 +53,37 @@ make-foo a b c =
                         files ["blah" "bleh"]
                         text "j k = ..."
 
+================================================================
+= conditions
+================================================================
+don't truncate handler stack upon finding a handler
+      -unwound handlers pop themselves
+derive throw and build on that
+restart lists need to be segmented by interleaved handler pushes
+
+conditions: signals/restarts
+type-error hook
+
+================================================================
+= low-level
+================================================================
+weak ref
+gc-stable ref (related?: distributed refs)
+smarter thunk-creation
+fix future bugs due to lack of Context.withThread where required
+interpreter-agnostic expression evaluation
+thread interaction with delays, module-loading, etc.
+
+ffi:
+        networking
+        filesystem/stdio/os
+        threads/processes/signals?
+
+================================================================
+= security
+================================================================
 security implications of ctx argument to macros?
+         a context can list valid symbols that it may be closed over (hygiene)
 limited expand privileges? sealed expansions?
 hygienic macro auditing
 auditing for global communication channels
@@ -50,41 +91,36 @@ safety of exceptions or conditions/restarts
 resource limits
 thread state
 
+module/environment-annotated symbols rather than gensym for renaming?
 privileged scope (master of the machine) contains operators to inspect/debug/modify/execute anything subordinate to it
 implies virtual machine hierarchies: machines that simulate machines that simulate machines...
 parent machines do not need to trust child machines
 
-don't truncate handler stack upon finding a handler
-      -unwound handlers pop themselves
-derive throw and build on that
-restart lists need to be segmented by interleaved handler pushes
-
-underscore symbol is special (allow it to be repeated as an arg; don't bind it)
-notion of tags separate from types/constructors (and used for dispatch)
-field projection operator
-capabilities/effects
-nicer list syntax using reader macros
-conditions: signals/restarts
-type-error hook
-weak ref
-gc-stable ref (related?: distributed refs)
-getTag primitive for explicit dynamic dispatch
-smarter thunk-creation
-fix future bugs due to lack of Context.withThread where required
-expansion history (fix) and attributes for definitions
+================================================================
+= types
+================================================================
 optional automatic downcasting with warnings
-interpreter-agnostic expression evaluation
-thread interaction with delays, module-loading, etc.
-AST pretty-printing
-debugging inspector
-
+thunk/strict-typing
+capabilities/effects
 structs/tuples
 records/row-typing
 constancy vs. mutability
           -type annotations that include regions?
           -to freeze existing values, copy/pray? (hope for optimization)
-thunk/strict-typing
 
+================================================================
+= startup
+================================================================
+current startup sequence
+        boot script builds core module from primitives (optionally skip)
+        start user program with core (with primitives if boot is skipped)
+future startup options
+        1. run a boot script to build a basic program image from primitives
+        2. load and execute an existing image (possibly with less privileges)
+
+================================================================
+= future
+================================================================
 dependency analysis
            -driving the eval order of non-sequenced exprs/typedefs
            -searching mutually-recursive modules for missing dependencies
@@ -103,14 +139,6 @@ OOP:
 reflection:
   -show field names
   -show field names with short or full value descriptions
-
-================================================================
-= disorganized ideas
-================================================================
-ffi?:
-networking
-filesystem/stdio/os
-threads/processes/signals?
 
 deferred compiler/interpreter (eval instead of compile for pure interpreters):
 given a list of inputs assumed present at compile-time;

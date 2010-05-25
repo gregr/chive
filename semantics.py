@@ -187,7 +187,10 @@ def primFile(ctx0, path, nspace):
     # todo: path lookup
     FileSource(fromNspace(nspace), fromString(path)).eval(evaluate)
     return final(unit)
-# todo: _compound-iface, _import, _inline, _text
+@primproc('_import', symTy, anyTy, nspaceTy, unitTy)
+def primImport(ctx0, sym, val, nspace):
+    fromNspace(nspace).define(sym, val); return final(unit)
+# todo: _compound-iface, _inline, _text
 # @primproc('_ctx-ns', ctxTy, nspaceTy)
 # def primCtxNspace(ctx0, ctx): return final(toNspace(fromCtx(ctx).nspace))
 # @primproc('_ns-ctx', nspaceTy, ctxTy)
