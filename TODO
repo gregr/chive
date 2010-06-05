@@ -26,7 +26,7 @@ debugging inspector
           should not require eval to operate on local environments
                  eval should operate on namespaces
           therefore needs implementation-specific introspection privileges
-expansion history (fix) and attributes for definitions
+expansion history (fix) and source annotations for definitions
 
 ================================================================
 = modules

@@ -13,25 +13,20 @@
 # limitations under the License.
 
 from expr import *
-from syntax import toAttr, fromAttr
 from data import *
 
-def attr_head(attr):
-    if fromAttr(attr).subs is nil: return attr
-    else: return cons_head(fromAttr(attr).subs)
-def attr_tail(attr):
-    if fromAttr(attr).subs is nil: return nil
-    else: return cons_tail(fromAttr(attr).subs)
-def withSubCtx(f, ctx, attr, xs):
-    ctx = ctx.copy(); ctx.attr = attr; ctx.hist = ctx.hist.newSub()
+def src_head(src):
+    if src.sub: return src.sub[0]
+    return src
+def withSubCtx(f, ctx, src, xs):
+    ctx = ctx.copy(); ctx.src = src; ctx.hist = ctx.hist.newSub()
     return f(ctx, xs)
 def headSubCtx(f, ctx, xs):
-    return withSubCtx(f, ctx, attr_head(ctx.attr), cons_head(xs))
+    return withSubCtx(f, ctx, src_head(ctx.src), cons_head(xs))
 def mapRest(f, ctx, xs):
     xs0 = list(fromList(cons_tail(xs), ctx))
-    attr0 = list(fromList(attr_tail(ctx.attr), ctx))
-    attr0 += [ctx.attr]*(len(xs0)-len(attr0))
-    return [f(ctx, aa, xx) for aa, xx in zip(attr0, xs0)]
+    src0 = ctx.src.sub[1:]; src0 += (ctx.src,)*(len(xs0)-len(src0))
+    return [f(ctx, aa, xx) for aa, xx in zip(src0, xs0)]
 def checkIsForm(ctx, xs):
     if not formTy.contains(getTy(xs)):
         typeErr(ctx, "invalid form: '%s'"%pretty(xs))
@@ -62,10 +57,10 @@ def _expand(ctx, xs):
             def wrap(ctx_, xx): return synclo_maybe(ctx, ctx_, xx)
             def wrapSub(ctx, aa, xx): return aa, wrap(*expand(ctx, aa, xx))
             rest = mapRest(wrapSub, ctx, xs)
-            if rest: attr1, xs1 = list(zip(*rest))
-            else: attr1, xs1 = [], []
-            xs = cons(wrap(hdCtx, hd), toList(xs1)); ctx = ctx.copyAttr()
-            fromAttr(ctx.attr).subs = cons(attr_head(ctx.attr), toList(attr1))
+            if rest: src1, xs1 = list(zip(*rest))
+            else: src1, xs1 = [], []
+            xs = cons(wrap(hdCtx, hd), toList(xs1)); ctx = ctx.copy()
+#            fromSrc(ctx.src).subs = cons(src_head(ctx.src), toList(src1))
         else:
             ex = litExpanders.get(getTy(xs))
             if ex is not None: ctx, xs = ex(ctx, xs); continue
@@ -97,10 +92,10 @@ def _semantize(ctx, xs):
     elif xs is nil: return unitExpr
     else: typeErr(ctx, "invalid symbolic expression: '%s'"%pretty(xs))
 
-def expand(ctx, attr, xs): return withSubCtx(_expand, ctx, attr, xs)
-def semantize(ctx, attr, xs): return _semantize(*expand(ctx, attr, xs))
-def evaluate(ctx, attr, xs, ty=None):
-    xs = semantize(ctx, attr, xs); return evalExpr(ctx, xs, ty)
+def expand(ctx, src, xs): return withSubCtx(_expand, ctx, src, xs)
+def semantize(ctx, src, xs): return _semantize(*expand(ctx, src, xs))
+def evaluate(ctx, src, xs, ty=None):
+    xs = semantize(ctx, src, xs); return evalExpr(ctx, xs, ty)
 
 def semproc(name):
     def install(f): addPrim(name, toSem(f)); return f
@@ -114,17 +109,14 @@ def primproc(name, *tys):
 def stripOuterSynClo(xs):
     while isSynClo(xs): xs = synclo_form(xs)
     return xs
-def fromAttrs(ctx, attr, num):
-    null = toAttr(fromAttr(attr).copy())
-    attrs = tuple(fromList(fromAttr(attr).subs, ctx))
-    return attrs + (null,)*(num-len(attrs))
+def fromSrcs(ctx, src, num): return src.sub + (src,)*(num-len(src.sub))
 # todo: semArgsTy
-def fromAttrForm(ctx, formAttr):
-    attr, form = formAttr; ctx1, form = syncloExpand(ctx, form)
+def fromSrcForm(ctx, formSrc):
+    src, form = formSrc; ctx1, form = syncloExpand(ctx, form)
     forms = tuple(synclo_maybe(ctx, ctx1, el) for el in fromList(form, ctx1))
-    return tuple(zip(fromAttrs(ctx1, attr, len(forms)), forms))
+    return tuple(zip(fromSrcs(ctx1, src, len(forms)), forms))
 def semArgs(ctx, form, numArgs):
-    args = fromAttrForm(ctx, (ctx.attr, form))
+    args = fromSrcForm(ctx, (ctx.src, form))
     if len(args)-1 != numArgs:
         typeErr(ctx, "semantic '%s' takes %d arguments but was given %d"%
                 (pretty(cons_head(form)), numArgs, len(args)-1))
@@ -140,12 +132,12 @@ def semUnbox(ctx, form):
 @primproc('_expand', ctxTy, formTy, formTy)
 def primExpand(ctx0, ctx, form):
     ctx = fromCtx(ctx).withThread(ctx0.thread)
-    ctx, form = expand(ctx, ctx.attr, form)
+    ctx, form = expand(ctx, ctx.src, form)
     return final(synclo_new(toCtx(ctx), nil, form))
 @primproc('_eval', ctxTy, formTy, anyTy)
 def primEval(ctx0, ctx, form):
     ctx = fromCtx(ctx).withThread(ctx0.thread)
-    return final(evaluate(ctx, ctx.attr, form, anyTy))
+    return final(evaluate(ctx, ctx.src, form, anyTy))
 @primproc('_alias', symTy, symTy)
 def primAlias(ctx0, sym): return final(alias_new(sym))
 def repackSymbols(names):
@@ -218,7 +210,7 @@ def semCatchUnwind(ctx, form):
 @semproc('_seq')
 def semSeq(ctx, form):
     return Seq(tuple(semantize(ctx, *afrm)
-               for afrm in fromAttrForm(ctx, (ctx.attr, form))[1:]))
+               for afrm in fromSrcForm(ctx, (ctx.src, form))[1:]))
 def toTy(ctx, form):
     ctx, form = expand(ctx, *form)
     if not isSymbol(form): typeErr(ctx, "invalid type name: '%s'"%form)
@@ -233,9 +225,9 @@ def semDelay(ctx, form):
 def semConsProc(ctx, form):
     binders, body = semArgs(ctx, form, 2)
     vars = []; paramts = []; bodyCtx = ctx.extendSyntax()
-    for binder in fromAttrForm(ctx, binders):
+    for binder in fromSrcForm(ctx, binders):
         if isListCons(binder[1]):
-            (_,var),ty = tuple(fromAttrForm(ctx, binder)); ty = toTy(ctx, ty)
+            (_,var),ty = tuple(fromSrcForm(ctx, binder)); ty = toTy(ctx, ty)
         else: var = binder[1]; ty = anyTy
         if not isSymbol(var): # todo: synclo?
             typeErr(ctx, "invalid proc binder: '%s'"%pretty(var))
@@ -247,19 +239,19 @@ unboxDen = primDen('_unbox')
 def semSwitch(ctx, form):
     discrim, alts = semArgs(ctx, form, 2)
     default = None; dalts = {}
-    for alt in fromAttrForm(ctx, alts):
-        matches, body = tuple(fromAttrForm(ctx, alt))
+    for alt in fromSrcForm(ctx, alts):
+        matches, body = tuple(fromSrcForm(ctx, alt))
         body = semantize(ctx, *body)
         if matches[1] is nil:
             if default is not None:
                 typeErr(ctx, 'switch can only have one default')
             default = body
         else:
-            for patAttr, pat in fromAttrForm(ctx, matches):
+            for patSrc, pat in fromSrcForm(ctx, matches):
                 pat = stripOuterSynClo(pat)
-                if isSymbol(pat): pat = toTy(ctx, (patAttr, pat))
+                if isSymbol(pat): pat = toTy(ctx, (patSrc, pat))
                 elif isListCons(pat):
-                    xpat = tuple(fromAttrForm(ctx, (patAttr, pat)))
+                    xpat = tuple(fromSrcForm(ctx, (patSrc, pat)))
                     if len(xpat) != 2:
                         typeErr(ctx, "invalid pattern: '%s'"%pretty(pat))
                     (_,ubsym), (_,val) = xpat
@@ -273,16 +265,16 @@ def semLet(ctx, form):
     immed, nonrec, rec, body = semArgs(ctx, form, 4)
     immedCtx = ctx.extendSyntax(); bodyCtx = immedCtx.extendSyntax()
     immeds = []; recs = []; nonrecs = []
-    for binding in fromAttrForm(ctx, immed):
-        (_, binder), rhs = tuple(fromAttrForm(ctx, binding))
+    for binding in fromSrcForm(ctx, immed):
+        (_, binder), rhs = tuple(fromSrcForm(ctx, binding))
         immeds.append((EnvKey(newDen(immedCtx, binder)), rhs))
     for binder, rhs in immeds: ctx.env.add(binder, evaluate(immedCtx, *rhs))
-    for binding in fromAttrForm(ctx, nonrec):
-        (_, binder), rhs = tuple(fromAttrForm(ctx, binding))
+    for binding in fromSrcForm(ctx, nonrec):
+        (_, binder), rhs = tuple(fromSrcForm(ctx, binding))
         nonrecs.append((EnvKey(newDen(bodyCtx, binder)),
                         semantize(immedCtx, *rhs)))
-    for binding in fromAttrForm(ctx, rec):
-        (_, binder), rhs = tuple(fromAttrForm(ctx, binding))
+    for binding in fromSrcForm(ctx, rec):
+        (_, binder), rhs = tuple(fromSrcForm(ctx, binding))
         recs.append([EnvKey(newDen(bodyCtx, binder)), rhs])
     for recp in recs: recp[1] = semantize(bodyCtx, *recp[1])
     return Let(nonrecs, recs, semantize(bodyCtx, *body))
@@ -361,8 +353,8 @@ from syntax import ParseError, Parser
 from data import Env, makeStream, unit
 def interact(thread, mod):
     result = [unit]
-    def evalPrint(ctx, attr, expr):
-        res = evaluate(ctx.withThread(thread), attr, expr)
+    def evalPrint(ctx, src, expr):
+        res = evaluate(ctx.withThread(thread), src, expr)
         result[0] = res; print(pretty(res))
     for stream in interactStreams('%s> '%mod.name):
         try: DirectStreamSource(mod.nspace, mod.name, stream).eval(evalPrint)
@@ -372,8 +364,8 @@ def interact(thread, mod):
     print(''); return result[0]
 def evalFile(thread, mod, absPath):
     result = [unit]
-    def evalSave(ctx, attr, expr):
-        result[0] = evaluate(ctx.withThread(thread), attr, expr)
+    def evalSave(ctx, src, expr):
+        result[0] = evaluate(ctx.withThread(thread), src, expr)
     FileSource(mod.nspace, absPath).eval(evalSave)
     return result[0]
 # def debugErr(exc, ctx, expr): # todo: exit without resume?

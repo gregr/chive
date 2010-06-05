@@ -17,7 +17,7 @@ from collections import namedtuple
 import re
 
 class ParseError(Exception): pass
-def parseErr(attr, msg): raise ParseError(attr, msg)
+def parseErr(src, msg): raise ParseError(src, msg)
 nullTerm = (object(), object())
 def makeIdent(_, s): # strip escapes
     return symbol('\\'.join(ss.replace('\\', '') for ss in s.split('\\\\')))
@@ -31,16 +31,16 @@ def makeOp(parser, s):
     if op is None: return NullOp(sym)
     return op
 def makeExpr(terms, exprSrc=None):
-    if terms: srcs, dats = tuple(zip(*terms))
-    else: srcs, dats = [], []
-    return SrcTerm(exprSrc, SrcTerms(srcs)), toList(dats)
+    if terms: srcs, dats = list(zip(*terms))
+    else: srcs, dats = (), ()
+    return SrcTerm(exprSrc, srcs), toList(dats)
 def makeExprNonSingle(terms, exprSrc=None):
     if len(terms) > 1: return makeExpr(terms, exprSrc)
     elif len(terms) == 1: return terms[0]
     return nullTerm
 def mkTerm(f):
     def termMaker(parser, cs):
-        return (SrcTerm(parser.stream.popRgn(), None), f(parser, cs))
+        return (SrcTerm(parser.stream.popRgn(), ()), f(parser, cs))
     return termMaker
 def makeTokClass(tokSpec): return (re.compile(tokSpec[0]), mkTerm(tokSpec[1]))
 def makeTokClasses(tokSpecs): return [makeTokClass(c) for c in tokSpecs]
@@ -60,7 +60,6 @@ tokClassesDelimiter = makeTokClasses((
 tokClassesAll = tokClassesNonDelimiter+tokClassesDelimiter
 SrcRgn = namedtuple('SrcRgn', 'name lines start end')
 SrcTerm = namedtuple('SrcTerm', 'rgn sub')
-SrcTerms = namedtuple('SrcTerms', 'rest')
 class Stream:
     def __init__(self, name, ios, row=1, col=0):
         self.name = name
@@ -264,6 +263,7 @@ def parenExpr(parser, ch): return parser.bracketedExpr(')')
 def commentLine(parser, ch):
     parser.stream.getln(); parser.stream.popRgn(); parser.stream.putln('\n')
     return nullTerm
+def stdParser(ops, stream): return Parser(ops, stdDispatchers.copy(), stream)
 ################################################################
 # testing
 def _test(s):

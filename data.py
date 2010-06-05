@@ -252,18 +252,15 @@ class History:
     def show(self):
         return '\n'.join(map(pretty, chain(self.main, [self.final])))
 class Context: # current file resolution dir
-    def __init__(self, root, thread, nspace, ops, senv, env, attr, hist=None):
+    def __init__(self, root, thread, nspace, ops, senv, env, src, hist=None):
         self.root = root; self.thread = thread; self.nspace = nspace
         self.ops = ops; self.senv = senv; self.env = env
-        self.attr = attr; self.hist = hist or History()
+        self.src = src; self.hist = hist or History()
     def __eq__(self, rhs): return self._cmp() == rhs._cmp()
     def _cmp(self): return (self.ops, self.senv)
     def copy(self):
         return Context(self.root, self.thread, self.nspace,
-                       self.ops, self.senv, self.env, self.attr, self.hist)
-    def copyAttr(self):
-        ctx = self.copy(); ctx.attr = toAttr(fromAttr(ctx.attr).copy())
-        return ctx
+                       self.ops, self.senv, self.env, self.src, self.hist)
     def withThread(self, thread):
         ctx = self.copy(); ctx.thread = thread; return ctx
     def extendSyntax(self, ops=False):
@@ -296,25 +293,6 @@ def resolvePath(searchPaths, path):
         if os.path.exists(ap): break
         ap = None
     os.chdir(curdir); return ap
-# class OldModule:
-#     def __init__(self, name, path, stream, root):
-#         self.name = name; self.path = path; self.root = root
-#         self.curNS = Namespace(root); self.setStream(stream)
-#     def __iter__(self):
-#         for expr, attr in self.exprs: yield (attr, expr)
-#         self.active = False
-#     def setStream(self, stream):
-#         if stream is None: self.exprs = (); self.active = False; return
-#         self.exprs = Parser(self.curNS.ctx.ops).parse(self.name, stream)
-#         self.active = True
-#     def isActive(self): return self.active
-#     def resolvePath(self, searchPaths, path):
-#         return resolvePath(chain((self.path,), searchPaths), path)
-#     def getFileModule(self, ctx, path):
-#         path = self.resolvePath(path)
-#         if path is None:
-#             typeErr(ctx, "unable to resolve module path: '%s'"%path)
-#         return self.root.getFileModule(path)
 class Module:
     gnames = nameGen(['top'])
     def __init__(self, iface, nspace):
@@ -371,8 +349,8 @@ class DirectSource(Source):
     def exprs(self): return self._exprs
 class StreamSource(Source):
     def exprs(self): # todo: configurable parser
-        parser = Parser(self.nspace.ctx.ops)
-        for ex, at in parser.parse(self.name(), self.stream()): yield (at, ex)
+        stream = Stream(self.name(), self.stream())
+        parser = stdParser(self.nspace.ctx.ops, stream); return parser.parse()
 class DirectStreamSource(StreamSource):
     def __init__(self, nspace, name, stream):
         super().__init__(nspace); self._name = name; self._stream = stream
@@ -406,18 +384,6 @@ class Root:
         self.tlsInit[key] = Thunk(ctx, code)
     def emptyModule(self):
         return Module(ExportInterface((),(),()), Namespace(self))
-#     def moduleFromCtx(self, name, ctx):
-#         ctx = ctx.extendSyntax(True); mod = self.rawModule(name, False)
-#         mod.curNS.ctx = ctx; ctx.nspace = mod.curNS; return mod
-# #        mod = self.rawModule(name, False); mod.curNS.ctx = ctx; return mod
-#     def getFileModule(self, fpath):
-#         name = EnvKey(symbol(fpath)); mod = self.modules.get(name)
-#         if mod is None:
-#             mod = self._makeModule(name, os.path.dirname(fpath),
-#                                    fileStream(fpath))
-#             self.modules[name] = mod
-#         elif mod.isActive(): typeErr(None, "module self-dependency: '%s'"%name)
-#         return mod
 def interactStream(prompt):
     import readline
     from io import StringIO
@@ -431,7 +397,6 @@ def interactStreams(prompt):
 ################################################################
 # primitives
 def node(ty, *args): return ty.new(*args)
-#primMod = OldModule(EnvKey(symbol_new('primitives')), '', None, None)
 primNS = Namespace(None); primCtx = primNS.ctx
 def addPrim(name, val):
     print('adding primitive:', name)
@@ -547,7 +512,7 @@ def isMacro(v): return isTyped(v) and getTy(v) is macroTy
 def macro_proc(mac): return macroTy.unpackEl(mac, 0)
 def applyMacro(ctx, mac, form):
     args = PrimVal(macro_proc(mac)), [PrimVal(toCtx(ctx)), PrimVal(form)]
-    return ctx.copyAttr(), evalExpr(*applyFull(ctx, *args))
+    return ctx.copy(), evalExpr(*applyFull(ctx, *args))
 ubSemanticTy, semanticTy, toSem, fromSem = basicTy('Semantic', object)
 def isSemantic(v): return isTyped(v) and getTy(v) is semanticTy
 def applySemantic(ctx, sem, form): return fromSem(sem)(ctx, form)
@@ -665,4 +630,4 @@ class DepGraph:
             self.finish(name)
         return components
 
-from syntax import toAttr, fromAttr, Parser, newOperator # todo: syntax is already dependent on this module
+from syntax2 import *# todo: syntax is already dependent on this module
