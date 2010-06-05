@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from data import *
+from collections import namedtuple
 import re
 
 class ParseError(Exception): pass
@@ -27,18 +28,19 @@ def makeChar(_, s): return toChar(eval(s))
 def makeString(_, s): return toString(eval(s))
 def makeOp(parser, s):
     sym = makeIdent(parser, s); op = parser.ops.get(EnvKey(sym))
-    if op is None: return NullOp(sym) # todo
+    if op is None: return NullOp(sym)
     return op
-def makeExpr(terms):
+def makeExpr(terms, exprSrc=None):
     if terms: srcs, dats = tuple(zip(*terms))
     else: srcs, dats = [], []
-    return srcs, toList(dats)
-def makeExprNonSingle(terms):
-    if len(terms) > 1: return makeExpr(terms)
+    return SrcTerm(exprSrc, SrcTerms(srcs)), toList(dats)
+def makeExprNonSingle(terms, exprSrc=None):
+    if len(terms) > 1: return makeExpr(terms, exprSrc)
     elif len(terms) == 1: return terms[0]
     return nullTerm
 def mkTerm(f):
-    def termMaker(parser, cs): return (parser.stream.popHist(), f(parser, cs))
+    def termMaker(parser, cs):
+        return (SrcTerm(parser.stream.popRgn(), None), f(parser, cs))
     return termMaker
 def makeTokClass(tokSpec): return (re.compile(tokSpec[0]), mkTerm(tokSpec[1]))
 def makeTokClasses(tokSpecs): return [makeTokClass(c) for c in tokSpecs]
@@ -56,6 +58,9 @@ tokClassesDelimiter = makeTokClasses((
         (operPat, makeOp),
         ))
 tokClassesAll = tokClassesNonDelimiter+tokClassesDelimiter
+SrcRgn = namedtuple('SrcRgn', 'name lines start end')
+SrcTerm = namedtuple('SrcTerm', 'rgn sub')
+SrcTerms = namedtuple('SrcTerms', 'rest')
 class Stream:
     def __init__(self, name, ios, row=1, col=0):
         self.name = name
@@ -78,9 +83,9 @@ class Stream:
         try: self.putln(self.getln())
         except StopIteration: return True
         return False
-    def popHist(self):
+    def popRgn(self):
         newLoc = (self.row, self.col)
-        src = (self.name, ''.join(self.lineHist), self.locHist, newLoc)
+        src = SrcRgn(self.name, ''.join(self.lineHist), self.locHist, newLoc)
         if self.lineBuf is None: self.lineHist = []
         else: self.lineHist = self.lineHist[-1:]
         self.locHist = newLoc; return src
@@ -111,7 +116,7 @@ class Parser:
         sline = None
         while not sline:
             if self.stream.empty(): self.delimit(); return -1
-            self.stream.popHist()
+            self.stream.popRgn()
             line = self.stream.getln(); sline = line.lstrip()
             if sline == '\\\n': sline = ''
             else: newlines += 1
@@ -127,7 +132,7 @@ class Parser:
             elif term is not nullTerm: terms.append(term)
         self.delimit();
         if hasOp: return makeExprNonSingle(terms)
-        return mkExpr(terms)
+        return mkExpr(terms, self.stream.popRgn())
     def indentedExpr(self, curIndent):
         @memoTrue
         def eoeIndented():
@@ -257,7 +262,7 @@ def stddisp(chs):
 def parenExpr(parser, ch): return parser.bracketedExpr(')')
 @stddisp('##')
 def commentLine(parser, ch):
-    parser.stream.getln(); parser.stream.popHist(); parser.stream.putln('\n')
+    parser.stream.getln(); parser.stream.popRgn(); parser.stream.putln('\n')
     return nullTerm
 ################################################################
 # testing

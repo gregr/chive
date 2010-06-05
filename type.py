@@ -54,7 +54,6 @@ def typed(ty, val, const=None):
     rgn = Region(); tv = [rgn, ty, val]
     if const: rgn.constant()
     return tv
-#def typed(ty, val): return (ty, val)
 def getRgn(val): return val[0]
 def getTy(val): return val[1]
 def getVal(val): return val[2]
