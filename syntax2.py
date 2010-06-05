@@ -84,7 +84,6 @@ class Stream:
         if self.lineBuf is None: self.lineHist = []
         else: self.lineHist = self.lineHist[-1:]
         self.locHist = newLoc; return src
-
 def memoTrue(f):
     state = [False]
     def memo(*args):
@@ -113,7 +112,9 @@ class Parser:
         while not sline:
             if self.stream.empty(): self.delimit(); return -1
             self.stream.popHist()
-            line = self.stream.getln(); sline = line.lstrip(); newlines += 1
+            line = self.stream.getln(); sline = line.lstrip()
+            if sline == '\\\n': sline = ''
+            else: newlines += 1
         self.stream.putln(sline); diff = len(line)-len(sline)
         if newlines > 0 or diff > 0: self.delimit()
         if newlines > 0: return diff
@@ -241,7 +242,10 @@ def newOperator(name, fixity, assoc, prec):
 ################################################################
 # standard dispatch
 stdDispatchers = {}
-def dispAgain(parser, ch): return parser.dispatch(ch)
+def dispAgain(parser, ch):
+    f = parser.dispatch(ch)
+    if f is None: parseErr(None, "invalid reader dispatch '%s'"%ch)
+    return f
 def addStdDisp(chs, f):
     while chs:
         assert chs not in stdDispatchers or stdDispatchers[chs] is dispAgain
