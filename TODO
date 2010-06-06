@@ -99,13 +99,11 @@ parent machines do not need to trust child machines
 = types
 ================================================================
 optional automatic downcasting with warnings
-thunk/strict-typing
-capabilities/effects
 structs/tuples
 records/row-typing
-constancy vs. mutability
-          -type annotations that include regions?
-          -to freeze existing values, copy/pray? (hope for optimization)
+capabilities/effects
+constant/mutable regions
+lifted/unlifted regions
 
 ================================================================
 = startup

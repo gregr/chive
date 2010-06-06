@@ -33,13 +33,19 @@ def mem_toList(mem, sz): off, dat = mem; return dat[off:off+sz]
 ################################################################
 # regions
 class Region:
-    def __init__(self): self._mutable = None
+    def __init__(self): self._mutable = None; self._lifted = None
     def mutable(self):
         if self._mutable == False: typeErr(None, 'mutable(): constant region')
         self._mutable = True
     def constant(self):
         if self._mutable: typeErr(None, 'constant(): mutable region')
         self._mutable = False
+    def lifted(self):
+        if self._lifted == False: typeErr(None, 'lifted(): unlifted region')
+        self._lifted = True
+    def unlifted(self):
+        if self._lifted: typeErr(None, 'unlifted(): lifted region')
+        self._lifted = False
     def __str__(self):
         if self._mutable: return 'Mutable'
         elif self._mutable == False: return 'Constant'
@@ -50,9 +56,11 @@ class TyError(Exception): pass
 def typeErr(ctx, msg): raise TyError(ctx, msg)
 def isTyped(val): return (isinstance(val, list) and len(val)>0 and
                           isinstance(getTy(val), Type))
-def typed(ty, val, const=None):
+def typed(ty, val, const=None, lifted=False):
     rgn = Region(); tv = [rgn, ty, val]
     if const: rgn.constant()
+    if lifted: rgn.lifted()
+    else: rgn.unlifted()
     return tv
 def getRgn(val): return val[0]
 def getTy(val): return val[1]
@@ -170,13 +178,6 @@ class BoxedType(Type):
     def pack(self, mem, offset, box):
         if self.checkTy(box): getVal(box).expectTy(self)
         mem_write(mem, offset, box)
-class StrictType(BoxedType):
-    def __init__(self, ty): self.ty = ty
-    def __getattr__(self, attr): return getattr(self.ty, attr)
-    def __str__(self): return '$%s' % str(self.ty)
-    def checkTy(self, val):
-        if isinstance(getTy(val), ThunkType): return False
-        self.ty.checkTy(val)
 class AnyType(BoxedType):
     def contains(self, ty, tenv=None): return isinstance(ty, BoxedType)
     def __str__(self): return 'Any'
@@ -230,7 +231,7 @@ class ProductType(NodeType):
     def __str__(self): return str(self.name)
 class ThunkType(NodeType):
     def __init__(self, name): self.name = name
-    def new(self, thunk): return typed(self, thunk)
+    def new(self, thunk): return typed(self, thunk, lifted=True)
     def __str__(self): return '%s::thunk'%self.name
 def isThunk(v): return isTyped(v) and isinstance(getTy(v), ThunkType)
 class ProcType(NodeType):

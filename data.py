@@ -182,7 +182,7 @@ class Thunk:
         return evalExpr(self.ctx.withThread(ctx.thread), self.code, self.ty)
     def force(self, ctx, box):
         if self.ctx is not None: self.code = self._eval(ctx)
-        box[:] = self.code[:]; return self.code
+        box[:] = self.code[:]; return box
 def force(ctx, box):
     if isThunk(box): box = getVal(box).force(ctx, box)
     return box

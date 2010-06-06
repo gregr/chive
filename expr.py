@@ -109,7 +109,9 @@ class NodeAccess(Access):
     def __init__(self, ty, index, node, ctx):
         ty.checkIndex(index, 'node index out of bounds:')
         self.ty = ty; self.index = index; self.node = node
-    def _evalNode(self, ctx): return evalExpr(ctx, self.node, self.ty)
+    def _evalNode(self, ctx):
+        node = evalExpr(ctx, self.node, self.ty); getRgn(node).unlifted()
+        return node
     def freeVars(self): return self.node.freeVars()
     def subst(self, subs): self.node.subst(subs)
 class NodeUnpack(NodeAccess):
@@ -125,7 +127,9 @@ class NodePack(NodeAccess):
 # array operations
 class ArrayAccess(Access):
     def __init__(self, ty, arr): self.ty = ty; self.arr = arr
-    def _evalArr(self, ctx): return evalExpr(ctx, self.arr, self.ty)
+    def _evalArr(self, ctx):
+        arr = evalExpr(ctx, self.arr, self.ty); getRgn(arr).unlifted()
+        return arr
     def freeVars(self): return self.arr.freeVars()
     def subst(self, subs): self.arr.subst(subs)
 class ArrayAccessIndex(ArrayAccess):
