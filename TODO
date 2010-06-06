@@ -15,7 +15,6 @@ limitations under the License.
 ================================================================
 readtable-based parsing
 nicer list syntax using reader macros
-underscore symbol is special (allow it to be repeated as an arg; don't bind it)
 notion of tags separate from types/constructors (and used for dispatch)
 getTag primitive for explicit dynamic dispatch
 field projection operator

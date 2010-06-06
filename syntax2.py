@@ -20,7 +20,9 @@ class ParseError(Exception): pass
 def parseErr(src, msg): raise ParseError(src, msg)
 nullTerm = (object(), object())
 def makeIdent(_, s): # strip escapes
-    return symbol('\\'.join(ss.replace('\\', '') for ss in s.split('\\\\')))
+    sym = symbol('\\'.join(ss.replace('\\', '') for ss in s.split('\\\\')))
+    if s == '_': sym = alias_new(sym) # each non-escaped underscore is unique
+    return sym
 def makeIdentOp(_, s): return makeIdent(s[1:-1])
 def makeInt(_, s): return toInt(int(s)) # todo: Iu32, Is32, etc.
 def makeFloat(_, s): return toFloat(float(s))
