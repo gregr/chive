@@ -41,23 +41,35 @@ _def _def-macro (Macro (_proc (ctx form)
    ((squote Macro):((squote _proc):(tl (tl form))):Nil):Nil)))
 _def-macro _def-proc (ctx form)
   ((squote _def):(hd (tl form)):((squote _proc):(tl (tl form))):Nil)
+
+_def-proc foldr-list (f rhs xs)
+  _switch xs
+    (((Nil) rhs)
+     ((\:) (f (hd xs) (foldr-list f rhs (tl xs)))))
+
+_def-proc read-list-form (parser chs)
+  foldr-list (_proc (fst rst) (squote (:):fst:rst:Nil))
+    squote Nil
+    _read-bracketed-form parser "]"
+_def-reader "[" read-list-form
+
 _def-proc id (x) x
 _def-proc rev-append (xs ys)
   _switch ys
     (((Nil) xs)
      ((\:) (rev-append (hd ys:xs) (tl ys))))
 _def-proc reverse (xs) (rev-append Nil xs)
-_def-proc map (f xs)
+_def-proc map-list (f xs)
   _switch xs
     (((Nil) Nil)
-     ((\:) (f (hd xs):map f (tl xs))))
+     ((\:) (f (hd xs):map-list f (tl xs))))
 _def-proc strip-synclo (frm)
   _switch frm (((SynClo) (synclo-form frm)) (() frm))
 _def-proc strip-synclos (frm)
-  _switch frm (((\:) (map strip-synclos frm))
+  _switch frm (((\:) (map-list strip-synclos frm))
                ((SynClo) (strip-synclos (strip-synclo frm)))
                (() frm))
-_def-macro _locals (ctx form) ((squote _ctx-env):(quote (_ctx)):Nil)
+_def-macro _locals (ctx form) [(squote _ctx-env) (quote (_ctx))]
 _def-types
   Bool (_Ty-Variant True False)
   True (_Ty-Product)
@@ -69,8 +81,7 @@ _def-proc httl (xs) (hd (ttl xs))
 _def-proc htttl (xs) (hd (tttl xs))
 _def-macro _if (ctx form)
   _let () ((cnd (htl form)) (cnsq (httl form)) (altrn (htttl form))) ()
-    ((squote _switch):cnd:
-     ((squote (True):cnsq:Nil):(squote (False):altrn:Nil):Nil):Nil)
+    [(squote _switch) cnd [[(squote (True)) cnsq] [(squote (False)) altrn]]]
 _def-proc gensym (_) (_alias (quote \_gsym))
 _def-types (Ref (_Ty-Product Any))
 _def-proc ref-get (ref) (_node-unpack Ref 0 ref)
@@ -78,14 +89,13 @@ _def-proc ref-set (ref val) (_node-pack Ref 0 ref val)
 
 _def-macro _def-tl-data (ctx form)
   _let () ((name (htl form)) (body (httl form))
-           (key (((squote quote):gensym ():Nil)))) ()
-    ((squote _seq):((squote _def):name:key:Nil):
-     ((squote _init-tl-data):key:body:Nil):Nil)
+           (key ([(squote quote) (gensym ())]))) ()
+    [(squote _seq) [(squote _def) name key] [(squote _init-tl-data) key body]]
 
 ## todo: review the following
 _def-proc default-cond-handler (cnd continue unravel) (unravel ())
 
-_def-tl-data cond-handler-state (Ref (default-cond-handler:Nil))
+_def-tl-data cond-handler-state (Ref [default-cond-handler])
 _def-proc get-cond-handler-state (_) (_get-tl-data cond-handler-state)
 _def-proc get-cond-handlers (_) (ref-get (_get-tl-data cond-handler-state))
 _def-proc push-cond-handler (c-h)
@@ -96,7 +106,7 @@ _def-proc pop-cond-handler (_)
     ref-set ref (tl (ref-get ref))
 _def-proc set-cond-handlers (hs) (ref-set (get-cond-handler-state ()) hs)
 
-_def-tl-data restart-state (Ref Nil)
+_def-tl-data restart-state (Ref [])
 _def-proc get-restarts (_) (_get-tl-data restart-state)
 _def-proc push-restarts (restarts)
   _let () ((ref (get-restarts ()))) ()
@@ -114,12 +124,11 @@ _def-proc signal (cnd) (apply-cond-handler cnd (get-cond-handlers ()))
 
 _def-macro bind-cond-handler (ctx form)
   _let () ((body (htl form)) (handler (httl form)) (altern (htttl form))
-           (pop ((squote pop-cond-handler):Nil:Nil)) (val (gensym ()))) ()
-    ((squote _seq):((squote push-cond-handler):handler:Nil):
-     ((squote _catch-unwind):
-      ((squote _let):Nil:((val:body:Nil):Nil):Nil:
-       ((squote _seq):pop:val:Nil):Nil):
-      ((squote _seq):pop:altern:Nil):Nil):Nil)
+           (pop [(squote pop-cond-handler) []]) (val (gensym ()))) ()
+    [(squote _seq) [(squote push-cond-handler) handler]
+     [(squote _catch-unwind)
+      [(squote _let) [] [[val body]] [] [(squote _seq) pop val]]
+      [(squote _seq) pop altern]]]
 
 _def tc-result (Ref ())
 _def-proc test-cond (xs ys)
@@ -132,13 +141,12 @@ _def-proc test-cond (xs ys)
       (_seq (ref-set tc-result (quote alt0)) (unravel ())))
     37
 
-_def core-iface (_export (quote core:quote primitives:quote test:Nil) ("[":Nil))
+_def core-iface
+  _export [(quote core) (quote primitives) (quote test)] ["["]
 _def core-ns (_namespace ())
 _def core (_module core-iface core-ns)
 _open primitives core-ns
 _file "core.chive" core-ns
 _import (quote core) core core-ns
 
-_def-proc read-list-form (parser chs) (_read-bracketed-form parser "]")
-_def-reader "[" read-list-form
 core ## final result of bootstrap

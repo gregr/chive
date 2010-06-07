@@ -359,14 +359,13 @@ def wrapReader(proc):
         result = evalExpr(*applyDirect(parser.ctx, proc,
                                        (toParser(parser), toString(chs))))
         if result is unit: result = nullTerm
-        elif isTerm(result): return fromTerm(result)
         else: return (termSrc(parser), result)
     return wrapped
-@primproc('_read-bracketed-form', parserTy, stringTy, termTy)
+@primproc('_read-bracketed-form', parserTy, stringTy, formTy)
 def primReadBracketedForm(ctx0, parser, closeBracket):
     closeBracket = fromString(closeBracket)
-    return final(toTerm(fromParser(parser).bracketedExpr(closeBracket)))
-# todo: expose parser primitives
+    return final(fromParser(parser).bracketedExpr(closeBracket)[1])
+# todo: expose other parser primitives
 ################################################################
 # interaction
 from lex import LexError

@@ -650,6 +650,3 @@ from syntax2 import *# todo: syntax is already dependent on this module
 for chs, reader in stdDispatchers.bindings().items():
     primNS.defReader(chs, reader)
 ubParserTy, parserTy, toParser, fromParser = basicTy('Parser', Parser)
-#Term = namedtuple('Term', 'src dat')
-ubTermTy, termTy, toTerm, fromTerm = basicTy('Term', object)
-def isTerm(val): return isTyped(val) and getTy(val) is termTy
