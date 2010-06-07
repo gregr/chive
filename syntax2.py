@@ -265,7 +265,6 @@ def parenExpr(parser, ch): return parser.bracketedExpr(')')
 def commentLine(parser, ch):
     parser.stream.getln(); parser.stream.popRgn(); parser.stream.putln('\n')
     return nullTerm
-def stdParser(ops, stream): return Parser(ops, stdDispatchers.copy(), stream)
 ################################################################
 # testing
 def _test(s):

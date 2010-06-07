@@ -252,15 +252,18 @@ class History:
     def show(self):
         return '\n'.join(map(pretty, chain(self.main, [self.final])))
 class Context: # current file resolution dir
-    def __init__(self, root, thread, nspace, ops, senv, env, src, hist=None):
+    def __init__(self, root, thread, nspace, readers, ops, senv, env,
+                 src, hist=None):
         self.root = root; self.thread = thread; self.nspace = nspace
-        self.ops = ops; self.senv = senv; self.env = env
+        self.readers = readers; self.ops = ops
+        self.senv = senv; self.env = env
         self.src = src; self.hist = hist or History()
     def __eq__(self, rhs): return self._cmp() == rhs._cmp()
     def _cmp(self): return (self.ops, self.senv)
     def copy(self):
         return Context(self.root, self.thread, self.nspace,
-                       self.ops, self.senv, self.env, self.src, self.hist)
+                       self.readers, self.ops, self.senv, self.env,
+                       self.src, self.hist)
     def withThread(self, thread):
         ctx = self.copy(); ctx.thread = thread; return ctx
     def extendSyntax(self, ops=False):
@@ -283,7 +286,7 @@ def bindVar(ctx, sym, val): ctx.env.add(EnvKey(getDen(ctx, sym)), val)
 def defVar(ctx, sym, ty): ctx.nspace.define(sym, ty)
 defTy = defVar
 def freshCtx(root, nspace):
-    return Context(root, None, nspace, Env(), Env(), Root.env, None)
+    return Context(root, None, nspace, Env(), Env(), Env(), Root.env, None)
 ################################################################
 # modules
 def resolvePath(searchPaths, path):
@@ -299,8 +302,11 @@ class Module:
         self.iface = iface; self.nspace = nspace; self.name = next(self.gnames)
     def names(self): return self.iface.names(self.nspace) # todo: syntax/lexes
     def resolve(self, sym): return self.iface.resolve(self.nspace, sym)
+    def readerStrs(self): return self.iface.readerStrs(self.nspace)
     def openIn(self, nspace): # todo: lexables
         for nm in self.names(): nspace.refer(self.nspace.ctx, nm.sym)
+        for chs in self.readerStrs():
+            nspace.defReader(chs, self.nspace.ctx.readers.get(chs))
 # generalize to ModifiedModule?
 # HidingModule
 # class RenamedModule:
@@ -313,16 +319,18 @@ class Interface: pass
 class FullInterface(Interface): # only use internally?
     def names(self, nspace): return nspace.names()
     def resolve(self, nspace, sym): return nspace.resolve(sym)
+    def readerStrs(self, nspace): return nspace.readerStrs()
 class ExportInterface(Interface):
-    def __init__(self, valueSyms, syntaxSyms, lexables):
+    def __init__(self, valueSyms, syntaxSyms, readerStrs):
         syntaxNames = set(map(EnvKey, syntaxSyms))
         self.vns = set(map(EnvKey, valueSyms))|syntaxNames
-        self.sns = syntaxNames; self.lexes = lexables
+        self.sns = syntaxNames; self.readerStrs = set(readerStrs)
     def names(self, nspace): return self.vns
     def resolve(self, nspace, sym):
         if EnvKey(sym) in self.vns: return nspace.resolve(sym)
         else: typeErr(None, "no resolution for symbol '%s'; exports: '%s'"
                       %(EnvKey(sym), self.names()))
+    def readerStrs(self, nspace): return self.readerStrs
 class CompoundInterface(Interface):
     def __init__(self, ifaces): self.ifaces = ifaces
     def names(self, nspace):
@@ -331,14 +339,19 @@ class CompoundInterface(Interface):
         for ifc in self.ifaces:
             val = ifc.resolve(nspace, sym)
             if val is not None: return val
+    def readerStrs(self, nspace):
+        return reduce(set.union,
+                      (ifc.readerStrs(nspace) for ifc in self.ifaces))
 class Namespace:
     def __init__(self, root): self.ctx = freshCtx(root, self)
     def names(self): return self.ctx.senv.bindings().keys()
     def resolve(self, sym): return getVar(self.ctx, sym)
+    def readerStrs(self): return self.ctx.readers.bindings().keys()
     def refer(self, ctxFrom, symFrom, symTo=None):
         referVar(ctxFrom, self.ctx, symFrom, symTo)
     def define(self, sym, val): bindVar(self.ctx, sym, val)
     def defOp(self, sym, op): self.ctx.ops.add(EnvKey(sym), op)
+    def defReader(self, chs, reader): self.ctx.readers.add(chs, reader)
 class Source:
     def __init__(self, nspace): self.nspace = nspace
     def eval(self, evaluate): # todo: only eval on demand
@@ -350,7 +363,8 @@ class DirectSource(Source):
 class StreamSource(Source):
     def exprs(self): # todo: configurable parser
         stream = Stream(self.name(), self.stream())
-        parser = stdParser(self.nspace.ctx.ops, stream); return parser.parse()
+        parser = Parser(self.nspace.ctx.ops, self.nspace.ctx.readers, stream)
+        return parser.parse()
 class DirectStreamSource(StreamSource):
     def __init__(self, nspace, name, stream):
         super().__init__(nspace); self._name = name; self._stream = stream
@@ -631,3 +645,4 @@ class DepGraph:
         return components
 
 from syntax2 import *# todo: syntax is already dependent on this module
+for chs, reader in stdDispatchers.items(): primNS.defReader(chs, reader)
