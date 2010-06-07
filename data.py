@@ -171,6 +171,8 @@ def applyFull(ctx, proc, args):
         if isProc(proc): cprc, args = getVal(proc).apply(ctx, args)
         else: typeErr(ctx, "cannot apply non-procedure: '%s'"%pretty(proc))
     return cprc
+def applyDirect(ctx, proc, args):
+    return applyFull(ctx, PrimVal(proc), tuple(PrimVal(arg) for arg in args))
 ################################################################
 # thunks
 class Thunk:
@@ -351,7 +353,7 @@ class Namespace:
         referVar(ctxFrom, self.ctx, symFrom, symTo)
     def define(self, sym, val): bindVar(self.ctx, sym, val)
     def defOp(self, sym, op): self.ctx.ops.add(EnvKey(sym), op)
-    def defReader(self, chs, reader): self.ctx.readers.add(chs, reader)
+    def defReader(self, chs, reader): addDisp(chs, reader, self.ctx.readers)
 class Source:
     def __init__(self, nspace): self.nspace = nspace
     def eval(self, evaluate): # todo: only eval on demand
@@ -363,7 +365,7 @@ class DirectSource(Source):
 class StreamSource(Source):
     def exprs(self): # todo: configurable parser
         stream = Stream(self.name(), self.stream())
-        parser = Parser(self.nspace.ctx.ops, self.nspace.ctx.readers, stream)
+        parser = Parser(self.nspace.ctx, stream)
         return parser.parse()
 class DirectStreamSource(StreamSource):
     def __init__(self, nspace, name, stream):
@@ -645,4 +647,9 @@ class DepGraph:
         return components
 
 from syntax2 import *# todo: syntax is already dependent on this module
-for chs, reader in stdDispatchers.items(): primNS.defReader(chs, reader)
+for chs, reader in stdDispatchers.bindings().items():
+    primNS.defReader(chs, reader)
+ubParserTy, parserTy, toParser, fromParser = basicTy('Parser', Parser)
+#Term = namedtuple('Term', 'src dat')
+ubTermTy, termTy, toTerm, fromTerm = basicTy('Term', object)
+def isTerm(val): return isTyped(val) and getTy(val) is termTy

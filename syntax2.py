@@ -29,7 +29,7 @@ def makeFloat(_, s): return toFloat(float(s))
 def makeChar(_, s): return toChar(eval(s))
 def makeString(_, s): return toString(eval(s))
 def makeOp(parser, s):
-    sym = makeIdent(parser, s); op = parser.ops.get(EnvKey(sym))
+    sym = makeIdent(parser, s); op = parser.ctx.ops.get(EnvKey(sym))
     if op is None: return NullOp(sym)
     return op
 def makeExpr(terms, exprSrc=None):
@@ -40,9 +40,10 @@ def makeExprNonSingle(terms, exprSrc=None):
     if len(terms) > 1: return makeExpr(terms, exprSrc)
     elif len(terms) == 1: return terms[0]
     return nullTerm
+def termSrc(parser): return SrcTerm(parser.stream.popRgn(), ())
 def mkTerm(f):
     def termMaker(parser, cs):
-        return (SrcTerm(parser.stream.popRgn(), ()), f(parser, cs))
+        return (termSrc(parser), f(parser, cs))
     return termMaker
 def makeTokClass(tokSpec): return (re.compile(tokSpec[0]), mkTerm(tokSpec[1]))
 def makeTokClasses(tokSpecs): return [makeTokClass(c) for c in tokSpecs]
@@ -78,7 +79,8 @@ class Stream:
         assert self.lenHist is not None
         assert self.lineBuf is None, self.lineBuf
         self.col = self.lenHist-len(line); self.lineBuf = line; self.row-=1
-    def getch(self): line = self.getln(); self.putln(line[1:]); return line[0]
+    def getch(self, num=1):
+        line = self.getln(); self.putln(line[num:]); return line[:num]
     def putch(self, ch): line = ch+self.getln(''); self.putln(line)
     def empty(self):
         try: self.putln(self.getln())
@@ -97,8 +99,8 @@ def memoTrue(f):
         return state[0]
     return memo
 class Parser:
-    def __init__(self, ops, dispatchers, stream):
-        self.ops = ops; self.dispatchers = dispatchers; self.stream = stream
+    def __init__(self, ctx, stream):
+        self.ctx = ctx; self.stream = stream
         self.indent = None; self.pendingTerm = None
     def parse(self):
         self.indent = self.skipSpace(0)
@@ -110,7 +112,7 @@ class Parser:
             self.tokClasses = tokClassesAll
         else: self.tokClasses = tokClassesDelimiter
     def dispatch(self, ch=''):
-        chs = ch+self.stream.getch(); proc = self.dispatchers.get(chs)
+        chs = ch+self.stream.getch(); proc = self.ctx.readers.get(chs)
         if proc is not None: return proc(self, chs)
         self.stream.putch(chs); return None
     def skipSpace(self, newlines=-1):
@@ -149,7 +151,7 @@ class Parser:
             if self.pendingTerm is not None: return False
             indent = self.skipSpace()
             if indent == -1: parseErr(None, 'unexpected end of stream')
-            ch = self.stream.getch()
+            ch = self.stream.getch(len(closeBracket))
             if ch == closeBracket: return True
             self.stream.putch(ch); return False
         return self.expr(eoeBracketed, makeExpr)
@@ -247,15 +249,17 @@ def newOperator(name, fixity, assoc, prec):
     return fixities[fixity](name, assoc, prec)
 ################################################################
 # standard dispatch
-stdDispatchers = {}
+stdDispatchers = Env()
 def dispAgain(parser, ch):
     f = parser.dispatch(ch)
     if f is None: parseErr(None, "invalid reader dispatch '%s'"%ch)
     return f
-def addStdDisp(chs, f):
+def addDisp(chs, f, dispatchers):
     while chs:
-        assert chs not in stdDispatchers or stdDispatchers[chs] is dispAgain
-        stdDispatchers[chs] = f; chs = chs[:-1]; f = dispAgain
+        disp = dispatchers.get(chs)
+        assert disp is None or disp is dispAgain, disp
+        dispatchers.add(chs, f); chs = chs[:-1]; f = dispAgain
+def addStdDisp(chs, f): return addDisp(chs, f, stdDispatchers)
 def stddisp(chs):
     def mkDisp(f): addStdDisp(chs, f); return f
     return mkDisp
@@ -284,7 +288,9 @@ def _test(s):
     for op in ops:
         opName = symbol(op[0])
         opsTable.add(EnvKey(opName), newOperator(opName, *op[1:]))
-    parser = Parser(opsTable, stdDispatchers, Stream('test', StringIO(s)))
+    FakeCtx = namedtuple('FakeCtx', 'ops readers')
+    parser = Parser(FakeCtx(opsTable, stdDispatchers),
+                    Stream('test', StringIO(s)))
     for src, dat in parser.parse(): print(src, ':\n', pretty(dat))
 
 if __name__ == '__main__':

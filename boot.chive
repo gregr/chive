@@ -132,11 +132,13 @@ _def-proc test-cond (xs ys)
       (_seq (ref-set tc-result (quote alt0)) (unravel ())))
     37
 
-_def core-iface (_export (quote core:quote primitives:quote test:Nil))
+_def core-iface (_export (quote core:quote primitives:quote test:Nil) ("[":Nil))
 _def core-ns (_namespace ())
 _def core (_module core-iface core-ns)
 _open primitives core-ns
 _file "core.chive" core-ns
 _import (quote core) core core-ns
 
+_def-proc read-list-form (parser chs) (_read-bracketed-form parser "]")
+_def-reader "[" read-list-form
 core ## final result of bootstrap

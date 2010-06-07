@@ -166,9 +166,10 @@ def primModNames(ctx0, mod):
 @primproc('_mod-resolve', modTy, symTy, anyTy)
 def primModResolve(ctx0, mod, sym): return final(fromMod(mod).resolve(sym))
 # todo: interface (exports?) and namespace (components?) introspection
-@primproc('_export', listTy, ifaceTy)
-def primExport(ctx0, names):
-    return final(toIface(ExportInterface(fromList(names), (), ())))
+@primproc('_export', listTy, listTy, ifaceTy)
+def primExport(ctx0, names, readerStrs):
+    rss = tuple(fromString(rs) for rs in fromList(readerStrs))
+    return final(toIface(ExportInterface(fromList(names), (), rss)))
 @primproc('_namespace', unitTy, nspaceTy)
 def primNspace(ctx0, _): return final(toNspace(Namespace(ctx0.root)))
 @primproc('_open', modTy, nspaceTy, unitTy)
@@ -346,6 +347,26 @@ def semDefOp(ctx, form):
     name, fixity, assoc, prec = tuple(zip(*semArgs(ctx, form, 4)))[1]
     op = newOperator(name, symbol_name(fixity), assoc, fromInt(prec))
     ctx.nspace.defOp(name, op); return unitExpr
+@semproc('_def-reader')
+def semDefReader(ctx, form):
+    (_, readStr), body = semArgs(ctx, form, 2)
+    ctx.nspace.defReader(fromString(readStr), wrapReader(evaluate(ctx, *body)))
+    return unitExpr
+################################################################
+# parser
+def wrapReader(proc):
+    def wrapped(parser, chs):
+        result = evalExpr(*applyDirect(parser.ctx, proc,
+                                       (toParser(parser), toString(chs))))
+        if result is unit: result = nullTerm
+        elif isTerm(result): return fromTerm(result)
+        else: return (termSrc(parser), result)
+    return wrapped
+@primproc('_read-bracketed-form', parserTy, stringTy, termTy)
+def primReadBracketedForm(ctx0, parser, closeBracket):
+    closeBracket = fromString(closeBracket)
+    return final(toTerm(fromParser(parser).bracketedExpr(closeBracket)))
+# todo: expose parser primitives
 ################################################################
 # interaction
 from lex import LexError

@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
-readtable-based parsing
+reader-related primitives
 nicer list syntax using reader macros
 notion of tags separate from types/constructors (and used for dispatch)
 getTag primitive for explicit dynamic dispatch
