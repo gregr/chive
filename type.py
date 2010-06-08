@@ -65,7 +65,6 @@ def typed(ty, val, const=None, lifted=False):
 def getRgn(val): return val[0]
 def getTy(val): return val[1]
 def getVal(val): return val[2]
-def getDiscrim(val): return getTy(val).discrim(val)
 class Type:
     def contains(self, ty, tenv=None): return self is ty
     def checkTy(self, val):
@@ -88,7 +87,6 @@ class Type:
     def packEl(self, agg, idx, val):
         getRgn(agg).mutable(); self.checkTy(agg)
         elt, off = self.index(idx); elt.pack(getVal(agg), off, val)
-    def discrim(self, val): raise NotImplementedError
     def finiteDesc(self, seen): return [str(self)]
     def __str__(self): raise NotImplementedError
     def __repr__(self): return '<%s %s>'%(self.__class__.__name__, self)
@@ -112,7 +110,6 @@ class ScalarType(AtomicUnboxedType):
         if not self.pred(val):
             typeErr(None, "invalid scalar '%s'"%repr(val))
         return typed(self, val)
-    def discrim(self, val): return val
     def __str__(self): return str(self.name)
 class PyType(ScalarType):
     def __init__(self, name, pyty):
@@ -199,7 +196,6 @@ class VariantType(BoxedType):
             return all(self.contains(rhs, tenv) for rhs in ty.elts)
         else: return any(elt.contains(ty) for elt in self.elts)
 class NodeType(BoxedType):
-    def discrim(self, val): return getTy(val)
     def contains(self, ty, tenv=None): return ty is self
 class ProductType(NodeType):
     def __init__(self, name, elts=None, fields=(), const=None):

@@ -206,7 +206,7 @@ class Switch(Expr):
     def freeVars(self): return accFreeVars(self._children())
     def subst(self, subs): mapSubst(subs, self._children())
     def eval(self, ctx):
-        discrim = getDiscrim(evalExpr(ctx, self.discrim))
+        discrim = getVal(evalExpr(ctx, self.discrim))
         body = self.alts.get(discrim)
         if body is None: body = self.default
         return cont(ctx, body)

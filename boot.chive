@@ -16,15 +16,13 @@ _def-op (:) infix right 5
 _def hd (_proc (xs) (_node-unpack (:) 0 xs))
 _def tl (_proc (xs) (_node-unpack (:) 1 xs))
 _def synclo-form (_proc (sc) (_node-unpack SynClo 2 sc))
-_def testSwitch
-  _switch (1:2:Nil)
-    (((Nil) 3) ((\:) 4))
 _def _quote-sym (Macro (_proc (ctx form)
   ((SynClo (_ctx) Nil (Symbol (_unbox Symbol))):
    ((SynClo (_ctx) Nil (Symbol (_unbox _unbox))):(hd (tl form)):Nil):Nil)))
 _def _quote
   _proc (xs)
-    _switch xs
+    _switch
+      _node-tag xs
       ((() xs)
        ((Symbol) ((SynClo (_ctx) Nil (_quote-sym _quote-sym)):xs:Nil))
        ((Nil) (SynClo (_ctx) Nil (_quote-sym Nil)))
@@ -43,7 +41,8 @@ _def-macro _def-proc (ctx form)
   ((squote _def):(hd (tl form)):((squote _proc):(tl (tl form))):Nil)
 
 _def-proc foldr-list (f rhs xs)
-  _switch xs
+  _switch
+    _node-tag xs
     (((Nil) rhs)
      ((\:) (f (hd xs) (foldr-list f rhs (tl xs)))))
 
@@ -55,20 +54,26 @@ _def-reader "[" read-list-form
 
 _def-proc id (x) x
 _def-proc rev-append (xs ys)
-  _switch ys
+  _switch
+    _node-tag ys
     (((Nil) xs)
      ((\:) (rev-append (hd ys:xs) (tl ys))))
 _def-proc reverse (xs) (rev-append Nil xs)
 _def-proc map-list (f xs)
-  _switch xs
+  _switch
+    _node-tag xs
     (((Nil) Nil)
      ((\:) (f (hd xs):map-list f (tl xs))))
 _def-proc strip-synclo (frm)
-  _switch frm (((SynClo) (synclo-form frm)) (() frm))
+  _switch
+    _node-tag frm
+    (((SynClo) (synclo-form frm)) (() frm))
 _def-proc strip-synclos (frm)
-  _switch frm (((\:) (map-list strip-synclos frm))
-               ((SynClo) (strip-synclos (strip-synclo frm)))
-               (() frm))
+  _switch
+    _node-tag frm
+    (((\:) (map-list strip-synclos frm))
+     ((SynClo) (strip-synclos (strip-synclo frm)))
+     (() frm))
 _def-macro _locals (ctx form) [(squote _ctx-env) (quote (_ctx))]
 _def-types
   Bool (_Ty-Variant True False)
@@ -81,7 +86,8 @@ _def-proc httl (xs) (hd (ttl xs))
 _def-proc htttl (xs) (hd (tttl xs))
 _def-macro _if (ctx form)
   _let () ((cnd (htl form)) (cnsq (httl form)) (altrn (htttl form))) ()
-    [(squote _switch) cnd [[(squote (True)) cnsq] [(squote (False)) altrn]]]
+    [(squote _switch) [(squote _node-tag) cnd]
+     [[(squote (True)) cnsq] [(squote (False)) altrn]]]
 _def-proc gensym (_) (_alias (quote \_gsym))
 _def-types (Ref (_Ty-Product Any))
 _def-proc ref-get (ref) (_node-unpack Ref 0 ref)

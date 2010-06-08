@@ -291,6 +291,17 @@ def semNodeUnpack(ctx, form):
 def semNodePack(ctx, form):
     *rest, rhs = semArgs(ctx, form, 4); rhs = semantize(ctx, *rhs)
     return NodePack(rhs, *semNodeAccess(ctx, *rest))
+@primproc('_node-tag', anyTy, tyTy)
+def primNodeTag(ctx0, node): return final(ubTyTy.new(getTy(node)))
+@primproc('_tag-pattern', ctxTy, symTy, listTy)
+def primTagPattern(ctx0, ctx, tagSym):
+    result = nil; tag = getVar(fromCtx(ctx), tagSym)
+    if tag is not None:
+        if isType(tag):
+            ty = type_type(tag)
+            if isinstance(ty, ProductType):
+                result = toList([tag, toList([gensym() for _ in ty.elts])])
+    return final(result)
 ################################################################
 # arrays
 @semproc('_array-new') # todo: capacity hint?
