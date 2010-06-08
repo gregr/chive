@@ -281,17 +281,21 @@ def semLet(ctx, form):
     return Let(nonrecs, recs, semantize(bodyCtx, *body))
 ################################################################
 # nodes
-def semNodeAccess(ctx, ty, idx, node):
-    ty = toTy(ctx, ty); idx = evaluate(ctx, *idx, ty=intTy)
-    node = semantize(ctx, *node); return ty, fromInt(idx), node, ctx
-@semproc('_node-unpack')
+def semNodeAccess(ctx, ty, node):
+    ty = toTy(ctx, ty); node = semantize(ctx, *node); return ty, node
+def semNodeIndex(ctx, ty, idx, node):
+    ty, node = semNodeAccess(ctx, ty, node)
+    if isinstance(ty, ProductType): idx = fromInt(evaluate(ctx, *idx, ty=intTy))
+    else: idx = semantize(ctx, *idx)
+    return idx, ty, node
+@semproc('_unpack')
 def semNodeUnpack(ctx, form):
-    return NodeUnpack(*semNodeAccess(ctx, *semArgs(ctx, form, 3)))
-@semproc('_node-pack')
+    return NodeUnpack(*semNodeIndex(ctx, *semArgs(ctx, form, 3)))
+@semproc('_pack')
 def semNodePack(ctx, form):
     *rest, rhs = semArgs(ctx, form, 4); rhs = semantize(ctx, *rhs)
-    return NodePack(rhs, *semNodeAccess(ctx, *rest))
-@primproc('_node-tag', anyTy, tyTy)
+    return NodePack(rhs, *semNodeIndex(ctx, *rest))
+@primproc('_tag', anyTy, tyTy)
 def primNodeTag(ctx0, node): return final(ubTyTy.new(getTy(node)))
 @primproc('_tag-pattern', ctxTy, symTy, listTy)
 def primTagPattern(ctx0, ctx, tagSym):
@@ -300,46 +304,35 @@ def primTagPattern(ctx0, ctx, tagSym):
         if isType(tag):
             ty = type_type(tag)
             if isinstance(ty, ProductType):
-                result = toList([tag, toList([gensym() for _ in ty.elts])])
+                result = toList([tag, toList([toInt(idx) for idx in
+                                              range(ty.numIndices())])])
     return final(result)
 ################################################################
 # arrays
 @semproc('_array-new') # todo: capacity hint?
 def semArrayNew(ctx, form):
     ty = toTy(ctx, semArgs(ctx, form, 1)[0]); return ConsArray(ty, ctx)
-def semArrayAccess(ctx, ty, node):
-    ty = toTy(ctx, ty); node = semantize(ctx, *node); return ty, node
 @semproc('_array-length')
 def semArrayLength(ctx, form):
-    return ArrayLength(*semArrayAccess(ctx, *semArgs(ctx, form, 2)))
+    return ArrayLength(*semNodeAccess(ctx, *semArgs(ctx, form, 2)))
 @semproc('_array-pop')
 def semArrayPop(ctx, form):
-    return ArrayPop(*semArrayAccess(ctx, *semArgs(ctx, form, 2)))
+    return ArrayPop(*semNodeAccess(ctx, *semArgs(ctx, form, 2)))
 @semproc('_array-push')
 def semArrayPush(ctx, form):
     *rest, rhs = semArgs(ctx, form, 3); rhs = semantize(ctx, *rhs)
     return ArrayPush(rhs, *semArrayAccess(ctx, *rest))
-def semArrayAccessIndex(ctx, ty, idx, node):
-    ty = toTy(ctx, ty); idx = semantize(ctx, *idx)
-    node = semantize(ctx, *node); return idx, ty, node
-@semproc('_array-unpack')
-def semArrayUnpack(ctx, form):
-    return ArrayUnpack(*semArrayAccessIndex(ctx, *semArgs(ctx, form, 3)))
-@semproc('_array-pack')
-def semArrayPack(ctx, form):
-    *rest, rhs = semArgs(ctx, form, 4); rhs = semantize(ctx, *rhs)
-    return ArrayPack(rhs, *semArrayAccessIndex(ctx, *rest))
-def semArrayAccessSlice(ctx, ty, start, end, node):
+def semSlice(ctx, ty, start, end, node):
     start = semantize(ctx, *start); end = semantize(ctx, *end)
-    ty = toTy(ctx, ty); node = semantize(ctx, *node)
+    ty, node = semNodeAccess(ctx, ty, node)
     return start, end, ty, node
-@semproc('_array-slice-unpack')
-def semArraySliceUnpack(ctx, form):
-    return ArraySliceUnpack(*semArrayAccessSlice(ctx, *semArgs(ctx, form, 4)))
-@semproc('_array-slice-pack')
-def semArraySlicePack(ctx, form):
+@semproc('_slice-unpack')
+def semSliceUnpack(ctx, form):
+    return ArraySliceUnpack(*semSlice(ctx, *semArgs(ctx, form, 4)))
+@semproc('_slice-pack')
+def semSlicePack(ctx, form):
     *rest, rhs = semArgs(ctx, form, 5); rhs = semantize(ctx, *rhs)
-    return ArraySlicePack(rhs, *semArrayAccessSlice(ctx, *rest))
+    return ArraySlicePack(rhs, *semSlice(ctx, *rest))
 ################################################################
 # definitions
 @semproc('_def-types')

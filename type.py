@@ -197,6 +197,8 @@ class VariantType(BoxedType):
         else: return any(elt.contains(ty) for elt in self.elts)
 class NodeType(BoxedType):
     def contains(self, ty, tenv=None): return ty is self
+    def checkBounds(self, ctx, node, idx): pass
+    def __str__(self): return str(self.name)
 class ProductType(NodeType):
     def __init__(self, name, elts=None, fields=(), const=None):
         self.name = name; self.const = const
@@ -224,7 +226,6 @@ class ProductType(NodeType):
         for elt, arg in zip(self.elts, args):
             elt.pack(mem, offset, arg); offset += elt.size()
         return typed(self, mem, self.const)
-    def __str__(self): return str(self.name)
 class ThunkType(NodeType):
     def __init__(self, name): self.name = name
     def new(self, thunk): return typed(self, thunk, lifted=True)
@@ -264,6 +265,15 @@ class SpecificProcType(ProcType):
 def currySpecificProcType(name, paramts, rett):
     return curryProcType(paramts, rett,
                          (lambda *args: SpecificProcType(name, *args)))
+class TableType(NodeType):
+    def __init__(self, name, keyt): self.name = name; self.keyt = keyt
+    def new(self): return typed(self, {})
+    def checkKey(self, key):
+        if not self.keyt.contains(getTy(key)):
+            typeErr(None, "%s with key type '%s' indexed with invalid key '%s'"
+                    %(self, self.keyt, key))
+def tableGet(tab, key): getTy(tab).checkKey(key); return getVal(tab).get(key)
+def tableAdd(tab, key, val): getTy(tab).checkKey(key); getVal(tab)[key] = val
 class ArrayType(NodeType):
     def __init__(self, name, elt): self.name = name; self.elt = elt
     def checkBounds(self, ctx, arr, idx):
@@ -274,7 +284,6 @@ class ArrayType(NodeType):
     def index(self, idx): return self.elt, (idx*self.elt.size() + atomicSize)
     def new(self):
         arr = typed(self, mem_alloc(atomicSize)); arrSetLen(arr, 0); return arr
-    def __str__(self): return str(self.name)
 # todo: shrink at 1/4?
 def arrElSize(arr): return getTy(arr).elt.size()
 def arrIdx(arr, idx): return getTy(arr).index(idx)[1]

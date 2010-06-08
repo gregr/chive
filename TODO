@@ -13,8 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
-notion of tags separate from types/constructors (and used for dispatch)
-getTag primitive for explicit dynamic dispatch
+extensible dynamic dispatch
 field projection operator
 AST pretty-printing
 no ad-hoc local environment or namespace access

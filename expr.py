@@ -104,52 +104,43 @@ def bindTypes(ctx, consTyForms):
     for expr in exprs: expr.eval(ctx)
 ################################################################
 class Access(Expr): pass
-# node operations
+# in semantics rename node to data; add table
 class NodeAccess(Access):
-    def __init__(self, ty, index, node, ctx):
-        ty.checkIndex(index, 'node index out of bounds:')
-        self.ty = ty; self.index = index; self.node = node
+    def __init__(self, ty, node): self.ty = ty; self.node = node
     def _evalNode(self, ctx):
         node = evalExpr(ctx, self.node, self.ty); getRgn(node).unlifted()
         return node
     def freeVars(self): return self.node.freeVars()
     def subst(self, subs): self.node.subst(subs)
-class NodeUnpack(NodeAccess):
-    def eval(self, ctx):
-        return final(self.ty.unpackEl(self._evalNode(ctx), self.index))
-class NodePack(NodeAccess):
-    def __init__(self, rhs, *args): super().__init__(*args); self.rhs = rhs
-    def freeVars(self): return super().freeVars()+self.rhs.freeVars()
-    def subst(self, subs): super().subst(subs); self.rhs.subst(subs)
-    def eval(self, ctx):
-        rh = evalExpr(ctx, self.rhs)
-        self.ty.packEl(self._evalNode(ctx), self.index, rh); return final(unit)
-# array operations
-class ArrayAccess(Access):
-    def __init__(self, ty, arr): self.ty = ty; self.arr = arr
-    def _evalArr(self, ctx):
-        arr = evalExpr(ctx, self.arr, self.ty); getRgn(arr).unlifted()
-        return arr
-    def freeVars(self): return self.arr.freeVars()
-    def subst(self, subs): self.arr.subst(subs)
-class ArrayAccessIndex(ArrayAccess):
-    def __init__(self, idx, *args): super().__init__(*args); self.idx = idx
-    def freeVars(self): return super().freeVars()+self.idx.freeVars()
-    def subst(self, subs): super().subst(subs); self.idx.subst(subs)
+class NodeIndex(NodeAccess):
+    def __init__(self, idx, *args):
+        super().__init__(*args); self.idx = idx
+        if isinstance(self.idx, int):
+            self.ty.checkIndex(self.idx, "'%s' index %d out of bounds"%
+                               (self.ty, self.idx))
+    def freeVars(self):
+        idx = not isinstance(self.idx, int) and self.idx.freeVars() or set()
+        return super().freeVars()+idx
+    def subst(self, subs):
+        super().subst(subs)
+        if not isinstance(self.idx, int): self.idx.subst(subs)
     def _eval(self, ctx):
-        arr = self._evalArr(ctx); idx = fromInt(evalExpr(ctx, self.idx, intTy))
-        self.ty.checkBounds(ctx, arr, idx); return arr, idx
-class ArrayUnpack(ArrayAccessIndex):
-    def eval(self, ctx):
-        arr, idx = self._eval(ctx); return final(getTy(arr).unpackEl(arr, idx))
-class ArrayPack(ArrayAccessIndex):
+        node = self._evalNode(ctx); idx = self.idx
+        if not isinstance(idx, int):
+            idx = getVal(self.ty.keyt.unpackEl(evalExpr(ctx, idx), 0))
+        self.ty.checkBounds(ctx, node, idx); return node, idx
+class NodeUnpack(NodeIndex):
+    def eval(self, ctx): return final(self.ty.unpackEl(*self._eval(ctx)))
+class NodePack(NodeIndex):
     def __init__(self, rhs, *args): super().__init__(*args); self.rhs = rhs
     def freeVars(self): return super().freeVars()+self.rhs.freeVars()
     def subst(self, subs): super().subst(subs); self.rhs.subst(subs)
     def eval(self, ctx):
-        arr, idx = self._eval(ctx); rhs = evalExpr(ctx, self.rhs)
-        self.ty.packEl(arr, idx, rhs); return final(unit)
-class ArrayAccessSlice(ArrayAccess):
+        node, idx = self._eval(ctx); rhs = evalExpr(ctx, self.rhs)
+        self.ty.packEl(node, idx, rhs); return final(unit)
+# array operations
+ArrayType.keyt = intTy
+class ArraySlice(NodeAccess):
     def __init__(self, start, end, *args):
         super().__init__(*args); self.start = start; self.end = end
     def freeVars(self):
@@ -157,34 +148,31 @@ class ArrayAccessSlice(ArrayAccess):
     def subst(self, subs):
         super().subst(subs); self.start.subst(subs); self.end.subst(subs)
     def _eval(self, ctx):
-        start = fromInt(evalExpr(ctx, self.start, intTy))
-        end = fromInt(evalExpr(ctx, self.end, intTy))
-        arr = self._evalArr(ctx); self.ty.checkBounds(ctx, arr, start)
-        self.ty.checkBounds(ctx, arr, start); return arr, start, end
-class ArraySliceUnpack(ArrayAccessSlice):
-    def eval(self, ctx):
-        arr, start, end = self._eval(ctx)
-        return final(arrSliceUnpack(ctx, arr, start, end))
-class ArraySlicePack(ArrayAccessSlice):
+        start, end = [fromInt(evalExpr(ctx, idx, intTy))
+                      for idx in (self.start, self.end)]
+        arr = self._evalNode(ctx); arrCheckSlice(ctx, arr, start, end)
+        return arr, start, end
+class ArraySliceUnpack(ArraySlice):
+    def eval(self, ctx): return final(arrSliceUnpack(ctx, *self._eval(ctx)))
+class ArraySlicePack(ArraySlice):
     def __init__(self, rhs, *args): super().__init__(*args); self.rhs = rhs
     def freeVars(self): return super().freeVars()+self.rhs.freeVars()
     def subst(self, subs): super().subst(subs); self.rhs.subst(subs)
     def eval(self, ctx):
-        arr, start, end = self._eval(ctx)
-        rhs = evalExpr(ctx, self.rhs, self.ty)
-        arrSlicePack(ctx, arr, start, end, rhs); return final(unit)
-class ArrayLength(ArrayAccess):
-    def __init__(self, *args): super().__init__(*args)
-    def eval(self, ctx): return final(toInt(arrLen(self._evalArr(ctx))))
-class ArrayPop(ArrayAccess):
-    def __init__(self, *args): super().__init__(*args)
-    def eval(self, ctx): arrPop(ctx, self._evalArr(ctx)); return final(unit)
-class ArrayPush(ArrayAccess):
+        arr, beg, end = self._eval(ctx); rhs = evalExpr(ctx, self.rhs, self.ty)
+        arrSlicePack(ctx, arr, beg, end, rhs); return final(unit)
+class ArrayLength(NodeAccess):
+    def eval(self, ctx): return final(toInt(arrLen(self._evalNode(ctx))))
+class ArrayPop(NodeAccess):
+    def eval(self, ctx): arrPop(ctx, self._evalNode(ctx)); return final(unit)
+class ArrayPush(NodeAccess):
     def __init__(self, rhs, *args): super().__init__(*args); self.rhs = rhs
     def freeVars(self): return super().freeVars()+self.rhs.freeVars()
     def subst(self, subs): super().subst(subs); self.rhs.subst(subs)
     def eval(self, ctx):
-        arrPush(self._evalArr(ctx), evalExpr(ctx,self.rhs)); return final(unit)
+        arrPush(self._evalNode(ctx), evalExpr(ctx, self.rhs))
+        return final(unit)
+# table operators
 ################################################################
 class Seq(Expr):
     def __init__(self, exprs): self.exprs = exprs[:-1]; self.last = exprs[-1]
