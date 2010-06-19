@@ -266,6 +266,8 @@ class Context: # current file resolution dir
         return Context(self.root, self.thread, self.nspace,
                        self.readers, self.ops, self.senv, self.env,
                        self.src, self.hist)
+    def subHist(self):
+        ctx = self.copy(); ctx.hist = ctx.hist.newSub(); return ctx
     def withThread(self, thread):
         ctx = self.copy(); ctx.thread = thread; return ctx
     def extendSyntax(self, ops=False):
@@ -357,7 +359,7 @@ class Namespace:
 class Source:
     def __init__(self, nspace): self.nspace = nspace
     def eval(self, evaluate): # todo: only eval on demand
-        for expr in self.exprs(): evaluate(self.nspace.ctx, *expr)
+        for _, expr in self.exprs(): evaluate(self.nspace.ctx, expr)
 class DirectSource(Source):
     def __init__(self, nspace, exprs):
         super().__init__(nspace); self._exprs = exprs
@@ -505,20 +507,20 @@ def synclo_frees(s): return syncloTy.unpackEl(s, 1)
 def synclo_form(s): return syncloTy.unpackEl(s, 2)
 def applySynCloCtx(ctx, sc):
     ctx = ctx.copy(); scCtx = fromCtx(synclo_ctx(sc)); senv = scCtx.senv
-    frees = fromList(synclo_frees(sc), ctx)
-    if frees:
-        senv = Env(senv)
-        for n in frees:
-            n = EnvKey(n); v = ctx.senv.get(n)
-            if v is not None: senv.extend(n, v)
-    ctx.senv = senv; return ctx
+    src = scCtx.src
+    if src is not None: ctx.src = src
+    if senv is not None:
+        frees = fromList(synclo_frees(sc), ctx)
+        if frees:
+            senv = Env(senv)
+            for n in frees:
+                n = EnvKey(n); v = ctx.senv.get(n)
+                if v is not None: senv.extend(n, v)
+        ctx.senv = senv
+    return ctx
 def syncloExpand(ctx, xs):
     while isSynClo(xs): ctx = applySynCloCtx(ctx, xs); xs = synclo_form(xs)
     return ctx, xs
-def synclo_maybe(ctx0, ctx, form):
-    if ctx0 != ctx and (isSymbol(form) or isListCons(form)):
-        return synclo_new(toCtx(ctx), nil, form)
-    return form
 def primSC(form): return synclo_new(toCtx(primCtx), nil, form)
 ################################################################
 # macros and semantics

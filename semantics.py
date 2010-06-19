@@ -15,18 +15,8 @@
 from expr import *
 from data import *
 
-def src_head(src):
-    if src.sub: return src.sub[0]
-    return src
-def withSubCtx(f, ctx, src, xs):
-    ctx = ctx.copy(); ctx.src = src; ctx.hist = ctx.hist.newSub()
-    return f(ctx, xs)
-def headSubCtx(f, ctx, xs):
-    return withSubCtx(f, ctx, src_head(ctx.src), cons_head(xs))
 def mapRest(f, ctx, xs):
-    xs0 = list(fromList(cons_tail(xs), ctx))
-    src0 = ctx.src.sub[1:]; src0 += (ctx.src,)*(len(xs0)-len(src0))
-    return [f(ctx, aa, xx) for aa, xx in zip(src0, xs0)]
+    return [f(ctx, form) for form in fromList(cons_tail(xs), ctx)]
 def checkIsForm(ctx, xs):
     if not formTy.contains(getTy(xs)):
         typeErr(ctx, "invalid form: '%s'"%pretty(xs))
@@ -38,12 +28,16 @@ def expandBasic(tyn):
 litExpanders = dict((ty, expandBasic(ty.name))
                     for ty in (intTy,floatTy,charTy))
 unitExpr = Var(EnvKey(unitTy.consDen))
+def synclo_maybe(ctx0, ctx, form):
+    if ctx0 != ctx and (isSymbol(form) or isListCons(form)):
+        return synclo_new(toCtx(ctx), nil, form)
+    return form
 def _expand(ctx, xs):
     while True:
-        checkIsForm(ctx, xs) 
+        checkIsForm(ctx, xs)
         ctx, xs = syncloExpand(ctx, xs)
         if isListCons(xs):
-            hdCtx, hd = headSubCtx(_expand, ctx, xs)
+            hdCtx, hd = _expand(ctx.subHist(), cons_head(xs))
             if isSymbol(hd):
                 den = hdCtx.senv.get(EnvKey(hd))
                 if den is not None:
@@ -54,13 +48,9 @@ def _expand(ctx, xs):
                             ctx.hist.add(xs); mfrm = cons(hd, cons_tail(xs))
                             ctx, xs = applyMacro(ctx, val, mfrm)
                             continue
-            def wrap(ctx_, xx): return synclo_maybe(ctx, ctx_, xx)
-            def wrapSub(ctx, aa, xx): return aa, wrap(*expand(ctx, aa, xx))
-            rest = mapRest(wrapSub, ctx, xs)
-            if rest: src1, xs1 = list(zip(*rest))
-            else: src1, xs1 = [], []
-            xs = cons(wrap(hdCtx, hd), toList(xs1)); ctx = ctx.copy()
-#            fromSrc(ctx.src).subs = cons(src_head(ctx.src), toList(src1))
+            wrapped = toList(tuple(synclo_maybe(ctx, *expand(ctx, form))
+                                   for form in fromList(cons_tail(xs), ctx)))
+            xs = cons(synclo_maybe(ctx, hdCtx, hd), wrapped)
         else:
             ex = litExpanders.get(getTy(xs))
             if ex is not None: ctx, xs = ex(ctx, xs); continue
@@ -71,15 +61,15 @@ def _semantize(ctx, xs):
     ctx, xs = syncloExpand(ctx, xs)
     checkIsForm(ctx, xs)
     if isListCons(xs):
-        hdCtx, hd = headSubCtx(syncloExpand, ctx, xs)
+        hdCtx, hd = syncloExpand(ctx, cons_head(xs))
         if isSymbol(hd):
             den = hdCtx.senv.get(EnvKey(hd))
             if den is not None:
                 val = hdCtx.env.get(EnvKey(den))
                 if val is not None and isSemantic(val):
                     return applySemantic(ctx, val, cons(hd, cons_tail(xs)))
-        def semSub(ctx, aa, xx): return withSubCtx(_semantize, ctx, aa, xx)
-        rest = mapRest(semSub, ctx, xs); hd = _semantize(hdCtx, hd)
+        hd = _semantize(hdCtx, hd); rest = fromList(cons_tail(xs), ctx)
+        rest = [_semantize(ctx.subHist(), form) for form in rest]# todo: subHist?
         if isinstance(hd, Apply): hd.args.extend(rest); return hd
         else: return Apply(hd, rest)
     elif isSymbol(xs):
@@ -92,10 +82,10 @@ def _semantize(ctx, xs):
     elif xs is nil: return unitExpr
     else: typeErr(ctx, "invalid symbolic expression: '%s'"%pretty(xs))
 
-def expand(ctx, src, xs): return withSubCtx(_expand, ctx, src, xs)
-def semantize(ctx, src, xs): return _semantize(*expand(ctx, src, xs))
-def evaluate(ctx, src, xs, ty=None):
-    xs = semantize(ctx, src, xs); return evalExpr(ctx, xs, ty)
+def expand(ctx, xs): return _expand(ctx.subHist(), xs)
+def semantize(ctx, xs): return _semantize(*_expand(ctx.subHist(), xs))
+def evaluate(ctx, xs, ty=None):
+    xs = semantize(ctx, xs); return evalExpr(ctx, xs, ty)
 
 def semproc(name):
     def install(f): addPrim(name, toSem(f)); return f
@@ -109,14 +99,13 @@ def primproc(name, *tys):
 def stripOuterSynClo(xs):
     while isSynClo(xs): xs = synclo_form(xs)
     return xs
-def fromSrcs(ctx, src, num): return src.sub + (src,)*(num-len(src.sub))
 # todo: semArgsTy
-def fromSrcForm(ctx, formSrc):
-    src, form = formSrc; ctx1, form = syncloExpand(ctx, form)
+def fromSrcForm(ctx, form):
+    ctx1, form = syncloExpand(ctx, form)
     forms = tuple(synclo_maybe(ctx, ctx1, el) for el in fromList(form, ctx1))
-    return tuple(zip(fromSrcs(ctx1, src, len(forms)), forms))
+    return forms
 def semArgs(ctx, form, numArgs):
-    args = fromSrcForm(ctx, (ctx.src, form))
+    args = fromSrcForm(ctx, form)
     if len(args)-1 != numArgs:
         typeErr(ctx, "semantic '%s' takes %d arguments but was given %d"%
                 (pretty(cons_head(form)), numArgs, len(args)-1))
@@ -131,13 +120,11 @@ def semUnbox(ctx, form):
     return PrimVal(tryUnbox(ctx, form))
 @primproc('_expand', ctxTy, formTy, formTy)
 def primExpand(ctx0, ctx, form):
-    ctx = fromCtx(ctx).withThread(ctx0.thread)
-    ctx, form = expand(ctx, ctx.src, form)
+    ctx, form = expand(fromCtx(ctx).withThread(ctx0.thread), form)
     return final(synclo_new(toCtx(ctx), nil, form))
 @primproc('_eval', ctxTy, formTy, anyTy)
 def primEval(ctx0, ctx, form):
-    ctx = fromCtx(ctx).withThread(ctx0.thread)
-    return final(evaluate(ctx, ctx.src, form, anyTy))
+    return final(evaluate(fromCtx(ctx).withThread(ctx0.thread), form, anyTy))
 @primproc('_alias', symTy, symTy)
 def primAlias(ctx0, sym): return final(alias_new(sym))
 def repackSymbols(names):
@@ -149,8 +136,7 @@ def repackEnvSymbols(env):
 @semproc('_ctx')
 def semContext(ctx, form): semArgs(ctx, form, 0); return PrimVal(toCtx(ctx))
 @primproc('_ctx-env', ctxTy, listTy)
-def primCtxEnv(ctx0, ctx):
-    return final(repackEnvSymbols(fromCtx(ctx).senv))
+def primCtxEnv(ctx0, ctx): return final(repackEnvSymbols(fromCtx(ctx).senv))
 ################################################################
 # modules
 @primproc('_module', ifaceTy, nspaceTy, modTy)
@@ -198,22 +184,22 @@ def primGetTLData(ctx0, key):
     return final(ctx0.thread.getDataTLS(ctx0, EnvKey(key)))
 @semproc('_init-tl-data')
 def semInitTLData(ctx, form):
-    key, body = semArgs(ctx, form, 2); key = EnvKey(evaluate(ctx, *key))
-    ctx.root.setInitTLS(ctx, key, semantize(ctx, *body)); return unitExpr
+    key, body = semArgs(ctx, form, 2); key = EnvKey(evaluate(ctx, key))
+    ctx.root.setInitTLS(ctx, key, semantize(ctx, body)); return unitExpr
 ################################################################
 # control flow
 @semproc('_unwind')
 def semUnwind(ctx, form): semArgs(ctx, form, 0); return Unwind()
 @semproc('_catch-unwind')
 def semCatchUnwind(ctx, form):
-    return CatchUnwind(*tuple(semantize(ctx, *frm)
+    return CatchUnwind(*tuple(semantize(ctx, frm)
                               for frm in semArgs(ctx, form, 2)))
 @semproc('_seq')
 def semSeq(ctx, form):
-    return Seq(tuple(semantize(ctx, *afrm)
-               for afrm in fromSrcForm(ctx, (ctx.src, form))[1:]))
+    return Seq(tuple(semantize(ctx, frm)
+               for frm in fromSrcForm(ctx, form)[1:]))
 def toTy(ctx, form):
-    ctx, form = expand(ctx, *form)
+    ctx, form = expand(ctx, form)
     if not isSymbol(form): typeErr(ctx, "invalid type name: '%s'"%form)
     return type_type(getVar(ctx, form))
 @primproc('_force', anyTy, anyTy)
@@ -221,20 +207,20 @@ def primForce(ctx0, boxed): return final(force(ctx0, boxed))
 @semproc('_delay') # todo: choose whether it's worth making a thunk
 def semDelay(ctx, form):
     return ConsThunk(EnvKey(gensym()),
-                     semantize(ctx, *semArgs(ctx, form, 1)[0]))
+                     semantize(ctx, semArgs(ctx, form, 1)[0]))
 @semproc('_proc')
 def semConsProc(ctx, form):
     binders, body = semArgs(ctx, form, 2)
     vars = []; paramts = []; bodyCtx = ctx.extendSyntax()
     for binder in fromSrcForm(ctx, binders):
-        if isListCons(binder[1]):
-            (_,var),ty = tuple(fromSrcForm(ctx, binder)); ty = toTy(ctx, ty)
-        else: var = binder[1]; ty = anyTy
+        if isListCons(binder):
+            var, ty = tuple(fromSrcForm(ctx, binder)); ty = toTy(ctx, ty)
+        else: var = binder; ty = anyTy
         if not isSymbol(var): # todo: synclo?
             typeErr(ctx, "invalid proc binder: '%s'"%pretty(var))
         vars.append(EnvKey(newDen(bodyCtx, var))); paramts.append(ty)
     return ConsProc(EnvKey(gensym()), vars,
-                    semantize(bodyCtx, *body), paramts, None)
+                    semantize(bodyCtx, body), paramts, None)
 unboxDen = primDen('_unbox')
 @semproc('_switch')
 def semSwitch(ctx, form):
@@ -242,58 +228,58 @@ def semSwitch(ctx, form):
     default = None; dalts = {}
     for alt in fromSrcForm(ctx, alts):
         matches, body = tuple(fromSrcForm(ctx, alt))
-        body = semantize(ctx, *body)
-        if matches[1] is nil:
+        body = semantize(ctx, body)
+        if matches is nil:
             if default is not None:
                 typeErr(ctx, 'switch can only have one default')
             default = body
         else:
-            for patSrc, pat in fromSrcForm(ctx, matches):
+            for pat in fromSrcForm(ctx, matches):
                 pat = stripOuterSynClo(pat)
-                if isSymbol(pat): pat = toTy(ctx, (patSrc, pat))
+                if isSymbol(pat): pat = toTy(ctx, pat)
                 elif isListCons(pat):
-                    xpat = tuple(fromSrcForm(ctx, (patSrc, pat)))
+                    xpat = tuple(fromSrcForm(ctx, pat))
                     if len(xpat) != 2:
                         typeErr(ctx, "invalid pattern: '%s'"%pretty(pat))
-                    (_,ubsym), (_,val) = xpat
+                    ubsym, val = xpat
                     if symbol_eq(unboxDen, getDen(ctx, ubsym)):
                         pat = tryUnbox(ctx, val)
                 assert pat not in dalts, pat
                 dalts[pat] = body
-    return Switch(semantize(ctx, *discrim), default, dalts)
+    return Switch(semantize(ctx, discrim), default, dalts)
 @semproc('_let')
 def semLet(ctx, form):
     immed, nonrec, rec, body = semArgs(ctx, form, 4)
     immedCtx = ctx.extendSyntax(); bodyCtx = immedCtx.extendSyntax()
     immeds = []; recs = []; nonrecs = []
     for binding in fromSrcForm(ctx, immed):
-        (_, binder), rhs = tuple(fromSrcForm(ctx, binding))
+        binder, rhs = tuple(fromSrcForm(ctx, binding))
         immeds.append((EnvKey(newDen(immedCtx, binder)), rhs))
-    for binder, rhs in immeds: ctx.env.add(binder, evaluate(immedCtx, *rhs))
+    for binder, rhs in immeds: ctx.env.add(binder, evaluate(immedCtx, rhs))
     for binding in fromSrcForm(ctx, nonrec):
-        (_, binder), rhs = tuple(fromSrcForm(ctx, binding))
+        binder, rhs = tuple(fromSrcForm(ctx, binding))
         nonrecs.append((EnvKey(newDen(bodyCtx, binder)),
-                        semantize(immedCtx, *rhs)))
+                        semantize(immedCtx, rhs)))
     for binding in fromSrcForm(ctx, rec):
-        (_, binder), rhs = tuple(fromSrcForm(ctx, binding))
+        binder, rhs = tuple(fromSrcForm(ctx, binding))
         recs.append([EnvKey(newDen(bodyCtx, binder)), rhs])
-    for recp in recs: recp[1] = semantize(bodyCtx, *recp[1])
-    return Let(nonrecs, recs, semantize(bodyCtx, *body))
+    for recp in recs: recp[1] = semantize(bodyCtx, recp[1])
+    return Let(nonrecs, recs, semantize(bodyCtx, body))
 ################################################################
 # nodes
 def semNodeAccess(ctx, ty, node):
-    ty = toTy(ctx, ty); node = semantize(ctx, *node); return ty, node
+    ty = toTy(ctx, ty); node = semantize(ctx, node); return ty, node
 def semNodeIndex(ctx, ty, idx, node):
     ty, node = semNodeAccess(ctx, ty, node)
-    if isinstance(ty, ProductType): idx = fromInt(evaluate(ctx, *idx, ty=intTy))
-    else: idx = semantize(ctx, *idx)
+    if isinstance(ty, ProductType): idx = fromInt(evaluate(ctx, idx, ty=intTy))
+    else: idx = semantize(ctx, idx)
     return idx, ty, node
 @semproc('_unpack')
 def semNodeUnpack(ctx, form):
     return NodeUnpack(*semNodeIndex(ctx, *semArgs(ctx, form, 3)))
 @semproc('_pack')
 def semNodePack(ctx, form):
-    *rest, rhs = semArgs(ctx, form, 4); rhs = semantize(ctx, *rhs)
+    *rest, rhs = semArgs(ctx, form, 4); rhs = semantize(ctx, rhs)
     return NodePack(rhs, *semNodeIndex(ctx, *rest))
 @primproc('_tag', anyTy, tyTy)
 def primNodeTag(ctx0, node): return final(ubTyTy.new(getTy(node)))
@@ -320,10 +306,10 @@ def semArrayPop(ctx, form):
     return ArrayPop(*semNodeAccess(ctx, *semArgs(ctx, form, 2)))
 @semproc('_array-push')
 def semArrayPush(ctx, form):
-    *rest, rhs = semArgs(ctx, form, 3); rhs = semantize(ctx, *rhs)
+    *rest, rhs = semArgs(ctx, form, 3); rhs = semantize(ctx, rhs)
     return ArrayPush(rhs, *semArrayAccess(ctx, *rest))
 def semSlice(ctx, ty, start, end, node):
-    start = semantize(ctx, *start); end = semantize(ctx, *end)
+    start = semantize(ctx, start); end = semantize(ctx, end)
     ty, node = semNodeAccess(ctx, ty, node)
     return start, end, ty, node
 @semproc('_slice-unpack')
@@ -331,7 +317,7 @@ def semSliceUnpack(ctx, form):
     return ArraySliceUnpack(*semSlice(ctx, *semArgs(ctx, form, 4)))
 @semproc('_slice-pack')
 def semSlicePack(ctx, form):
-    *rest, rhs = semArgs(ctx, form, 5); rhs = semantize(ctx, *rhs)
+    *rest, rhs = semArgs(ctx, form, 5); rhs = semantize(ctx, rhs)
     return ArraySlicePack(rhs, *semSlice(ctx, *rest))
 ################################################################
 # definitions
@@ -340,21 +326,21 @@ def semDefTypes(ctx, form):
     bindTypes(ctx, fromList(cons_tail(form), ctx)); return unitExpr
 @semproc('_def')
 def semDef(ctx, form):
-    (_, binder), body = semArgs(ctx, form, 2)
-    ctx.nspace.define(binder, evaluate(ctx, *body)); return unitExpr
+    binder, body = semArgs(ctx, form, 2)
+    ctx.nspace.define(binder, evaluate(ctx, body)); return unitExpr
 @semproc('_refer')
 def semRefer(ctx, form):
-    (_, binder1), (_, binder2) = semArgs(ctx, form, 2)
+    binder1, binder2 = semArgs(ctx, form, 2)
     ctx.nspace.refer(ctx, binder2, binder1); return unitExpr
 @semproc('_def-op')
 def semDefOp(ctx, form):
-    name, fixity, assoc, prec = tuple(zip(*semArgs(ctx, form, 4)))[1]
+    name, fixity, assoc, prec = semArgs(ctx, form, 4)
     op = newOperator(name, symbol_name(fixity), assoc, fromInt(prec))
     ctx.nspace.defOp(name, op); return unitExpr
 @semproc('_def-reader')
 def semDefReader(ctx, form):
-    (_, readStr), body = semArgs(ctx, form, 2)
-    ctx.nspace.defReader(fromString(readStr), wrapReader(evaluate(ctx, *body)))
+    readStr, body = semArgs(ctx, form, 2)
+    ctx.nspace.defReader(fromString(readStr), wrapReader(evaluate(ctx, body)))
     return unitExpr
 ################################################################
 # parser
@@ -377,8 +363,8 @@ from syntax import ParseError, Parser
 from data import Env, makeStream, unit
 def interact(thread, mod):
     result = [unit]
-    def evalPrint(ctx, src, expr):
-        res = evaluate(ctx.withThread(thread), src, expr)
+    def evalPrint(ctx, expr):
+        res = evaluate(ctx.withThread(thread), expr)
         result[0] = res; print(pretty(res))
     for stream in interactStreams('%s> '%mod.name):
         try: DirectStreamSource(mod.nspace, mod.name, stream).eval(evalPrint)
@@ -388,8 +374,7 @@ def interact(thread, mod):
     print(''); return result[0]
 def evalFile(thread, mod, absPath):
     result = [unit]
-    def evalSave(ctx, src, expr):
-        result[0] = evaluate(ctx.withThread(thread), src, expr)
+    def evalSave(ctx, expr): result[0] = evaluate(ctx.withThread(thread), expr)
     FileSource(mod.nspace, absPath).eval(evalSave)
     return result[0]
 # def debugErr(exc, ctx, expr): # todo: exit without resume?

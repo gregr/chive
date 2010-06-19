@@ -13,6 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+parser produces syntactic closures with null env to store source regions
+tables
 extensible dynamic dispatch
 field projection operator
 AST pretty-printing

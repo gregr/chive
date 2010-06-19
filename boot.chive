@@ -11,10 +11,12 @@
 ## WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
- 
+
 _def-op (:) infix right 5
 _def hd (_proc (xs) (_unpack (:) 0 xs))
 _def tl (_proc (xs) (_unpack (:) 1 xs))
+_def synclo-env (_proc (sc) (_unpack SynClo 0 sc))
+_def synclo-frees (_proc (sc) (_unpack SynClo 1 sc))
 _def synclo-form (_proc (sc) (_unpack SynClo 2 sc))
 _def _quote-sym (Macro (_proc (ctx form)
   ((SynClo (_ctx) Nil (Symbol (_unbox Symbol))):
@@ -45,11 +47,18 @@ _def-proc foldr-list (f rhs xs)
     _tag xs
     (((Nil) rhs)
      ((\:) (f (hd xs) (foldr-list f rhs (tl xs)))))
-
-_def-proc read-list-form (parser chs)
+_def-proc map-synclo (f form)
+  _switch (_tag form)
+    (((SynClo) (SynClo (synclo-env form) (synclo-frees form)
+                 (f (synclo-form form))))
+     (() (f form)))
+_def-proc build-list-form (xs)
   foldr-list (_proc (fst rst) (squote (:):fst:rst:Nil))
     squote Nil
-    _read-bracketed-form parser "]"
+    xs
+_def-proc read-list-form (parser chs)
+  map-synclo build-list-form (_read-bracketed-form parser "]")
+
 _def-reader "[" read-list-form
 
 _def-proc id (x) x
