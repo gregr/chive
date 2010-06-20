@@ -96,9 +96,6 @@ def primproc(name, *tys):
         addPrim(name, fproc_new(name, f, pty, len(tys)-1))
         return f
     return install
-def stripOuterSynClo(xs):
-    while isSynClo(xs): xs = synclo_form(xs)
-    return xs
 # todo: semArgsTy
 def fromSrcForm(ctx, form):
     ctx1, form = syncloExpand(ctx, form)
@@ -213,10 +210,12 @@ def semConsProc(ctx, form):
     binders, body = semArgs(ctx, form, 2)
     vars = []; paramts = []; bodyCtx = ctx.extendSyntax()
     for binder in fromSrcForm(ctx, binders):
-        if isListCons(binder):
+        bndr = stripSC(binder)
+        if isListCons(bndr):
             var, ty = tuple(fromSrcForm(ctx, binder)); ty = toTy(ctx, ty)
-        else: var = binder; ty = anyTy
-        if not isSymbol(var): # todo: synclo?
+            var = stripSC(var)
+        else: var = bndr; ty = anyTy
+        if not isSymbol(var):
             typeErr(ctx, "invalid proc binder: '%s'"%pretty(var))
         vars.append(EnvKey(newDen(bodyCtx, var))); paramts.append(ty)
     return ConsProc(EnvKey(gensym()), vars,
@@ -254,15 +253,15 @@ def semLet(ctx, form):
     immeds = []; recs = []; nonrecs = []
     for binding in fromSrcForm(ctx, immed):
         binder, rhs = tuple(fromSrcForm(ctx, binding))
-        immeds.append((EnvKey(newDen(immedCtx, binder)), rhs))
+        immeds.append((EnvKey(newDen(immedCtx, stripSC(binder))), rhs))
     for binder, rhs in immeds: ctx.env.add(binder, evaluate(immedCtx, rhs))
     for binding in fromSrcForm(ctx, nonrec):
         binder, rhs = tuple(fromSrcForm(ctx, binding))
-        nonrecs.append((EnvKey(newDen(bodyCtx, binder)),
+        nonrecs.append((EnvKey(newDen(bodyCtx, stripSC(binder))),
                         semantize(immedCtx, rhs)))
     for binding in fromSrcForm(ctx, rec):
         binder, rhs = tuple(fromSrcForm(ctx, binding))
-        recs.append([EnvKey(newDen(bodyCtx, binder)), rhs])
+        recs.append([EnvKey(newDen(bodyCtx, stripSC(binder))), rhs])
     for recp in recs: recp[1] = semantize(bodyCtx, recp[1])
     return Let(nonrecs, recs, semantize(bodyCtx, body))
 ################################################################
@@ -327,20 +326,21 @@ def semDefTypes(ctx, form):
 @semproc('_def')
 def semDef(ctx, form):
     binder, body = semArgs(ctx, form, 2)
-    ctx.nspace.define(binder, evaluate(ctx, body)); return unitExpr
+    ctx.nspace.define(stripSC(binder), evaluate(ctx, body)); return unitExpr
 @semproc('_refer')
 def semRefer(ctx, form):
     binder1, binder2 = semArgs(ctx, form, 2)
     ctx.nspace.refer(ctx, binder2, binder1); return unitExpr
 @semproc('_def-op')
 def semDefOp(ctx, form):
-    name, fixity, assoc, prec = semArgs(ctx, form, 4)
+    name, fixity, assoc, prec = stripSCs(semArgs(ctx, form, 4))
     op = newOperator(name, symbol_name(fixity), assoc, fromInt(prec))
     ctx.nspace.defOp(name, op); return unitExpr
 @semproc('_def-reader')
 def semDefReader(ctx, form):
     readStr, body = semArgs(ctx, form, 2)
-    ctx.nspace.defReader(fromString(readStr), wrapReader(evaluate(ctx, body)))
+    ctx.nspace.defReader(fromString(stripSC(readStr)),
+                         wrapReader(evaluate(ctx, body)))
     return unitExpr
 ################################################################
 # parser
@@ -348,13 +348,13 @@ def wrapReader(proc):
     def wrapped(parser, chs):
         result = evalExpr(*applyDirect(parser.ctx, proc,
                                        (toParser(parser), toString(chs))))
-        if result is unit: result = nullTerm
-        else: return (termSrc(parser), result)
+        if result is not unit: pass # todo: wrap in synclo
+        return result
     return wrapped
 @primproc('_read-bracketed-form', parserTy, stringTy, formTy)
 def primReadBracketedForm(ctx0, parser, closeBracket):
     closeBracket = fromString(closeBracket)
-    return final(fromParser(parser).bracketedExpr(closeBracket)[1])
+    return final(fromParser(parser).bracketedExpr(closeBracket))
 # todo: expose other parser primitives
 ################################################################
 # interaction

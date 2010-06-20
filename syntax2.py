@@ -18,7 +18,7 @@ import re
 
 class ParseError(Exception): pass
 def parseErr(src, msg): raise ParseError(src, msg)
-nullTerm = (object(), object())
+nullTerm = unit
 def makeIdent(_, s): # strip escapes
     sym = symbol('\\'.join(ss.replace('\\', '') for ss in s.split('\\\\')))
     if s == '_': sym = alias_new(sym) # each non-escaped underscore is unique
@@ -32,18 +32,20 @@ def makeOp(parser, s):
     sym = makeIdent(parser, s); op = parser.ctx.ops.get(EnvKey(sym))
     if op is None: return NullOp(sym)
     return op
+def srcWrap(src, term): return synclo_new(toCtx(nullCtx(src)), nil, term)
 def makeExpr(terms, exprSrc=None):
-    if terms: srcs, dats = list(zip(*terms))
-    else: srcs, dats = (), ()
-    return SrcTerm(exprSrc, srcs), toList(dats)
+    return srcWrap(exprSrc, toList(terms)) # todo: aggregate srcs
 def makeExprNonSingle(terms, exprSrc=None):
     if len(terms) > 1: return makeExpr(terms, exprSrc)
     elif len(terms) == 1: return terms[0]
     return nullTerm
-def termSrc(parser): return SrcTerm(parser.stream.popRgn(), ())
+OpTerm = namedtuple('OpTerm', 'op term')
 def mkTerm(f):
     def termMaker(parser, cs):
-        return (termSrc(parser), f(parser, cs))
+        tm = f(parser, cs); src = SrcTerm(parser.stream.popRgn(), ())
+        if isinstance(tm, Operator): tm = OpTerm(tm, srcWrap(src, tm.sym))
+        else: tm = srcWrap(src, tm)
+        return tm
     return termMaker
 def makeTokClass(tokSpec): return (re.compile(tokSpec[0]), mkTerm(tokSpec[1]))
 def makeTokClasses(tokSpecs): return [makeTokClass(c) for c in tokSpecs]
@@ -140,20 +142,22 @@ class Parser:
         @memoTrue
         def eoeIndented():
             if self.pendingTerm is not None: return False
-            if self.indent is not None: indent = self.indent
-            else: indent = self.skipSpace(); self.indent = indent
-            if indent is None: return False
-            return indent <= curIndent
+            else:
+                if self.indent is not None: indent = self.indent
+                else: indent = self.skipSpace(); self.indent = indent
+                if indent is None: return False
+                else: return indent <= curIndent
         return self.expr(eoeIndented, makeExprNonSingle)
     def bracketedExpr(self, closeBracket):
         @memoTrue
         def eoeBracketed():
             if self.pendingTerm is not None: return False
-            indent = self.skipSpace()
-            if indent == -1: parseErr(None, 'unexpected end of stream')
-            ch = self.stream.getch(len(closeBracket))
-            if ch == closeBracket: return True
-            self.stream.putch(ch); return False
+            else:
+                indent = self.skipSpace()
+                if indent == -1: parseErr(None, 'unexpected end of stream')
+                ch = self.stream.getch(len(closeBracket))
+                if ch == closeBracket: return True
+                else: self.stream.putch(ch); return False
         return self.expr(eoeBracketed, makeExpr)
     def putTerm(self, term):
         assert self.pendingTerm is None, self.pendingTerm
@@ -175,9 +179,9 @@ class Parser:
         parseErr(line, 'term error') # todo
 ################################################################
 # operators
-def termIs(tm, cls): return isinstance(tm[1], cls)
+def termIs(tm, cls): return isinstance(tm, OpTerm) and isinstance(tm.op, cls)
 def parseOp(op, parser, terms, eoe):
-    src, op = op; return op.parse(parser, [src, op.sym], terms, eoe)
+    return op.op.parse(parser, op.term, terms, eoe)
 class Operator:
     def __init__(self, sym, assoc, prec):
         assert isSymbol(sym), sym
@@ -188,7 +192,7 @@ class Operator:
         self.sym = sym; self.prec = prec
         # todo: non-associative ops
         self.assocRight = symbol_eq(assoc, symbol('right'))
-    def precLT(self, term): return self._precLT(term[1])
+    def precLT(self, term): return self._precLT(term.op)
 class NullOp(Operator): # undeclared op
     def __init__(self, sym): super().__init__(sym, symbol('none'), 0)
     def parse(self, parser, tm, lhs, eoe):

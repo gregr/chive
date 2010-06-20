@@ -53,9 +53,7 @@ _def-proc map-synclo (f form)
                  (f (synclo-form form))))
      (() (f form)))
 _def-proc build-list-form (xs)
-  foldr-list (_proc (fst rst) (squote (:):fst:rst:Nil))
-    squote Nil
-    xs
+  foldr-list (_proc (fst rst) (squote (:):fst:rst:Nil)) (squote Nil) xs
 _def-proc read-list-form (parser chs)
   map-synclo build-list-form (_read-bracketed-form parser "]")
 

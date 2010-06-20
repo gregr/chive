@@ -86,13 +86,14 @@ def parseType(ctx, body, fields=None, name=None):
                 fields.append(field)
                 return parseType(ctx, ty)
     typeErr(ctx, "invalid type constructor: '%s'"%pretty(body))
-def bindTypes(ctx, consTyForms):
+def bindTypes(ctx_, consTyForms):
     exprs = []; aliases = []
     for form in consTyForms:
+        ctx, form = syncloExpand(ctx_, form)
         if isListCons(form):
             form = tuple(fromList(form, ctx))
             if len(form) == 2:
-                name, body = form
+                name, body = form; name = stripSC(name)
                 expr = parseType(ctx, body, name=name)
                 ty = expr.preEval()
                 if ty is None: aliases.append((name, expr))

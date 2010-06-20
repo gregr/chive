@@ -276,6 +276,7 @@ class Context: # current file resolution dir
         return ctx
     def extendValues(self):
         ctx = self.copy(); ctx.env = Env(self.env); return ctx
+def nullCtx(src): return Context(None, None, None, None, None, None, None, src)
 def newDen(ctx, sym):
     den = alias_new(sym); ctx.senv.add(EnvKey(sym), den); return den
 def getDen(ctx, sym):
@@ -359,7 +360,7 @@ class Namespace:
 class Source:
     def __init__(self, nspace): self.nspace = nspace
     def eval(self, evaluate): # todo: only eval on demand
-        for _, expr in self.exprs(): evaluate(self.nspace.ctx, expr)
+        for expr in self.exprs(): evaluate(self.nspace.ctx, expr)
 class DirectSource(Source):
     def __init__(self, nspace, exprs):
         super().__init__(nspace); self._exprs = exprs
@@ -521,6 +522,11 @@ def applySynCloCtx(ctx, sc):
 def syncloExpand(ctx, xs):
     while isSynClo(xs): ctx = applySynCloCtx(ctx, xs); xs = synclo_form(xs)
     return ctx, xs
+def stripOuterSynClo(xs):
+    while isSynClo(xs): xs = synclo_form(xs)
+    return xs
+stripSC = stripOuterSynClo
+def stripSCs(scs): return tuple(stripOuterSynClo(sc) for sc in scs)
 def primSC(form): return synclo_new(toCtx(primCtx), nil, form)
 ################################################################
 # macros and semantics
