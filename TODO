@@ -15,6 +15,7 @@ limitations under the License.
 ================================================================
 tables
 extensible dynamic dispatch
+case/match
 field projection operator
 AST pretty-printing
 no ad-hoc local environment or namespace access

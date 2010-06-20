@@ -139,6 +139,8 @@ class NodePack(NodeIndex):
     def eval(self, ctx):
         node, idx = self._eval(ctx); rhs = evalExpr(ctx, self.rhs)
         self.ty.packEl(node, idx, rhs); return final(unit)
+class NodeCount(NodeAccess):
+    def eval(self, ctx): return final(toInt(self.ty.count(self._evalNode(ctx))))
 # array operations
 ArrayType.keyt = intTy
 class ArraySlice(NodeAccess):
@@ -162,8 +164,6 @@ class ArraySlicePack(ArraySlice):
     def eval(self, ctx):
         arr, beg, end = self._eval(ctx); rhs = evalExpr(ctx, self.rhs, self.ty)
         arrSlicePack(ctx, arr, beg, end, rhs); return final(unit)
-class ArrayLength(NodeAccess):
-    def eval(self, ctx): return final(toInt(arrLen(self._evalNode(ctx))))
 class ArrayPop(NodeAccess):
     def eval(self, ctx): arrPop(ctx, self._evalNode(ctx)); return final(unit)
 class ArrayPush(NodeAccess):
@@ -174,6 +174,14 @@ class ArrayPush(NodeAccess):
         arrPush(self._evalNode(ctx), evalExpr(ctx, self.rhs))
         return final(unit)
 # table operators
+class TableDelete(NodeIndex):
+    def eval(self, ctx):
+        if self.ty.deleteEl(*self._eval(ctx)): result = true
+        else: result = false
+        return final(result)
+class TableItems(NodeAccess):
+    def eval(self, ctx):
+        return final(toList(self.ty.items(self._evalNode(ctx))))
 ################################################################
 class Seq(Expr):
     def __init__(self, exprs): self.exprs = exprs[:-1]; self.last = exprs[-1]

@@ -82,10 +82,10 @@ _def-proc strip-synclos (frm)
      ((SynClo) (strip-synclos (strip-synclo frm)))
      (() frm))
 _def-macro _locals (ctx form) [(squote _ctx-env) (quote (_ctx))]
-_def-types
-  Bool (_Ty-Variant True False)
-  True (_Ty-Product)
-  False (_Ty-Product)
+## _def-types
+##   Bool (_Ty-Variant True False)
+##   True (_Ty-Product)
+##   False (_Ty-Product)
 _def-proc ttl (xs) (tl (tl xs))
 _def-proc tttl (xs) (tl (ttl xs))
 _def-proc htl (xs) (hd (tl xs))

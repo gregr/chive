@@ -280,6 +280,9 @@ def semNodeUnpack(ctx, form):
 def semNodePack(ctx, form):
     *rest, rhs = semArgs(ctx, form, 4); rhs = semantize(ctx, rhs)
     return NodePack(rhs, *semNodeIndex(ctx, *rest))
+@semproc('_count')
+def semCount(ctx, form):
+    return NodeCount(*semNodeAccess(ctx, *semArgs(ctx, form, 2)))
 @primproc('_tag', anyTy, tyTy)
 def primNodeTag(ctx0, node): return final(ubTyTy.new(getTy(node)))
 @primproc('_tag-pattern', ctxTy, symTy, listTy)
@@ -292,14 +295,11 @@ def primTagPattern(ctx0, ctx, tagSym):
                 result = toList([tag, toList([toInt(idx) for idx in
                                               range(ty.numIndices())])])
     return final(result)
+@semproc('_coll-new') # todo: capacity hint for arrays?
+def semCollNew(ctx, form):
+    ty = toTy(ctx, semArgs(ctx, form, 1)[0]); return ConsColl(ty, ctx)
 ################################################################
 # arrays
-@semproc('_array-new') # todo: capacity hint?
-def semArrayNew(ctx, form):
-    ty = toTy(ctx, semArgs(ctx, form, 1)[0]); return ConsArray(ty, ctx)
-@semproc('_array-length')
-def semArrayLength(ctx, form):
-    return ArrayLength(*semNodeAccess(ctx, *semArgs(ctx, form, 2)))
 @semproc('_array-pop')
 def semArrayPop(ctx, form):
     return ArrayPop(*semNodeAccess(ctx, *semArgs(ctx, form, 2)))
@@ -318,6 +318,14 @@ def semSliceUnpack(ctx, form):
 def semSlicePack(ctx, form):
     *rest, rhs = semArgs(ctx, form, 5); rhs = semantize(ctx, rhs)
     return ArraySlicePack(rhs, *semSlice(ctx, *rest))
+################################################################
+# tables
+@semproc('_table-pop')
+def semTableDel(ctx, form):
+    return TableDelete(*semNodeIndex(ctx, *semArgs(ctx, form, 3)))
+@semproc('_table-items')
+def semTableItems(ctx, form):
+    return TableItems(*semNodeAccess(ctx, *semArgs(ctx, form, 2)))
 ################################################################
 # definitions
 @semproc('_def-types')

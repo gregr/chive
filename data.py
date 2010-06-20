@@ -232,11 +232,11 @@ def constr_new(ctx, ty):
     cty = currySpecificProcType(ty.name, ty.elts, ty)
     body = ConsNode(ty, [Var(nm) for nm in cargs], ctx)
     return proc_new(NativeProc(cty.name, body, cargs), ctx, cty)
-class ConsArray(Constr):
+class ConsColl(Constr):
     def __init__(self, ty, ctx=None):
         self.ty = ty
-        if not isinstance(ty, ArrayType):
-            typeErr(ctx, "invalid array type: '%s'"%ty)
+        if not isinstance(ty, (ArrayType, TableType)):
+            typeErr(ctx, "invalid collection type: '%s'"%ty)
     def eval(self, ctx): return final(self.ty.new())
 
 ################################################################
@@ -451,6 +451,11 @@ def basicTy(name, pyty):
 ubIntTy, intTy, toInt, fromInt = basicTy('Int', int)
 ubFloatTy, floatTy, toFloat, fromFloat = basicTy('Float', float)
 ubCharTy, charTy, toChar, fromChar = basicTy('Char', str)
+################################################################
+# booleans
+falseTy, false = singleton('False')
+trueTy, true = singleton('True')
+boolTy = VariantType((falseTy, trueTy))
 ################################################################
 # lists
 listTy = VariantType()

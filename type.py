@@ -76,6 +76,7 @@ class Type:
         if ni is None and not exact: return
         if (exact and (idx != ni)) or idx<0 or idx>self.numIndices():
             typeErr(None, msg+" '%d'; %s has %d elements"% (idx, self, ni))
+    def count(self, _): typeErr(None, "'%s' is not countable"%self)
     def size(self): raise NotImplementedError
     def numIndices(self): return 0
     def index(self, idx): raise NotImplementedError
@@ -107,8 +108,7 @@ class ScalarType(AtomicUnboxedType):
     def __init__(self, name, pred=lambda _: True):
         self.name = name; self.pred = pred
     def new(self, val):
-        if not self.pred(val):
-            typeErr(None, "invalid scalar '%s'"%repr(val))
+        if not self.pred(val): typeErr(None, "invalid scalar '%s'"%repr(val))
         return typed(self, val)
     def __str__(self): return str(self.name)
 class PyType(ScalarType):
@@ -265,25 +265,48 @@ class SpecificProcType(ProcType):
 def currySpecificProcType(name, paramts, rett):
     return curryProcType(paramts, rett,
                          (lambda *args: SpecificProcType(name, *args)))
+import weakref
 class TableType(NodeType):
-    def __init__(self, name, keyt): self.name = name; self.keyt = keyt
-    def new(self): return typed(self, {})
-    def checkKey(self, key):
+    def __init__(self, name, keyt, elt, weak=False):
+        self.name = name; self.keyt = keyt; self.elt = elt
+        if not isinstance(keyt, ScalarType):
+            typeErr(None, ("'%s' has invalid key type '%s';"+
+                           "keys must be unboxed scalars")
+                    %(self, keyt))
+        if weak: self.makeData = weakref.WeakKeyDictionary
+        else: self.makeData = dict
+    def new(self): return typed(self, self.makeData())
+    def validKey(self, key):
         if not self.keyt.contains(getTy(key)):
             typeErr(None, "%s with key type '%s' indexed with invalid key '%s'"
                     %(self, self.keyt, key))
-def tableGet(tab, key): getTy(tab).checkKey(key); return getVal(tab).get(key)
-def tableAdd(tab, key, val): getTy(tab).checkKey(key); getVal(tab)[key] = val
+        return getVal(key)
+    def checkEl(self, el):
+        if not self.elt.contains(getTy(el)):
+            typeErr(None, "added '%s' to %s with element type '%s'"
+                    %(el, self, self.elt))
+    def packEl(self, tab, key, val):
+        self.checkTy(tab); self.checkEl(val)
+        getVal(tab)[self.validKey(key)] = val
+    def unpackEl(self, tab, key):
+        self.checkTy(tab); return getVal(tab).get(self.validKey(key))
+    def deleteEl(self, tab, key):
+        self.checkTy(tab)
+        try: del getVal(tab)[self.validKey(key)]; return True
+        except KeyError: return False
+    def items(self, tab): self.checkTy(tab); return getVal(tab).items()
+    def count(self, tab): self.checkTy(tab); return len(getVal(tab))
 class ArrayType(NodeType):
     def __init__(self, name, elt): self.name = name; self.elt = elt
     def checkBounds(self, ctx, arr, idx):
-        cnt = arrLen(arr)
+        cnt = arrCnt(arr)
         if idx >= cnt:
             typeErr(ctx, "%s with length '%d' indexed outside bounds at '%d'"
                     %(self.name, cnt, idx))
     def index(self, idx): return self.elt, (idx*self.elt.size() + atomicSize)
     def new(self):
-        arr = typed(self, mem_alloc(atomicSize)); arrSetLen(arr, 0); return arr
+        arr = typed(self, mem_alloc(atomicSize)); arrSetCnt(arr, 0); return arr
+    def count(self, arr): return arrCnt(arr)
 # todo: shrink at 1/4?
 def arrElSize(arr): return getTy(arr).elt.size()
 def arrIdx(arr, idx): return getTy(arr).index(idx)[1]
@@ -293,16 +316,16 @@ def arrCapacity(arr):
     return (mem_size(getVal(arr))-atomicSize)/arrElSize(arr)
 def arrRequire(arr, cnt):
     if arrCapacity(arr) < cnt: arrGrow(arr, cnt*arrElSize(arr)+atomicSize)
-def arrLen(arr): return mem_read(getVal(arr), 0)
-def arrSetLen(arr, cnt): return mem_write(getVal(arr), 0, cnt)
+def arrCnt(arr): return mem_read(getVal(arr), 0)
+def arrSetCnt(arr, cnt): return mem_write(getVal(arr), 0, cnt)
 def arrPush(arr, el):
-    al = arrLen(arr); arrRequire(arr, al+1); getTy(arr).packEl(arr, al, el);
-    arrSetLen(arr, al+1)
+    al = arrCnt(arr); arrRequire(arr, al+1); getTy(arr).packEl(arr, al, el);
+    arrSetCnt(arr, al+1)
 def arrPop(ctx, arr):
-    al = arrLen(arr)
+    al = arrCnt(arr)
     if al < 1: typeErr(ctx, "popped empty array") # todo
-    arrSetLen(arr, al-1)
-#def arrConcat(arr, arg): al = arrLen(arr); return arrSlicePack(arr,al,al,arg)
+    arrSetCnt(arr, al-1)
+#def arrConcat(arr, arg): al = arrCnt(arr); return arrSlicePack(arr,al,al,arg)
 def arrCheckSlice(ctx, arr, start, end):
     getTy(arr).checkBounds(ctx, arr, start-1)
     getTy(arr).checkBounds(ctx, arr, end-1)
@@ -313,14 +336,14 @@ def arrSliceUnpack(ctx, arr, start, end):
     return typed(getTy(arr), (0,[end-start]+mem_slice_get(mem, start, end)[1]))
 def arrSlicePack(ctx, arr, start, end, arg):
     arrCheckSlice(ctx, arr, start, end)
-    newLen = arrLen(arr)+arrLen(arg)-(end-start)
+    newLen = arrCnt(arr)+arrCnt(arg)-(end-start)
     mem = getVal(arr); start = arrIdx(arr, start); end = arrIdx(arr, end)
-    src = mem_slice_get(getVal(arg), arrIdx(arg, 0), arrIdx(arg, arrLen(arg)))
-    mem_slice_set(mem, start, end, src); arrSetLen(arr, newLen)
+    src = mem_slice_get(getVal(arg), arrIdx(arg, 0), arrIdx(arg, arrCnt(arg)))
+    mem_slice_set(mem, start, end, src); arrSetCnt(arr, newLen)
 # do not expose
 def arrToList(arr):
-    return mem_toList(mem_offset(getVal(arr), atomicSize), arrLen(arr))
+    return mem_toList(mem_offset(getVal(arr), atomicSize), arrCnt(arr))
 def arrConcatList(arr, xs):
-    al = arrLen(arr); idx = arrIdx(arr, al)
-    mem_slice_set(getVal(arr), idx, idx, (0, xs)); arrSetLen(arr, al+len(xs))
+    al = arrCnt(arr); idx = arrIdx(arr, al)
+    mem_slice_set(getVal(arr), idx, idx, (0, xs)); arrSetCnt(arr, al+len(xs))
 def isArray(v): return isTyped(v) and isinstance(getTy(v), ArrayType)
