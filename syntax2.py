@@ -32,9 +32,11 @@ def makeOp(parser, s):
     sym = makeIdent(parser, s); op = parser.ctx.ops.get(EnvKey(sym))
     if op is None: return NullOp(sym)
     return op
-def srcWrap(src, term): return synclo_new(toCtx(nullCtx(src)), nil, term)
+def srcWrap_(src, term): return synclo_new(toCtx(nullCtx(src)), nil, term)
+def srcWrap(parser, term):
+    return srcWrap_(SrcTerm(parser.stream.popRgn(), ()), term)
 def makeExpr(terms, exprSrc=None):
-    return srcWrap(exprSrc, toList(terms)) # todo: aggregate srcs
+    return srcWrap_(exprSrc, toList(terms)) # todo: aggregate srcs
 def makeExprNonSingle(terms, exprSrc=None):
     if len(terms) > 1: return makeExpr(terms, exprSrc)
     elif len(terms) == 1: return terms[0]
@@ -42,9 +44,9 @@ def makeExprNonSingle(terms, exprSrc=None):
 OpTerm = namedtuple('OpTerm', 'op term')
 def mkTerm(f):
     def termMaker(parser, cs):
-        tm = f(parser, cs); src = SrcTerm(parser.stream.popRgn(), ())
-        if isinstance(tm, Operator): tm = OpTerm(tm, srcWrap(src, tm.sym))
-        else: tm = srcWrap(src, tm)
+        tm = f(parser, cs)
+        if isinstance(tm, Operator): tm = OpTerm(tm, srcWrap(parser, tm.sym))
+        else: tm = srcWrap(parser, tm)
         return tm
     return termMaker
 def makeTokClass(tokSpec): return (re.compile(tokSpec[0]), mkTerm(tokSpec[1]))

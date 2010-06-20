@@ -346,10 +346,10 @@ def semDefReader(ctx, form):
 # parser
 def wrapReader(proc):
     def wrapped(parser, chs):
-        result = evalExpr(*applyDirect(parser.ctx, proc,
-                                       (toParser(parser), toString(chs))))
-        if result is not unit: pass # todo: wrap in synclo
-        return result
+        tm = evalExpr(*applyDirect(parser.ctx, proc,
+                                   (toParser(parser), toString(chs))))
+        if tm is not unit and not isSynClo(tm): tm = srcWrap(parser, tm)
+        return tm
     return wrapped
 @primproc('_read-bracketed-form', parserTy, stringTy, formTy)
 def primReadBracketedForm(ctx0, parser, closeBracket):
