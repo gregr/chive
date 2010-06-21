@@ -254,17 +254,17 @@ class History:
     def show(self):
         return '\n'.join(map(pretty, chain(self.main, [self.final])))
 class Context: # current file resolution dir
-    def __init__(self, root, thread, nspace, readers, ops, senv, env,
+    def __init__(self, root, thread, nspace, readers, ops, tenv, senv, env,
                  src, hist=None):
         self.root = root; self.thread = thread; self.nspace = nspace
         self.readers = readers; self.ops = ops
-        self.senv = senv; self.env = env
+        self.tenv = tenv; self.senv = senv; self.env = env
         self.src = src; self.hist = hist or History()
     def __eq__(self, rhs): return self._cmp() == rhs._cmp()
-    def _cmp(self): return (self.ops, self.senv)
+    def _cmp(self): return (self.ops, self.tenv, self.senv)
     def copy(self):
         return Context(self.root, self.thread, self.nspace,
-                       self.readers, self.ops, self.senv, self.env,
+                       self.readers, self.ops, self.tenv, self.senv, self.env,
                        self.src, self.hist)
     def subHist(self):
         ctx = self.copy(); ctx.hist = ctx.hist.newSub(); return ctx
@@ -276,23 +276,37 @@ class Context: # current file resolution dir
         return ctx
     def extendValues(self):
         ctx = self.copy(); ctx.env = Env(self.env); return ctx
-def nullCtx(src): return Context(None, None, None, None, None, None, None, src)
-# todo: separate
+def nullCtx(src):
+    return Context(None, None, None, None, None, None, None, None, src)
 def newDen(ctx, sym):
     den = alias_new(sym); ctx.senv.add(EnvKey(sym), den); return den
+def newTyDen(ctx, sym):
+    den = alias_new(sym); ctx.tenv.add(EnvKey(sym), den); return den
 def getDen(ctx, sym):
     den = ctx.senv.get(EnvKey(sym))
     if den is None: den = newDen(ctx.nspace.ctx, sym)
     return den
+def getTyDen(ctx, sym):
+    den = ctx.tenv.get(EnvKey(sym))
+    if den is None: den = newTyDen(ctx.nspace.ctx, sym)
+    return den
 def referVar(ctxFrom, ctxTo, symFrom, symTo=None):
     if symTo is None: symTo = symFrom
     ctxTo.senv.add(EnvKey(symTo), getDen(ctxFrom, symFrom))
+def referTy(ctxFrom, ctxTo, symFrom, symTo=None):
+    if symTo is None: symTo = symFrom
+    ctxTo.tenv.add(EnvKey(symTo), getTyDen(ctxFrom, symFrom))
+def valNames(ctx): return ctx.senv.bindings().keys()
+def tyNames(ctx): return ctx.tenv.bindings().keys()
 def getVar(ctx, sym): return ctx.env.get(EnvKey(getDen(ctx, sym)))
+def getTy(ctx, sym): return ctx.env.get(EnvKey(getTyDen(ctx, sym)))
 def bindVar(ctx, sym, val): ctx.env.add(EnvKey(getDen(ctx, sym)), val)
-def defVar(ctx, sym, ty): ctx.nspace.define(sym, ty)
-defTy = defVar
+def bindTy(ctx, sym, ty): ctx.env.add(EnvKey(getTyDen(ctx, sym)), ty)
+def defVar(ctx, sym, val): ctx.nspace.defVar(sym, val)
+def defTy(ctx, sym, ty): ctx.nspace.defTy(sym, ty)
 def freshCtx(root, nspace):
-    return Context(root, None, nspace, Env(), Env(), Env(), Root.env, None)
+    return Context(root, None, nspace, Env(), Env(), Env(), Env(), Root.env,
+                   None)
 ################################################################
 # modules
 def resolvePath(searchPaths, path):
@@ -306,56 +320,80 @@ class Module:
     gnames = nameGen(['top'])
     def __init__(self, iface, nspace):
         self.iface = iface; self.nspace = nspace; self.name = next(self.gnames)
-    def names(self): return self.iface.names(self.nspace) # todo: syntax/lexes
-    def resolve(self, sym): return self.iface.resolve(self.nspace, sym)
+    def valNames(self): return self.iface.valNames(self.nspace)
+    def valResolve(self, sym): return self.iface.valResolve(self.nspace, sym)
+    def tyNames(self): return self.iface.tyNames(self.nspace)
+    def tyResolve(self, sym): return self.iface.tyResolve(self.nspace, sym)
     def readerStrs(self): return self.iface.readerStrs(self.nspace)
-    def openIn(self, nspace): # todo: lexables
-        for nm in self.names(): nspace.refer(self.nspace.ctx, nm.sym)
+    def openIn(self, nspace):
+        for nm in self.valNames(): nspace.referVar(self.nspace.ctx, nm.sym)
+        for nm in self.tyNames(): nspace.referTy(self.nspace.ctx, nm.sym)
         for chs in self.readerStrs():
             nspace.defReader(chs, self.nspace.ctx.readers.get(chs))
 # generalize to ModifiedModule?
 # HidingModule
 # class RenamedModule:
 #     def __init__(self, iface, remap): self.iface = iface; self.nameMap = remap
-#     def names(self): return set(self.nameMap.keys())
-#     def resolve(self, nspace, sym):
+#     def valNames(self): return set(self.nameMap.keys())
+#     def valResolve(self, nspace, sym):
 #         sym = self.nameMap.get(EnvKey(sym))
-#         if sym is not None: return self.iface.resolve(nspace, sym)
+#         if sym is not None: return self.iface.valResolve(nspace, sym)
 class Interface: pass
 class FullInterface(Interface): # only use internally?
-    def names(self, nspace): return nspace.names()
-    def resolve(self, nspace, sym): return nspace.resolve(sym)
+    def valNames(self, nspace): return nspace.valNames()
+    def valResolve(self, nspace, sym): return nspace.valResolve(sym)
+    def tyNames(self, nspace): return nspace.tyNames()
+    def tyResolve(self, nspace, sym): return nspace.tyResolve(sym)
     def readerStrs(self, nspace): return nspace.readerStrs()
 class ExportInterface(Interface):
-    def __init__(self, valueSyms, syntaxSyms, readerStrs):
-        syntaxNames = set(map(EnvKey, syntaxSyms))
-        self.vns = set(map(EnvKey, valueSyms))|syntaxNames
-        self.sns = syntaxNames; self.readerStrs = set(readerStrs)
-    def names(self, nspace): return self.vns
-    def resolve(self, nspace, sym):
-        if EnvKey(sym) in self.vns: return nspace.resolve(sym)
-        else: typeErr(None, "no resolution for symbol '%s'; exports: '%s'"
-                      %(EnvKey(sym), self.names()))
+    def __init__(self, valueSyms, typeSyms, readerStrs):
+#        syntaxNames = set(map(EnvKey, syntaxSyms))
+        self.vns = set(map(EnvKey, valueSyms))#|syntaxNames
+        self.tns = set(map(EnvKey, typeSyms))
+#        self.sns = syntaxNames
+        self.readerStrs = set(readerStrs)
+    def valNames(self, nspace): return self.vns
+    def tyNames(self, nspace): return self.tns
+    def valResolve(self, nspace, sym):
+        names = self.valNames()
+        if EnvKey(sym) in names: return nspace.valResolve(sym)
+        else: typeErr(None, "cannot resolve value '%s'; exports: '%s'"
+                      %(EnvKey(sym), names))
+    def tyResolve(self, nspace, sym):
+        names = self.tyNames()
+        if EnvKey(sym) in names: return nspace.tyResolve(sym)
+        else: typeErr(None, "cannot resolve type '%s'; exports: '%s'"
+                      %(EnvKey(sym), names))
     def readerStrs(self, nspace): return self.readerStrs
 class CompoundInterface(Interface):
     def __init__(self, ifaces): self.ifaces = ifaces
-    def names(self, nspace):
-        return reduce(set.union, (ifc.names(nspace) for ifc in self.ifaces))
-    def resolve(self, nspace, sym):
-        for ifc in self.ifaces:
-            val = ifc.resolve(nspace, sym)
-            if val is not None: return val
-    def readerStrs(self, nspace):
+    def _union(self, nspace, attr):
         return reduce(set.union,
-                      (ifc.readerStrs(nspace) for ifc in self.ifaces))
+                      (getattr(ifc, attr)(nspace) for ifc in self.ifaces))
+    def _resolve(self, nspace, sym, attr):
+        for ifc in self.ifaces:
+            val = getattr(ifc, attr)(nspace, sym)
+            if val is not None: return val
+    def valNames(self, nspace): return self._union(nspace, 'valNames')
+    def valResolve(self, nspace, sym):
+        return self._resolve(nspace, sym, 'valResolve')
+    def tyNames(self, nspace): return self._union(nspace, 'tyNames')
+    def tyResolve(self, nspace, sym):
+        return self._resolve(nspace, sym, 'tyResolve')
+    def readerStrs(self, nspace): return self._union(nspace, 'readerStrs')
 class Namespace:
     def __init__(self, root): self.ctx = freshCtx(root, self)
-    def names(self): return self.ctx.senv.bindings().keys()
-    def resolve(self, sym): return getVar(self.ctx, sym)
+    def valNames(self): return valNames(self.ctx)
+    def tyNames(self): return tyNames(self.ctx)
+    def valResolve(self, sym): return getVar(self.ctx, sym)
+    def tyResolve(self, sym): return getTy(self.ctx, sym)
     def readerStrs(self): return self.ctx.readers.bindings().keys()
-    def refer(self, ctxFrom, symFrom, symTo=None):
+    def referVar(self, ctxFrom, symFrom, symTo=None):
         referVar(ctxFrom, self.ctx, symFrom, symTo)
-    def define(self, sym, val): bindVar(self.ctx, sym, val)
+    def referTy(self, ctxFrom, symFrom, symTo=None):
+        referTy(ctxFrom, self.ctx, symFrom, symTo)
+    def defVar(self, sym, val): bindVar(self.ctx, sym, val)
+    def defTy(self, sym, val): bindTy(self.ctx, sym, val)
     def defOp(self, sym, op): self.ctx.ops.add(EnvKey(sym), op)
     def defReader(self, chs, reader): addDisp(chs, reader, self.ctx.readers)
 class Source:
@@ -419,16 +457,15 @@ def interactStreams(prompt):
 def node(ty, *args): return ty.new(*args)
 primNS = Namespace(None); primCtx = primNS.ctx
 def addPrim(name, val):
-    print('adding primitive:', name)
-    primNS.define(symbol(name), val)
+    print('adding primitive value:', name)
+    primNS.defVar(symbol(name), val)
 def addConsDen(ctx, sym, ty):
     if len(ty.elts) == 0: consVal = node(ty)
-    else: consVal = constr_new(ctx, ty) # todo: separate
-    consDen = alias_new(sym); ty.consDen = consDen
-    ctx.env.add(EnvKey(consDen), consVal)
-    return consVal
+    else: consVal = constr_new(ctx, ty)
+    bindVar(ctx, sym, consVal); return consVal
 def addPrimTy(name, ty):
-    addPrim(name, type_new(ty))
+    print('adding primitive type:', name)
+    primNS.defTy(symbol(name), type_new(ty))
     if isinstance(ty, ProductType):
         return addConsDen(primCtx, symbol(name), ty)
 def primDen(name): return getDen(primCtx, symbol(name))
@@ -442,6 +479,7 @@ def tabTy(name, keyt, elt, weak=False):
     ty = TableType(name, keyt, elt, weak); addPrimTy(name, ty); return ty
 def singleton(name): ty = ProductType(name, ()); return ty, addPrimTy(name, ty)
 unitTy, unit = singleton('Unit')
+unitDen = primDen('Unit')
 ################################################################
 # basic values
 def basicTy(name, pyty):
@@ -515,9 +553,10 @@ def synclo_ctx(s): return syncloTy.unpackEl(s, 0)
 def synclo_frees(s): return syncloTy.unpackEl(s, 1)
 def synclo_form(s): return syncloTy.unpackEl(s, 2)
 def applySynCloCtx(ctx, sc):
-    ctx = ctx.copy(); scCtx = fromCtx(synclo_ctx(sc)); senv = scCtx.senv
-    src = scCtx.src
+    ctx = ctx.copy(); scCtx = fromCtx(synclo_ctx(sc))
+    src = scCtx.src; tenv = scCtx.tenv; senv = scCtx.senv
     if src is not None: ctx.src = src
+    if tenv is not None: ctx.tenv = tenv
     if senv is not None:
         frees = fromList(synclo_frees(sc), ctx)
         if frees:

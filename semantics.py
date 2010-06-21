@@ -27,7 +27,7 @@ def expandBasic(tyn):
     return ex
 litExpanders = dict((ty, expandBasic(ty.name))
                     for ty in (intTy,floatTy,charTy))
-unitExpr = Var(EnvKey(unitTy.consDen))
+unitExpr = Var(EnvKey(unitDen))
 def synclo_maybe(ctx0, ctx, form):
     if ctx0 != ctx and (isSymbol(form) or isListCons(form)):
         return synclo_new(toCtx(ctx), nil, form)
@@ -72,12 +72,7 @@ def _semantize(ctx, xs):
         rest = [_semantize(ctx.subHist(), form) for form in rest]# todo: subHist?
         if isinstance(hd, Apply): hd.args.extend(rest); return hd
         else: return Apply(hd, rest)
-    elif isSymbol(xs):
-        den = getDen(ctx, xs); val = ctx.env.get(EnvKey(den))
-        if isTyped(val) and isType(val):
-            ty = type_type(val)
-            if isinstance(ty, ProductType): den = ty.consDen# todo: separate
-        return Var(EnvKey(den))
+    elif isSymbol(xs): return Var(EnvKey(getDen(ctx, xs)))
     elif isString(xs): return PrimVal(copyString(xs))
     elif xs is nil: return unitExpr
     else: typeErr(ctx, "invalid symbolic expression: '%s'"%pretty(xs))
@@ -145,14 +140,15 @@ def primModIface(ctx0, mod): return final(toIface(fromMod(mod).iface))
 def primModNspace(ctx0, mod): return final(toNspace(fromMod(mod).nspace))
 @primproc('_mod-names', modTy, listTy)
 def primModNames(ctx0, mod):
-    return final(toList([nm.sym for nm in fromMod(mod).names()]))
+    return final(toList([nm.sym for nm in fromMod(mod).valNames()]))
 @primproc('_mod-resolve', modTy, symTy, anyTy)
-def primModResolve(ctx0, mod, sym): return final(fromMod(mod).resolve(sym))
+def primModResolve(ctx0, mod, sym): return final(fromMod(mod).valResolve(sym))
 # todo: interface (exports?) and namespace (components?) introspection
-@primproc('_export', listTy, listTy, ifaceTy)
-def primExport(ctx0, names, readerStrs):
+@primproc('_export', listTy, listTy, listTy, ifaceTy)
+def primExport(ctx0, valNames, typeNames, readerStrs):
     rss = tuple(fromString(rs) for rs in fromList(readerStrs))
-    return final(toIface(ExportInterface(fromList(names), (), rss)))
+    return final(toIface(ExportInterface(fromList(valNames),
+                                         fromList(typeNames), rss)))
 @primproc('_namespace', unitTy, nspaceTy)
 def primNspace(ctx0, _): return final(toNspace(Namespace(ctx0.root)))
 @primproc('_open', modTy, nspaceTy, unitTy)
@@ -165,7 +161,7 @@ def primFile(ctx0, path, nspace):
     return final(unit)
 @primproc('_import', symTy, anyTy, nspaceTy, unitTy)
 def primImport(ctx0, sym, val, nspace):
-    fromNspace(nspace).define(sym, val); return final(unit)
+    fromNspace(nspace).defVar(sym, val); return final(unit)
 # todo: _compound-iface, _inline, _text
 # @primproc('_ctx-ns', ctxTy, nspaceTy)
 # def primCtxNspace(ctx0, ctx): return final(toNspace(fromCtx(ctx).nspace))
@@ -197,8 +193,10 @@ def semSeq(ctx, form):
                for frm in fromSrcForm(ctx, form)[1:]))
 def toTy(ctx, form):
     ctx, form = expand(ctx, form)
-    if not isSymbol(form): typeErr(ctx, "invalid type name: '%s'"%form)
-    return type_type(getVar(ctx, form))# todo: separate
+    if isSymbol(form):
+        ty = getTy(ctx, form)
+        if ty is not None: return type_type(ty)
+    typeErr(ctx, "invalid type name: '%s'"%form)
 @primproc('_force', anyTy, anyTy)
 def primForce(ctx0, boxed): return final(force(ctx0, boxed))
 @semproc('_delay') # todo: choose whether it's worth making a thunk
@@ -287,7 +285,7 @@ def semCount(ctx, form):
 def primNodeTag(ctx0, node): return final(ubTyTy.new(getTag(node)))
 @primproc('_tag-pattern', ctxTy, symTy, listTy)
 def primTagPattern(ctx0, ctx, tagSym):
-    result = nil; tag = getVar(fromCtx(ctx), tagSym)
+    result = nil; tag = getTy(fromCtx(ctx), tagSym)
     if tag is not None:
         if isType(tag):
             ty = type_type(tag)
@@ -334,11 +332,11 @@ def semDefTypes(ctx, form):
 @semproc('_def')
 def semDef(ctx, form):
     binder, body = semArgs(ctx, form, 2)
-    ctx.nspace.define(stripSC(binder), evaluate(ctx, body)); return unitExpr
+    ctx.nspace.defVar(stripSC(binder), evaluate(ctx, body)); return unitExpr
 @semproc('_refer')
-def semRefer(ctx, form):
+def semReferVar(ctx, form):
     binder1, binder2 = semArgs(ctx, form, 2)
-    ctx.nspace.refer(ctx, binder2, binder1); return unitExpr
+    ctx.nspace.referVar(ctx, binder2, binder1); return unitExpr
 @semproc('_def-op')
 def semDefOp(ctx, form):
     name, fixity, assoc, prec = stripSCs(semArgs(ctx, form, 4))

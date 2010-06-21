@@ -155,7 +155,7 @@ _def-proc test-cond (xs ys)
     37
 
 _def core-iface
-  _export [(quote core) (quote primitives) (quote test)] ["["]
+  _export [(quote core) (quote primitives) (quote test)] [] ["["]
 _def core-ns (_namespace ())
 _def core (_module core-iface core-ns)
 _open primitives core-ns
