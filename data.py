@@ -54,7 +54,7 @@ class Var(Atom):
 # type types
 ubTyTy = PyType('_Type', Type)
 tyTy = ProductType('Type', (ubTyTy,), const=True)
-def isType(tt): return getTy(tt) is tyTy
+def isType(tt): return getTag(tt) is tyTy
 def type_new(tt): return tyTy.new(ubTyTy.new(tt))
 def type_type(tt): return getVal(tyTy.unpackEl(tt, 0))
 ################################################################
@@ -68,7 +68,7 @@ def ubSymbol_new(n):
     nextSymId += 1
     return sd
 symTy = ProductType('Symbol', (ubSymTy,), const=True)
-def isSymbol(v): return isTyped(v) and getTy(v) is symTy
+def isSymbol(v): return isTyped(v) and getTag(v) is symTy
 def toSymbol(ps): return symTy.new(ubSymTy.new(ps))
 def symbol_new(n): return toSymbol(ubSymbol_new(n))
 def symbol_prim(s): return getVal(symTy.unpackEl(s, 0))
@@ -277,6 +277,7 @@ class Context: # current file resolution dir
     def extendValues(self):
         ctx = self.copy(); ctx.env = Env(self.env); return ctx
 def nullCtx(src): return Context(None, None, None, None, None, None, None, src)
+# todo: separate
 def newDen(ctx, sym):
     den = alias_new(sym); ctx.senv.add(EnvKey(sym), den); return den
 def getDen(ctx, sym):
@@ -422,7 +423,7 @@ def addPrim(name, val):
     primNS.define(symbol(name), val)
 def addConsDen(ctx, sym, ty):
     if len(ty.elts) == 0: consVal = node(ty)
-    else: consVal = constr_new(ctx, ty)
+    else: consVal = constr_new(ctx, ty) # todo: separate
     consDen = alias_new(sym); ty.consDen = consDen
     ctx.env.add(EnvKey(consDen), consVal)
     return consVal
@@ -468,7 +469,7 @@ addPrimTy('List', listTy)
 def cons(h, t): return consTy.new(h, t)
 def cons_head(x): return consTy.unpackEl(x, 0)
 def cons_tail(x): return consTy.unpackEl(x, 1)
-def isListCons(x): return getTy(x) is consTy
+def isListCons(x): return getTag(x) is consTy
 def isList(x): return x is nil or isListCons(x)
 def toList(args, tail=nil):
     for x in reversed(args): tail = cons(x, tail)
@@ -492,7 +493,7 @@ arrayTy = arrTy('Array', anyTy)
 ################################################################
 # strings
 stringTy = arrTy('String', ubCharTy)
-def isString(val): return getTy(val) is stringTy
+def isString(val): return getTag(val) is stringTy
 def toString(pyStr):
     cs = stringTy.new(); arrConcatList(cs, list(pyStr)); return cs
 def fromString(chStr): return ''.join(arrToList(chStr))
@@ -508,7 +509,7 @@ formTy = VariantType()
 syncloTy = prodTy('SynClo', ctxTy, listTy, formTy, const=True) # todo
 formTy.init((listTy, symTy, syncloTy, intTy, floatTy, charTy, stringTy))
 addPrimTy('SynForm', formTy)
-def isSynClo(s): return getTy(s) is syncloTy
+def isSynClo(s): return getTag(s) is syncloTy
 def synclo_new(ctx, frees, form): return syncloTy.new(ctx, frees, form)
 def synclo_ctx(s): return syncloTy.unpackEl(s, 0)
 def synclo_frees(s): return syncloTy.unpackEl(s, 1)
@@ -539,13 +540,13 @@ def primSC(form): return synclo_new(toCtx(primCtx), nil, form)
 # macros and semantics
 #macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), formTy), const=True) # todo
 macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), anyTy), const=True)
-def isMacro(v): return isTyped(v) and getTy(v) is macroTy
+def isMacro(v): return isTyped(v) and getTag(v) is macroTy
 def macro_proc(mac): return macroTy.unpackEl(mac, 0)
 def applyMacro(ctx, mac, form):
     args = PrimVal(macro_proc(mac)), [PrimVal(toCtx(ctx)), PrimVal(form)]
     return ctx.copy(), evalExpr(*applyFull(ctx, *args))
 ubSemanticTy, semanticTy, toSem, fromSem = basicTy('Semantic', object)
-def isSemantic(v): return isTyped(v) and getTy(v) is semanticTy
+def isSemantic(v): return isTyped(v) and getTag(v) is semanticTy
 def applySemantic(ctx, sem, form): return fromSem(sem)(ctx, form)
 ################################################################
 # common tables
@@ -603,15 +604,15 @@ def pretty(v, seen=None):
     if seen is None: seen = []
     if id(v) in seen: return '(...)'
     if isTyped(v):
-        pp = tagToPretty.get(getTy(v))
+        pp = tagToPretty.get(getTag(v))
         if pp is None:
-            if isinstance(getTy(v), ProductType):
-                seen.append(id(v)); ty = getTy(v)
+            if isinstance(getTag(v), ProductType):
+                seen.append(id(v)); ty = getTag(v)
                 els = ' '.join(pretty(ty.unpackEl(v, idx), seen)
                                for idx in range(ty.numIndices()))
                 seen.remove(id(v)); return '(%s)'%('%s %s'%(ty, els)).rstrip()
-            elif isinstance(getTy(v), ThunkType): return '(%s)'%str(getTy(v))
-            return '<%s %s>'%(getTy(v), getVal(v))
+            elif isinstance(getTag(v), ThunkType): return '(%s)'%str(getTag(v))
+            return '<%s %s>'%(getTag(v), getVal(v))
         else: return pp(v, seen)
     else: return '<ugly %s>'%repr(v)
 

@@ -19,7 +19,7 @@ def evalTys(ctx, tys): return (evalTy(ctx, ty) for ty in tys)
 class ConsTyExpr:
     def preEval(self): return type_new(self.ty)
     def eval(self, ctx): raise NotImplementedError
-class ConsTyVar(ConsTyExpr):
+class ConsTyVar(ConsTyExpr):# todo: separate
     def __init__(self, ctx, name): self.name = EnvKey(getDen(ctx, name))
     def preEval(self): return None
     def eval(self, ctx):
@@ -30,7 +30,7 @@ class ConsTyProduct(ConsTyExpr):
     def __init__(self, ctx, name, elts, fields):
         assert len(elts) >= len(fields), (elts, fields)
         self.ty = ProductType(name); self.elts = elts; self.fields = fields
-    def eval(self, ctx):
+    def eval(self, ctx):# todo: separate
         self.ty.init(tuple(evalTys(ctx, self.elts)), self.fields)
         addConsDen(ctx, self.ty.name.sym, self.ty); return type_new(self.ty)
 class ConsTyVariant(ConsTyExpr):
@@ -44,9 +44,9 @@ class ConsTyProc(ConsTyExpr):
         self.ty.init(*list(evalTys(ctx, (self.inTy, self.outTy))))
         return type_new(self.ty)
 ubTyConsTy, tyConsTy, toTyCons, fromTyCons = basicTy('TypeCons', object)
-def isTyCons(val): return isTyped(val) and getTy(val) is tyConsTy
+def isTyCons(val): return isTyped(val) and getTag(val) is tyConsTy
 def getTyCons(ctx, name):
-    ty = getVar(ctx, name)
+    ty = getVar(ctx, name)# todo: separate
     if isTyCons(ty): return fromTyCons(ty)
     return None
 def tycproc(name):

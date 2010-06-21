@@ -18,7 +18,7 @@ from data import *
 def mapRest(f, ctx, xs):
     return [f(ctx, form) for form in fromList(cons_tail(xs), ctx)]
 def checkIsForm(ctx, xs):
-    if not formTy.contains(getTy(xs)):
+    if not formTy.contains(getTag(xs)):
         typeErr(ctx, "invalid form: '%s'"%pretty(xs))
 def expandBasic(tyn):
     def ex(ctx, val):
@@ -52,7 +52,7 @@ def _expand(ctx, xs):
                                    for form in fromList(cons_tail(xs), ctx)))
             xs = cons(synclo_maybe(ctx, hdCtx, hd), wrapped)
         else:
-            ex = litExpanders.get(getTy(xs))
+            ex = litExpanders.get(getTag(xs))
             if ex is not None: ctx, xs = ex(ctx, xs); continue
         break
     ctx.hist.finish(xs); return ctx, xs
@@ -76,7 +76,7 @@ def _semantize(ctx, xs):
         den = getDen(ctx, xs); val = ctx.env.get(EnvKey(den))
         if isTyped(val) and isType(val):
             ty = type_type(val)
-            if isinstance(ty, ProductType): den = ty.consDen
+            if isinstance(ty, ProductType): den = ty.consDen# todo: separate
         return Var(EnvKey(den))
     elif isString(xs): return PrimVal(copyString(xs))
     elif xs is nil: return unitExpr
@@ -108,7 +108,7 @@ def semArgs(ctx, form, numArgs):
                 (pretty(cons_head(form)), numArgs, len(args)-1))
     return args[1:]
 def tryUnbox(ctx, form):
-    ty = getTy(form)
+    ty = getTag(form)
     if ty in (symTy, intTy, floatTy, charTy): return ty.unpackEl(form, 0)
     else: typeErr(ctx, "cannot unbox non-literal: '%s'"%pretty(form))
 @semproc('_unbox')
@@ -198,7 +198,7 @@ def semSeq(ctx, form):
 def toTy(ctx, form):
     ctx, form = expand(ctx, form)
     if not isSymbol(form): typeErr(ctx, "invalid type name: '%s'"%form)
-    return type_type(getVar(ctx, form))
+    return type_type(getVar(ctx, form))# todo: separate
 @primproc('_force', anyTy, anyTy)
 def primForce(ctx0, boxed): return final(force(ctx0, boxed))
 @semproc('_delay') # todo: choose whether it's worth making a thunk
@@ -284,7 +284,7 @@ def semNodePack(ctx, form):
 def semCount(ctx, form):
     return NodeCount(*semNodeAccess(ctx, *semArgs(ctx, form, 2)))
 @primproc('_tag', anyTy, tyTy)
-def primNodeTag(ctx0, node): return final(ubTyTy.new(getTy(node)))
+def primNodeTag(ctx0, node): return final(ubTyTy.new(getTag(node)))
 @primproc('_tag-pattern', ctxTy, symTy, listTy)
 def primTagPattern(ctx0, ctx, tagSym):
     result = nil; tag = getVar(fromCtx(ctx), tagSym)

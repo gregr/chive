@@ -55,7 +55,7 @@ class Region:
 class TyError(Exception): pass
 def typeErr(ctx, msg): raise TyError(ctx, msg)
 def isTyped(val): return (isinstance(val, list) and len(val)>0 and
-                          isinstance(getTy(val), Type))
+                          isinstance(getTag(val), Type))
 def typed(ty, val, const=None, lifted=False):
     rgn = Region(); tv = [rgn, ty, val]
     if const: rgn.constant()
@@ -63,14 +63,14 @@ def typed(ty, val, const=None, lifted=False):
     else: rgn.unlifted()
     return tv
 def getRgn(val): return val[0]
-def getTy(val): return val[1]
+def getTag(val): return val[1]
 def getVal(val): return val[2]
 class Type:
     def contains(self, ty, tenv=None): return self is ty
     def checkTy(self, val):
-        if not self.contains(getTy(val)):
+        if not self.contains(getTag(val)):
             typeErr(None, "expected '%s', given '%s'"%
-                    (self, getTy(val)))
+                    (self, getTag(val)))
     def checkIndex(self, idx, msg, exact=False):
         ni = self.numIndices()
         if ni is None and not exact: return
@@ -167,7 +167,7 @@ structType = cachedType(StructType)
 # boxed types (runtime tagging without parametric polymorphism for now)
 class BoxedType(Type):
     def checkTy(self, val):
-        if isinstance(getTy(val), ThunkType): return True
+        if isinstance(getTag(val), ThunkType): return True
         super().checkTy(val)
     def size(self): return atomicSize
     def unpack(self, mem, offset):
@@ -230,7 +230,7 @@ class ThunkType(NodeType):
     def __init__(self, name): self.name = name
     def new(self, thunk): return typed(self, thunk, lifted=True)
     def __str__(self): return '%s::thunk'%self.name
-def isThunk(v): return isTyped(v) and isinstance(getTy(v), ThunkType)
+def isThunk(v): return isTyped(v) and isinstance(getTag(v), ThunkType)
 class ProcType(NodeType):
     def __init__(self, inTy=None, outTy=None):
         if outTy is not None: self.init(inTy, outTy)
@@ -248,7 +248,7 @@ class ProcType(NodeType):
         if self in seen: return ['...']
         seen.add(self); return [str(self.inTy)]+self.outTy.finiteDesc(seen)
     def __str__(self): return '(%s)'%' -> '.join(self.finiteDesc(set()))
-def isProc(v): return isTyped(v) and isinstance(getTy(v), ProcType)
+def isProc(v): return isTyped(v) and isinstance(getTag(v), ProcType)
 procType = cachedType(ProcType)
 def curryProcType(paramts, rett, constr=procType):
     for paramt in reversed(paramts): rett = constr(paramt, rett)
@@ -283,7 +283,7 @@ class TableType(NodeType):
         #             %(self, self.keyt, key))
         return key
     def checkEl(self, el):
-        if not self.elt.contains(getTy(el)):
+        if not self.elt.contains(getTag(el)):
             typeErr(None, "added '%s' to %s with element type '%s'"
                     %(el, self, self.elt))
     def packEl(self, tab, key, val):
@@ -310,8 +310,8 @@ class ArrayType(NodeType):
     def new(self):
         arr = typed(self, mem_alloc(atomicSize)); arrSetCnt(arr, 0); return arr
     def count(self, arr): return arrCnt(arr)
-def arrElSize(arr): return getTy(arr).elt.size()
-def arrIdx(arr, idx): return getTy(arr).index(idx)[1]
+def arrElSize(arr): return getTag(arr).elt.size()
+def arrIdx(arr, idx): return getTag(arr).index(idx)[1]
 def arrGrow(arr, sz):
     mem = getVal(arr); mem_realloc(mem, max(sz, mem_size(mem)*2))
 def arrCapacity(arr):
@@ -321,7 +321,7 @@ def arrRequire(arr, cnt):
 def arrCnt(arr): return mem_read(getVal(arr), 0)
 def arrSetCnt(arr, cnt): return mem_write(getVal(arr), 0, cnt)
 def arrPush(arr, el):
-    al = arrCnt(arr); arrRequire(arr, al+1); getTy(arr).packEl(arr, al, el);
+    al = arrCnt(arr); arrRequire(arr, al+1); getTag(arr).packEl(arr, al, el);
     arrSetCnt(arr, al+1)
 def arrPop(ctx, arr):
     al = arrCnt(arr)
@@ -329,13 +329,13 @@ def arrPop(ctx, arr):
     arrSetCnt(arr, al-1)
 #def arrConcat(arr, arg): al = arrCnt(arr); return arrSlicePack(arr,al,al,arg)
 def arrCheckSlice(ctx, arr, start, end):
-    getTy(arr).checkBounds(ctx, arr, start-1)
-    getTy(arr).checkBounds(ctx, arr, end-1)
+    getTag(arr).checkBounds(ctx, arr, start-1)
+    getTag(arr).checkBounds(ctx, arr, end-1)
     if start > end: typeErr(ctx, "invalid array slice: (%d,%d)"%(start, end))
 def arrSliceUnpack(ctx, arr, start, end):
     arrCheckSlice(ctx, arr, start, end)
     mem = getVal(arr); start = arrIdx(arr, start); end = arrIdx(arr, end)
-    return typed(getTy(arr), (0,[end-start]+mem_slice_get(mem, start, end)[1]))
+    return typed(getTag(arr), (0,[end-start]+mem_slice_get(mem, start, end)[1]))
 def arrSlicePack(ctx, arr, start, end, arg):
     arrCheckSlice(ctx, arr, start, end)
     newLen = arrCnt(arr)+arrCnt(arg)-(end-start)
@@ -348,4 +348,4 @@ def arrToList(arr):
 def arrConcatList(arr, xs):
     al = arrCnt(arr); idx = arrIdx(arr, al)
     mem_slice_set(getVal(arr), idx, idx, (0, xs)); arrSetCnt(arr, al+len(xs))
-def isArray(v): return isTyped(v) and isinstance(getTy(v), ArrayType)
+def isArray(v): return isTyped(v) and isinstance(getTag(v), ArrayType)

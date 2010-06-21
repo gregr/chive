@@ -13,7 +13,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
-extensible dynamic dispatch
+separate type namespace (again)
+(_type sym) for retrieving certain (product?) types as values (tags?)
+multimethods
 case/match
 field projection operator
 AST pretty-printing
@@ -135,16 +137,3 @@ OOP:
 reflection:
   -show field names
   -show field names with short or full value descriptions
-
-deferred compiler/interpreter (eval instead of compile for pure interpreters):
-given a list of inputs assumed present at compile-time;
-  causes some input ops to become pure
-  default list includes module paths (explicit exclusion allows late-loading)
-eval definitions, compute dependencies
-postpone eval of pure value exprs until demanded, but compute dependencies
-compile effectful exprs (after demanding their dependencies)
-eval pure values when expansion requires it
-no need to compile unneeded definitions/pure exprs
-if expansion relies on runtime input, compile the continued expansion/eval;
-  you end up having to compile interpreter/jit compiler into the executable
-Root db usage (multimethods, record fields of tags, etc.) in exprs implies dynamic switch (can be inlined during proc specialization; can be made into static switch using type information)
