@@ -437,6 +437,8 @@ addPrimTy('Any', anyTy)
 def prodTy(name, *elts, const=None):
     ty = ProductType(name, elts, const=const); addPrimTy(name, ty); return ty
 def arrTy(name, elt): ty = ArrayType(name, elt); addPrimTy(name, ty); return ty
+def tabTy(name, keyt, elt, weak=False):
+    ty = TableType(name, keyt, elt, weak); addPrimTy(name, ty); return ty
 def singleton(name): ty = ProductType(name, ()); return ty, addPrimTy(name, ty)
 unitTy, unit = singleton('Unit')
 ################################################################
@@ -545,7 +547,11 @@ def applyMacro(ctx, mac, form):
 ubSemanticTy, semanticTy, toSem, fromSem = basicTy('Semantic', object)
 def isSemantic(v): return isTyped(v) and getTy(v) is semanticTy
 def applySemantic(ctx, sem, form): return fromSem(sem)(ctx, form)
-
+################################################################
+# common tables
+for ty in (tyTy, symTy, charTy, intTy): ty.hashable = True
+symTabTy = tabTy('SymbolTable', symTy, anyTy)
+tyTabTy = tabTy('TypeTable', tyTy, anyTy, True)
 ################################################################
 # pretty printing
 def prettyList(xs, seen):

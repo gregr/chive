@@ -201,7 +201,7 @@ class NodeType(BoxedType):
     def __str__(self): return str(self.name)
 class ProductType(NodeType):
     def __init__(self, name, elts=None, fields=(), const=None):
-        self.name = name; self.const = const
+        self.name = name; self.const = const; self.hashable = False
         if elts is not None: return self.init(elts, fields)
         self.elts = None; self.fields = {}; self.consDen = None
     def init(self, elts, fields=()):
@@ -269,18 +269,19 @@ import weakref
 class TableType(NodeType):
     def __init__(self, name, keyt, elt, weak=False):
         self.name = name; self.keyt = keyt; self.elt = elt
-        if not isinstance(keyt, ScalarType):
-            typeErr(None, ("'%s' has invalid key type '%s';"+
-                           "keys must be unboxed scalars")
+        if not (isinstance(keyt, ProductType) and keyt.hashable):
+            typeErr(None, ("'%s' given invalid key type '%s';"+
+                           "keys must be primitive scalars")
                     %(self, keyt))
+        self.ubkeyt = keyt.elts[0]
         if weak: self.makeData = weakref.WeakKeyDictionary
         else: self.makeData = dict
     def new(self): return typed(self, self.makeData())
     def validKey(self, key):
-        if not self.keyt.contains(getTy(key)):
-            typeErr(None, "%s with key type '%s' indexed with invalid key '%s'"
-                    %(self, self.keyt, key))
-        return getVal(key)
+        # if not self.ubkeyt.contains(self.ubkeyt.new(key)):
+        #     typeErr(None, "%s with key type '%s' indexed with invalid key '%s'"
+        #             %(self, self.keyt, key))
+        return key
     def checkEl(self, el):
         if not self.elt.contains(getTy(el)):
             typeErr(None, "added '%s' to %s with element type '%s'"
@@ -294,7 +295,9 @@ class TableType(NodeType):
         self.checkTy(tab)
         try: del getVal(tab)[self.validKey(key)]; return True
         except KeyError: return False
-    def items(self, tab): self.checkTy(tab); return getVal(tab).items()
+    def items(self, tab):
+        self.checkTy(tab); keyt = self.keyt; ubt = self.ubkeyt
+        return ((keyt.new(ubt.new(key)),el) for key, el in getVal(tab).items())
     def count(self, tab): self.checkTy(tab); return len(getVal(tab))
 class ArrayType(NodeType):
     def __init__(self, name, elt): self.name = name; self.elt = elt
@@ -307,7 +310,6 @@ class ArrayType(NodeType):
     def new(self):
         arr = typed(self, mem_alloc(atomicSize)); arrSetCnt(arr, 0); return arr
     def count(self, arr): return arrCnt(arr)
-# todo: shrink at 1/4?
 def arrElSize(arr): return getTy(arr).elt.size()
 def arrIdx(arr, idx): return getTy(arr).index(idx)[1]
 def arrGrow(arr, sz):

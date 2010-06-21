@@ -181,7 +181,8 @@ class TableDelete(NodeIndex):
         return final(result)
 class TableItems(NodeAccess):
     def eval(self, ctx):
-        return final(toList(self.ty.items(self._evalNode(ctx))))
+        return final(toList([toList(pair)
+                             for pair in self.ty.items(self._evalNode(ctx))]))
 ################################################################
 class Seq(Expr):
     def __init__(self, exprs): self.exprs = exprs[:-1]; self.last = exprs[-1]

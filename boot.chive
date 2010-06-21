@@ -162,4 +162,12 @@ _open primitives core-ns
 _file "core.chive" core-ns
 _import (quote core) core core-ns
 
+_def syms (_coll-new SymbolTable)
+_pack SymbolTable (quote hi) syms 42
+_pack SymbolTable (quote bye) syms "good-bye"
+
+_def tys (_coll-new TypeTable)
+_pack TypeTable (Type (_tag [1])) tys "cons"
+_pack TypeTable (Type (_tag [])) tys "nil"
+
 core ## final result of bootstrap
