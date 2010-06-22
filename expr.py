@@ -128,7 +128,8 @@ class NodeIndex(NodeAccess):
     def _eval(self, ctx):
         node = self._evalNode(ctx); idx = self.idx
         if not isinstance(idx, int):
-            idx = getVal(self.ty.keyt.unpackEl(evalExpr(ctx, idx), 0))
+            idx = evalExpr(ctx, idx)
+            if isinstance(self.ty, ArrayType): idx = fromInt(idx)
         self.ty.checkBounds(ctx, node, idx); return node, idx
 class NodeUnpack(NodeIndex):
     def eval(self, ctx): return final(self.ty.unpackEl(*self._eval(ctx)))
@@ -179,10 +180,18 @@ class TableDelete(NodeIndex):
         if self.ty.deleteEl(*self._eval(ctx)): result = true
         else: result = false
         return final(result)
-class TableItems(NodeAccess):
+class TableFold(NodeAccess):
+    def __init__(self, proc, lhs, *args):
+        super().__init__(*args); self.proc = proc; self.lhs = lhs
+    def freeVars(self):
+        return super().freeVars()+self.proc.freeVars()+self.lhs.freeVars()
+    def subst(self, subs):
+        super().subst(subs); self.proc.subst(subs); self.lhs.subst(subs)
     def eval(self, ctx):
-        return final(toList([toList(pair)
-                             for pair in self.ty.items(self._evalNode(ctx))]))
+        proc = evalExpr(ctx, self.proc); lhs = evalExpr(ctx, self.lhs)
+        for key, val in self.ty.items(self._evalNode(ctx)):
+            lhs = evalExpr(*applyDirect(ctx, proc, (lhs, key, val)))
+        return final(lhs)
 ################################################################
 class Seq(Expr):
     def __init__(self, exprs): self.exprs = exprs[:-1]; self.last = exprs[-1]

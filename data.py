@@ -589,9 +589,9 @@ def isSemantic(v): return isTyped(v) and getTag(v) is semanticTy
 def applySemantic(ctx, sem, form): return fromSem(sem)(ctx, form)
 ################################################################
 # common tables
-for ty in (tyTy, symTy, charTy, intTy): ty.hashable = True
-symTabTy = tabTy('SymbolTable', symTy, anyTy)
-tyTabTy = tabTy('TypeTable', tyTy, anyTy, True)
+for ty in (ubTyTy, ubSymTy, ubCharTy, ubIntTy): ty.hashable = True
+symTabTy = tabTy('SymbolTable', ubSymTy, anyTy)
+tyTabTy = tabTy('TypeTable', ubTyTy, anyTy, True)
 ################################################################
 # pretty printing
 def prettyList(xs, seen):

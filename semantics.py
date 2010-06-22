@@ -321,9 +321,12 @@ def semSlicePack(ctx, form):
 @semproc('_table-pop')
 def semTableDel(ctx, form):
     return TableDelete(*semNodeIndex(ctx, *semArgs(ctx, form, 3)))
-@semproc('_table-items')
-def semTableItems(ctx, form):
-    return TableItems(*semNodeAccess(ctx, *semArgs(ctx, form, 2)))
+@semproc('_table-fold')
+def semTableFold(ctx, form):
+    ty, node, *rest = semArgs(ctx, form, 4)
+    ty, node = semNodeAccess(ctx, ty, node)
+    rest = tuple(semantize(ctx, xx) for xx in rest)
+    return TableFold(*(rest+(ty, node)))
 ################################################################
 # definitions
 @semproc('_def-types')

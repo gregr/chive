@@ -13,7 +13,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
-(_type sym) for retrieving certain (product?) types as values (tags?)
 multimethods
 case/match
 field projection operator
