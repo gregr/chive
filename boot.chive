@@ -183,12 +183,31 @@ _def syms (_coll-new SymbolTable)
 _pack SymbolTable (_unbox hi) syms 42
 _pack SymbolTable (_unbox bye) syms "good-bye"
 
-_def tys (_coll-new TypeTable)
-_pack TypeTable (_tag [1]) tys "cons"
-_pack TypeTable (_tag []) tys "nil"
+_def tys (_coll-new TagTable)
+_pack TagTable (_tag [1]) tys "cons"
+_pack TagTable (_tag []) tys "nil"
 
 _def-proc symtab-items (tab)
   _table-fold SymbolTable tab (_proc (rhs (key _Symbol) val)
                                 ([(Symbol key) val]:rhs)) []
+
+_def-proc _type-tag (ctx sym) (_unpack Type 0 (hd (_tag-pattern ctx sym)))
+
+_def _projections (_coll-new TagTable)
+_def-proc set-projection ((tag _Type) proc)
+  (_pack TagTable tag _projections proc)
+_def-op (@) infixTight left 5
+_def-proc (@) (nd sym) ((_unpack TagTable (_tag nd) _projections) nd sym)
+_def-op (.) infixTight left 5
+_def-macro (.) (ctx form)
+  map-synclo
+    _proc (form) [(squote \@) (htl form) [(squote quote) (httl form)]]
+    form
+
+set-projection
+  _type-tag (_ctx) (quote \:)
+  _proc (nd sym)
+    _switch (_unpack Symbol 0 sym)
+      ((((_unbox hd)) (hd nd)) (((_unbox tl)) (tl nd)))
 
 core ## final result of bootstrap

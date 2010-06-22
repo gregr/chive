@@ -103,13 +103,12 @@ def semArgs(ctx, form, numArgs):
                 (pretty(cons_head(form)), numArgs, len(args)-1))
     return args[1:]
 def tryUnbox(ctx, form):
-    ty = getTag(form)
+    form = stripOuterSynClo(form); ty = getTag(form)
     if ty in (symTy, intTy, floatTy, charTy): return ty.unpackEl(form, 0)
     else: typeErr(ctx, "cannot unbox non-literal: '%s'"%pretty(form))
 @semproc('_unbox')
 def semUnbox(ctx, form):
-    form = stripOuterSynClo(cons_head(cons_tail(form)))
-    return PrimVal(tryUnbox(ctx, form))
+    return PrimVal(tryUnbox(ctx, cons_head(cons_tail(form))))
 @primproc('_expand', ctxTy, formTy, formTy)
 def primExpand(ctx0, ctx, form):
     ctx, form = expand(fromCtx(ctx).withThread(ctx0.thread), form)
@@ -240,8 +239,9 @@ def semSwitch(ctx, form):
                     if len(xpat) != 2:
                         typeErr(ctx, "invalid pattern: '%s'"%pretty(pat))
                     ubsym, val = xpat
-                    if symbol_eq(unboxDen, getDen(ctx, ubsym)):
-                        pat = tryUnbox(ctx, val)
+                    ubsymCtx, ubsym = syncloExpand(patCtx, ubsym)
+                    if symbol_eq(unboxDen, getDen(ubsymCtx, ubsym)):
+                        pat = getVal(tryUnbox(ctx, val))
                 assert pat not in dalts, pat
                 dalts[pat] = body
     return Switch(semantize(ctx, discrim), default, dalts)

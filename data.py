@@ -591,7 +591,7 @@ def applySemantic(ctx, sem, form): return fromSem(sem)(ctx, form)
 # common tables
 for ty in (ubTyTy, ubSymTy, ubCharTy, ubIntTy): ty.hashable = True
 symTabTy = tabTy('SymbolTable', ubSymTy, anyTy)
-tyTabTy = tabTy('TypeTable', ubTyTy, anyTy, True)
+tyTabTy = tabTy('TagTable', ubTyTy, anyTy, True)
 ################################################################
 # pretty printing
 def prettyList(xs, seen):
