@@ -226,16 +226,17 @@ def semSwitch(ctx, form):
     for alt in fromSrcForm(ctx, alts):
         matches, body = tuple(fromSrcForm(ctx, alt))
         body = semantize(ctx, body)
+        matchesCtx, matches = syncloExpand(ctx, matches)
         if matches is nil:
             if default is not None:
                 typeErr(ctx, 'switch can only have one default')
             default = body
         else:
-            for pat in fromSrcForm(ctx, matches):
-                pat = stripOuterSynClo(pat)
-                if isSymbol(pat): pat = toTy(ctx, pat)
+            for pat in fromSrcForm(matchesCtx, matches):
+                patCtx, pat = syncloExpand(ctx, pat)#stripOuterSynClo(pat)
+                if isSymbol(pat): pat = toTy(patCtx, pat)
                 elif isListCons(pat):
-                    xpat = tuple(fromSrcForm(ctx, pat))
+                    xpat = tuple(fromSrcForm(patCtx, pat))
                     if len(xpat) != 2:
                         typeErr(ctx, "invalid pattern: '%s'"%pretty(pat))
                     ubsym, val = xpat
@@ -304,7 +305,7 @@ def semArrayPop(ctx, form):
 @semproc('_array-push')
 def semArrayPush(ctx, form):
     *rest, rhs = semArgs(ctx, form, 3); rhs = semantize(ctx, rhs)
-    return ArrayPush(rhs, *semArrayAccess(ctx, *rest))
+    return ArrayPush(rhs, *semNodeAccess(ctx, *rest))
 def semSlice(ctx, ty, start, end, node):
     start = semantize(ctx, start); end = semantize(ctx, end)
     ty, node = semNodeAccess(ctx, ty, node)

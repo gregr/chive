@@ -42,35 +42,52 @@ _def _def-macro (Macro (_proc (ctx form)
 _def-macro _def-proc (ctx form)
   ((squote _def):(hd (tl form)):((squote _proc):(tl (tl form))):Nil)
 
+_def-proc id (x) x
 _def-proc foldr-list (f rhs xs)
   _switch
     _tag xs
     (((Nil) rhs)
      ((\:) (f (hd xs) (foldr-list f rhs (tl xs)))))
-_def-proc map-synclo (f form)
-  _switch (_tag form)
-    (((SynClo) (SynClo (synclo-env form) (synclo-frees form)
-                 (f (synclo-form form))))
-     (() (f form)))
-_def-proc build-list-form (xs)
-  foldr-list (_proc (fst rst) (squote (:):fst:rst:Nil)) (squote Nil) xs
-_def-proc read-list-form (parser chs)
-  map-synclo build-list-form (_read-bracketed-form parser "]")
-
-_def-reader "[" read-list-form
-
-_def-proc id (x) x
+_def-proc foldl-list (f lhs xs)
+  _switch
+    _tag xs
+    (((Nil) rhs)
+     ((\:) (foldl-list f (f lhs (hd xs)) (tl xs))))
 _def-proc rev-append (xs ys)
   _switch
     _tag ys
     (((Nil) xs)
      ((\:) (rev-append (hd ys:xs) (tl ys))))
 _def-proc reverse (xs) (rev-append Nil xs)
+_def-proc append (xs ys) (rev-append ys (reverse xs))
 _def-proc map-list (f xs)
   _switch
     _tag xs
     (((Nil) Nil)
      ((\:) (f (hd xs):map-list f (tl xs))))
+_def-proc map-synclo (f form)
+  _switch (_tag form)
+    (((SynClo) (SynClo (synclo-env form) (synclo-frees form)
+                 (f (synclo-form form))))
+     (() (f form)))
+
+_def-proc build-list-form (xs)
+  foldr-list (_proc (fst rst) (squote (:):fst:rst:Nil)) (squote Nil) xs
+_def-proc read-list-form (parser chs)
+  map-synclo build-list-form (_read-bracketed-form parser "]")
+_def-reader "[" read-list-form
+
+_def-proc build-array-form (xs)
+  _let () ((arv (gensym ()))) ()
+    [(squote _let) [] [[arv (squote (_coll-new Array))]] []
+      (append ((squote _seq):
+               (map-list (_proc (xx)
+                           [(squote _array-push) (squote Array) arv xx]) xs))
+        [arv])]
+_def-proc read-array-form (parser chs)
+  map-synclo build-array-form (_read-bracketed-form parser "]")
+_def-reader "#[" read-array-form
+
 _def-proc strip-synclo (frm)
   _switch
     _tag frm
