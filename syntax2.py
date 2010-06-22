@@ -51,6 +51,7 @@ def mkTerm(f):
     return termMaker
 def makeTokClass(tokSpec): return (re.compile(tokSpec[0]), mkTerm(tokSpec[1]))
 def makeTokClasses(tokSpecs): return [makeTokClass(c) for c in tokSpecs]
+commentStr = '##'
 operPat = '[~!@$%^&*\\=+|;:,.<>/?-]+'
 identPat = r"([a-zA-Z_]|(\\.))([-]?(\w|(\\.)))*[!?]*[']*"
 tokClassesNonDelimiter = makeTokClasses((
@@ -125,6 +126,7 @@ class Parser:
             if self.stream.empty(): self.delimit(); return -1
             self.stream.popRgn()
             line = self.stream.getln(); sline = line.lstrip()
+            if sline.startswith(commentStr): sline = ''
             if sline == '\\\n': sline = ''
             else: newlines += 1
         self.stream.putln(sline); diff = len(line)-len(sline)
@@ -271,7 +273,7 @@ def stddisp(chs):
     return mkDisp
 @stddisp('(')
 def parenExpr(parser, ch): return parser.bracketedExpr(')')
-@stddisp('##')
+@stddisp(commentStr)
 def commentLine(parser, ch):
     parser.stream.getln(); parser.stream.popRgn(); parser.stream.putln('\n')
     return nullTerm
