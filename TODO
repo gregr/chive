@@ -13,18 +13,35 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+= debugging
+================================================================
+improve parser-produced source annotations (expression aggregates)
+
+eval
+expand
+expand-once (single-step expansion)
+history (of expansions)
+context (is this necessary given the other options?)
+env (part of trail?)
+inspect (inspect result of last expression)
+condition
+restarts
+restart
+continue (not applicable for non-continuable conditions)
+trail (partial backtrace due to tail recursion)
+break (passed a condition)
+step
+trace
+untrace
+find (source location of a definition)
+
+================================================================
+= general
+================================================================
 multimethods
 case/match
-field projection operator
-AST pretty-printing
-no ad-hoc local environment or namespace access
-   they can still be explicitly constructed/passed around
-debugging inspector
-          should not require eval to operate on local environments
-                 eval should operate on namespaces
-          therefore needs implementation-specific introspection privileges
-improve syntax source annotations (expression aggregates)
-expansion history (fix) and source annotations for definitions
+
+field annotations in product type definitions: implicit set-projection
 
 ================================================================
 = modules
