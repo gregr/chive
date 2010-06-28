@@ -21,13 +21,17 @@ class UnwindExc(Exception): pass
 def final(val): return None, val
 def cont(ctx, expr): return ctx, expr
 def evalExpr(ctx, expr, ty=None): # tail-call trampoline
+    ctx0 = ctx
     try:
-        while ctx is not None: ctx, expr = expr.eval(ctx)
+        trailPush(ctx0, ctx, expr)
+        while ctx is not None:
+            ctx, expr = expr.eval(ctx); trailUpdate(ctx0, ctx, expr)
     except UnwindExc: raise
     except Exception as exc:
         if ctx.root.onErr is None: raise
         expr = ctx.root.onErr(exc, ctx, expr)
         if expr is None: raise
+    finally: trailPop(ctx0)
     if ty is not None: ty.checkTy(expr)
     return expr # when ctx is None, expr will be a final value
 class Expr:
@@ -253,6 +257,9 @@ class History:
         self.subs = [sh for sh in self.subs if sh.main or sh.subs]
     def show(self):
         return '\n'.join(map(pretty, chain(self.main, [self.final])))
+def trailPush(ctx0, ctx, expr): ctx0 and ctx0.thread.trail.append((ctx, expr))
+def trailPop(ctx): ctx and ctx.thread.trail.pop()
+def trailUpdate(ctx0, ctx, expr): trailPop(ctx0); trailPush(ctx0, ctx, expr)
 class Context: # current file resolution dir
     def __init__(self, root, thread, nspace, readers, ops, tenv, senv, env,
                  src, hist=None):
@@ -398,17 +405,17 @@ class Namespace:
     def defReader(self, chs, reader): addDisp(chs, reader, self.ctx.readers)
 class Source:
     def __init__(self, nspace): self.nspace = nspace
-    def eval(self, evaluate): # todo: only eval on demand
-        for expr in self.exprs(): evaluate(self.nspace.ctx, expr)
+    def eval(self, thread, evaluate): # todo: only eval on demand
+        ctx = self.nspace.ctx.withThread(thread)
+        for expr in self.exprs(ctx): evaluate(ctx, expr)
 class DirectSource(Source):
     def __init__(self, nspace, exprs):
         super().__init__(nspace); self._exprs = exprs
     def exprs(self): return self._exprs
 class StreamSource(Source):
-    def exprs(self): # todo: configurable parser
+    def exprs(self, ctx): # todo: configurable parser
         stream = Stream(self.name(), self.stream())
-        parser = Parser(self.nspace.ctx, stream)
-        return parser.parse()
+        parser = Parser(ctx, stream); return parser.parse()
 class DirectStreamSource(StreamSource):
     def __init__(self, nspace, name, stream):
         super().__init__(nspace); self._name = name; self._stream = stream
@@ -421,7 +428,8 @@ class FileSource(StreamSource):
     def stream(self): return open(self.name())
 
 class Thread:
-    def __init__(self, root): self.root = root; self.tid = None; self.tls = {}
+    def __init__(self, root):
+        self.root = root; self.tid = None; self.tls = {}; self.trail = []
     def getDataTLS(self, ctx, key):
         data = self.tls.get(key)
         if data is None:

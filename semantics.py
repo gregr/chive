@@ -156,8 +156,8 @@ def primOpen(ctx0, mod, nspace):
 @primproc('_file', stringTy, nspaceTy, unitTy)
 def primFile(ctx0, path, nspace):
     # todo: path lookup
-    FileSource(fromNspace(nspace), fromString(path)).eval(evaluate)
-    return final(unit)
+    args = fromNspace(nspace), fromString(path)
+    FileSource(*args).eval(ctx0.thread, evaluate); return final(unit)
 @primproc('_import', symTy, anyTy, nspaceTy, unitTy)
 def primImport(ctx0, sym, val, nspace):
     fromNspace(nspace).defVar(sym, val); return final(unit)
@@ -374,18 +374,18 @@ from data import Env, makeStream, unit
 def interact(thread, mod):
     result = [unit]
     def evalPrint(ctx, expr):
-        res = evaluate(ctx.withThread(thread), expr)
-        result[0] = res; print(pretty(res))
+        res = evaluate(ctx, expr); result[0] = res; print(pretty(res))
     for stream in interactStreams('%s> '%mod.name):
-        try: DirectStreamSource(mod.nspace, mod.name, stream).eval(evalPrint)
+        try: DirectStreamSource(mod.nspace, mod.name, stream).eval(thread,
+                                                                   evalPrint)
         except LexError: raise
         except ParseError: raise
         except TyError: raise
     print(''); return result[0]
 def evalFile(thread, mod, absPath):
     result = [unit]
-    def evalSave(ctx, expr): result[0] = evaluate(ctx.withThread(thread), expr)
-    FileSource(mod.nspace, absPath).eval(evalSave)
+    def evalSave(ctx, expr): result[0] = evaluate(ctx, expr)
+    FileSource(mod.nspace, absPath).eval(thread, evalSave)
     return result[0]
 # def debugErr(exc, ctx, expr): # todo: exit without resume?
 #     root = ctx.nspace.mod.root
