@@ -132,12 +132,12 @@ class Parser:
         sline = None
         while not sline:
             if self.stream.empty(): self.delimit(); return -1
-            self.stream.popRgn()
             line = self.stream.getln(); sline = line.lstrip()
             if sline.startswith(commentStr): sline = ''
             if sline == '\\\n': sline = ''
             else: newlines += 1
-        self.stream.putln(sline); diff = len(line)-len(sline)
+        self.stream.putln(sline); self.stream.popRgn()
+        diff = len(line)-len(sline)
         if newlines > 0 or diff > 0: self.delimit()
         if newlines > 0: return diff
     def expr(self, eoe, mkExpr):
