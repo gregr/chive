@@ -143,7 +143,7 @@ class NativeProc:
     def call(self, ctx, args):
         ctx = ctx.extendValues()
         for binder, arg in zip(self.binders, args): ctx.env.add(binder, arg)
-        return self.code.eval(ctx)
+        return cont(ctx, self.code)
     def arity(self): return len(self.binders)
 class NativeClosure:
     def __init__(self, proc, ctx): self.proc = proc; self.ctx = ctx
