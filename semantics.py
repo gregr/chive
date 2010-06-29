@@ -27,10 +27,9 @@ def expandBasic(tyn):
     return ex
 litExpanders = dict((ty, expandBasic(ty.name))
                     for ty in (intTy,floatTy,charTy))
-unitExpr = Var(EnvKey(unitDen))
+def unitExpr(ctx): expr = Var(EnvKey(unitDen)); expr.ctx = ctx; return expr
 def synclo_maybe(ctx0, ctx, form):
-    if ctx0 != ctx and (isSymbol(form) or isListCons(form)):
-        return synclo_new(toCtx(ctx), nil, form)
+    if ctx0 != ctx: return synclo_new(toCtx(ctx), nil, form)
     return form
 def _expand(ctx, xs):
     while True:
@@ -46,8 +45,7 @@ def _expand(ctx, xs):
                         if isSemantic(val): break
                         elif isMacro(val):
                             ctx.hist.add(xs); mfrm = cons(hd, cons_tail(xs))
-                            ctx, xs = applyMacro(ctx, val, mfrm)
-                            continue
+                            xs = applyMacro(ctx, val, mfrm); continue
             wrapped = toList(tuple(synclo_maybe(ctx, *expand(ctx, form))
                                    for form in fromList(cons_tail(xs), ctx)))
             xs = cons(synclo_maybe(ctx, hdCtx, hd), wrapped)
@@ -67,15 +65,17 @@ def _semantize(ctx, xs):
             if den is not None:
                 val = hdCtx.env.get(EnvKey(den))
                 if val is not None and isSemantic(val):
-                    return applySemantic(ctx, val, cons(hd, cons_tail(xs)))
+                    expr = applySemantic(ctx, val, cons(hd, cons_tail(xs)))
+                    expr.ctx = ctx; return expr
         hd = _semantize(hdCtx, hd); rest = fromList(cons_tail(xs), ctx)
         rest = [_semantize(ctx.subHist(), form) for form in rest]# todo: subHist?
         if isinstance(hd, Apply): hd.args.extend(rest); return hd
-        else: return Apply(hd, rest)
-    elif isSymbol(xs): return Var(EnvKey(getDen(ctx, xs)))
-    elif isString(xs): return PrimVal(copyString(xs))
-    elif xs is nil: return unitExpr
+        else: expr = Apply(hd, rest)
+    elif isSymbol(xs): expr = Var(EnvKey(getDen(ctx, xs)))
+    elif isString(xs): expr = PrimVal(copyString(xs))
+    elif xs is nil: return unitExpr(ctx)
     else: typeErr(ctx, "invalid symbolic expression: '%s'"%pretty(xs))
+    expr.ctx = ctx; return expr
 
 def expand(ctx, xs): return _expand(ctx.subHist(), xs)
 def semantize(ctx, xs): return _semantize(*_expand(ctx.subHist(), xs))
@@ -177,7 +177,7 @@ def primGetTLData(ctx0, key):
 @semproc('_init-tl-data')
 def semInitTLData(ctx, form):
     key, body = semArgs(ctx, form, 2); key = EnvKey(evaluate(ctx, key))
-    ctx.root.setInitTLS(ctx, key, semantize(ctx, body)); return unitExpr
+    ctx.root.setInitTLS(ctx, key, semantize(ctx, body)); return unitExpr(ctx)
 ################################################################
 # control flow
 @semproc('_unwind')
@@ -332,26 +332,26 @@ def semTableFold(ctx, form):
 # definitions
 @semproc('_def-types')
 def semDefTypes(ctx, form):
-    bindTypes(ctx, fromList(cons_tail(form), ctx)); return unitExpr
+    bindTypes(ctx, fromList(cons_tail(form), ctx)); return unitExpr(ctx)
 @semproc('_def')
 def semDef(ctx, form):
-    binder, body = semArgs(ctx, form, 2)
-    ctx.nspace.defVar(stripSC(binder), evaluate(ctx, body)); return unitExpr
+    binder, body = semArgs(ctx, form, 2); ue = unitExpr(ctx)
+    ctx.nspace.defVar(stripSC(binder), evaluate(ctx, body)); return ue
 @semproc('_refer')
 def semReferVar(ctx, form):
     binder1, binder2 = semArgs(ctx, form, 2)
-    ctx.nspace.referVar(ctx, binder2, binder1); return unitExpr
+    ctx.nspace.referVar(ctx, binder2, binder1); return unitExpr(ctx)
 @semproc('_def-op')
 def semDefOp(ctx, form):
     name, fixity, assoc, prec = stripSCs(semArgs(ctx, form, 4))
     op = newOperator(name, symbol_name(fixity), assoc, fromInt(prec))
-    ctx.nspace.defOp(name, op); return unitExpr
+    ctx.nspace.defOp(name, op); return unitExpr(ctx)
 @semproc('_def-reader')
 def semDefReader(ctx, form):
     readStr, body = semArgs(ctx, form, 2)
     ctx.nspace.defReader(fromString(stripSC(readStr)),
                          wrapReader(evaluate(ctx, body)))
-    return unitExpr
+    return unitExpr(ctx)
 ################################################################
 # parser
 def wrapReader(proc):
@@ -378,9 +378,13 @@ def interact(thread, mod):
     for stream in interactStreams('%s> '%mod.name):
         try: DirectStreamSource(mod.nspace, mod.name, stream).eval(thread,
                                                                    evalPrint)
-        except LexError: raise
-        except ParseError: raise
-        except TyError: raise
+        except:
+            print('unhandled error: evaluation trail (most recent expr last)')
+            print(thread.report)
+            raise
+        # except LexError: raise
+        # except ParseError: raise
+        # except TyError: raise
     print(''); return result[0]
 def evalFile(thread, mod, absPath):
     result = [unit]

@@ -200,6 +200,8 @@ class Seq(Expr):
         return cont(ctx, self.last)
 class Apply(Expr):
     def __init__(self, proc, args): self.proc = proc; self.args = args
+    def __str__(self):
+        return '(%s)'%' '.join(str(arg) for arg in [self.proc]+self.args)
     def freeVars(self): return accFreeVars(self.args)
     def subst(self, subs): mapSubst(subs, self.args)
     def eval(self, ctx): return applyFull(ctx, self.proc, self.args)
@@ -232,5 +234,6 @@ class Unwind(Expr):
 class CatchUnwind(Expr):
     def __init__(self, cnsq, altrn): self.cnsq = cnsq; self.altrn = altrn
     def eval(self, ctx):
+        ctx0 = ctx
         try: return final(evalExpr(ctx, self.cnsq))
-        except UnwindExc: return cont(ctx, self.altrn)
+        except UnwindExc: trailCatch(ctx0); return cont(ctx, self.altrn)

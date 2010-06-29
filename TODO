@@ -22,7 +22,7 @@ expand
 expand-once (single-step expansion)
 history (of expansions)
 context (is this necessary given the other options?)
-env (part of trail?)
+env (part of trail? show free vars of current expr?)
 inspect (inspect result of last expression)
 condition
 restarts

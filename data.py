@@ -26,26 +26,31 @@ def evalExpr(ctx, expr, ty=None): # tail-call trampoline
         trailPush(ctx0, ctx, expr)
         while ctx is not None:
             ctx, expr = expr.eval(ctx); trailUpdate(ctx0, ctx, expr)
-    except UnwindExc: raise
-    except Exception as exc:
-        if ctx.root.onErr is None: raise
-        expr = ctx.root.onErr(exc, ctx, expr)
-        if expr is None: raise
+#    except UnwindExc: raise
+    except:# Exception as exc:
+        trailUnwind(ctx0)
+        raise
+#        if ctx.root.onErr is None: raise
+#        expr = ctx.root.onErr(exc, ctx, expr)
+#        if expr is None: raise
     finally: trailPop(ctx0)
     if ty is not None: ty.checkTy(expr)
     return expr # when ctx is None, expr will be a final value
 class Expr:
     def freeVars(self): return set()
     def subst(self, subs): pass
-    def pretty(self): return 'todo'
+    def __repr__(self): return '%s(%s)'%(self.__class__.__name__, str(self))
+    def __str__(self): return 'todo: '+self.__class__.__name__
 
 ################################################################
 class Atom(Expr): pass
 class PrimVal(Atom):
     def __init__(self, val): self.val = val
+    def __str__(self): return pretty(self.val)
     def eval(self, ctx): return final(self.val)
 class Var(Atom):
     def __init__(self, name): self.name = name
+    def __str__(self): return str(self.name)
     def freeVars(self): return set([self.name])
     def subst(self, subs):
         newName = subs.get(self.name)
@@ -260,6 +265,14 @@ class History:
 def trailPush(ctx0, ctx, expr): ctx0 and ctx0.thread.trail.append((ctx, expr))
 def trailPop(ctx): ctx and ctx.thread.trail.pop()
 def trailUpdate(ctx0, ctx, expr): trailPop(ctx0); trailPush(ctx0, ctx, expr)
+def trailUnwind(ctx0): ctx0 and ctx0.thread.unwind()
+def trailCatch(ctx0): ctx0 and ctx0.thread.catch()
+def trailPretty(trail):# todo: free var bindings
+    return ''.join(repr(expr)+':\n'+prettySrc(expr.ctx.src) for ctx, expr in trail)
+def prettySrc(src):
+    if src is None: return '<unknown source>'
+    name, text, start, end = src; lead = '%s:%s-%s: '%(name,start,end)
+    return lead+(' '*len(lead)).join(text)
 class Context: # current file resolution dir
     def __init__(self, root, thread, nspace, readers, ops, tenv, senv, env,
                  src, hist=None):
@@ -268,7 +281,7 @@ class Context: # current file resolution dir
         self.tenv = tenv; self.senv = senv; self.env = env
         self.src = src; self.hist = hist or History()
     def __eq__(self, rhs): return self._cmp() == rhs._cmp()
-    def _cmp(self): return (self.ops, self.tenv, self.senv)
+    def _cmp(self): return (self.ops, self.tenv, self.senv, self.src)
     def copy(self):
         return Context(self.root, self.thread, self.nspace,
                        self.readers, self.ops, self.tenv, self.senv, self.env,
@@ -411,7 +424,7 @@ class Source:
 class DirectSource(Source):
     def __init__(self, nspace, exprs):
         super().__init__(nspace); self._exprs = exprs
-    def exprs(self): return self._exprs
+    def exprs(self, _): return self._exprs
 class StreamSource(Source):
     def exprs(self, ctx): # todo: configurable parser
         stream = Stream(self.name(), self.stream())
@@ -430,6 +443,11 @@ class FileSource(StreamSource):
 class Thread:
     def __init__(self, root):
         self.root = root; self.tid = None; self.tls = {}; self.trail = []
+        self.unwinding = False
+    def unwind(self):
+        if not self.unwinding:
+            self.unwinding = True; self.report = trailPretty(self.trail)
+    def catch(self): self.unwinding = False
     def getDataTLS(self, ctx, key):
         data = self.tls.get(key)
         if data is None:
@@ -591,7 +609,7 @@ def isMacro(v): return isTyped(v) and getTag(v) is macroTy
 def macro_proc(mac): return macroTy.unpackEl(mac, 0)
 def applyMacro(ctx, mac, form):
     args = PrimVal(macro_proc(mac)), [PrimVal(toCtx(ctx)), PrimVal(form)]
-    return ctx.copy(), evalExpr(*applyFull(ctx, *args))
+    return evalExpr(*applyFull(ctx, *args))
 ubSemanticTy, semanticTy, toSem, fromSem = basicTy('Semantic', object)
 def isSemantic(v): return isTyped(v) and getTag(v) is semanticTy
 def applySemantic(ctx, sem, form): return fromSem(sem)(ctx, form)

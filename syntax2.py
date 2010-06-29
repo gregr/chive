@@ -33,10 +33,20 @@ def makeOp(parser, s):
     if op is None: return NullOp(sym)
     return op
 def srcWrap_(src, term): return synclo_new(toCtx(nullCtx(src)), nil, term)
-def srcWrap(parser, term):
-    return srcWrap_(SrcTerm(parser.stream.popRgn(), ()), term)
+def srcWrap(parser, term): return srcWrap_(parser.stream.popRgn(), term)
+SrcRgn = namedtuple('SrcRgn', 'name text start end')
+def aggSrcs(srcs):
+    if not srcs: return None
+    start = min(src.start for src in srcs); end = max(src.end for src in srcs)
+    name = srcs[0].name; text = [None]*(end[0]-start[0]+1)
+    for src in srcs:
+        assert src.name == name, (name, src.name)
+        base = start[0]; text[src.start[0]-base:src.end[0]-base+1] = src.text
+    return SrcRgn(name, text, start, end)
 def makeExpr(terms, exprSrc=None):
-    return srcWrap_(exprSrc, toList(terms)) # todo: aggregate srcs
+    srcs = tuple(fromCtx(synclo_ctx(tm)).src for tm in terms)
+    if exprSrc is not None: srcs += (exprSrc,)
+    return srcWrap_(aggSrcs(tuple(srcs)), toList(terms))
 def makeExprNonSingle(terms, exprSrc=None):
     if len(terms) > 1: return makeExpr(terms, exprSrc)
     elif len(terms) == 1: return terms[0]
@@ -66,8 +76,6 @@ tokClassesDelimiter = makeTokClasses((
         (operPat, makeOp),
         ))
 tokClassesAll = tokClassesNonDelimiter+tokClassesDelimiter
-SrcRgn = namedtuple('SrcRgn', 'name lines start end')
-SrcTerm = namedtuple('SrcTerm', 'rgn sub')
 class Stream:
     def __init__(self, name, ios, row=1, col=0):
         self.name = name
@@ -93,7 +101,7 @@ class Stream:
         return False
     def popRgn(self):
         newLoc = (self.row, self.col)
-        src = SrcRgn(self.name, ''.join(self.lineHist), self.locHist, newLoc)
+        src = SrcRgn(self.name, self.lineHist, self.locHist, newLoc)
         if self.lineBuf is None: self.lineHist = []
         else: self.lineHist = self.lineHist[-1:]
         self.locHist = newLoc; return src
