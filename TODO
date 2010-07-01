@@ -15,22 +15,34 @@ limitations under the License.
 ================================================================
 = debugging
 ================================================================
-improve parser-produced source annotations (expression aggregates)
-
 eval
 expand
 expand-once (single-step expansion)
-history (of expansions)
-context (is this necessary given the other options?)
-env (part of trail? show free vars of current expr?)
 inspect (inspect result of last expression)
-condition
-restarts
-restart
-continue (not applicable for non-continuable conditions)
+
 trail (partial backtrace due to tail recursion)
-break (passed a condition)
+history (of expansions)
+
+show/view
+        context (is this necessary given the other options?)
+        env (part of trail? show free vars of current expr?)
+        condition
+        restarts
+restart
+resume (not applicable for non-continuable conditions)
+
+breaking
+        break (can be passed a condition)
+        set/unset breakpoint
+        show breakpoints
 step
+        next
+        over
+        out
+go (continue running without steps)
+halt (stop all further evaluation)
+where (show current line; show some surrounding lines)
+
 trace
 untrace
 find (source location of a definition)
