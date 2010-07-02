@@ -18,6 +18,7 @@ from itertools import chain
 import os
 
 class UnwindExc(Exception): pass
+class UncaughtUnwindExc(Exception): pass
 def final(val): return None, val
 def cont(ctx, expr): return ctx, expr
 def evalExpr(ctx, expr, ty=None): # tail-call trampoline
@@ -26,19 +27,19 @@ def evalExpr(ctx, expr, ty=None): # tail-call trampoline
         trailPush(ctx0, ctx, expr)
         while ctx is not None:
             ctx, expr = expr.eval(ctx); trailUpdate(ctx0, ctx, expr)
-#    except UnwindExc: raise
-    except:# Exception as exc:
-        trailUnwind(ctx0)
-        raise
-#        if ctx.root.onErr is None: raise
-#        expr = ctx.root.onErr(exc, ctx, expr)
-#        if expr is None: raise
+    except UnwindExc: trailUnwind(ctx0); raise
+    except Exception as exc:
+        if not ctx0.thread.isUnwinding() and ctx0.root.onErr is not None:
+            expr = ctx0.root.onErr(ctx0, exc)
+        else: expr = None
+        if expr is None: trailUnwind(ctx0); raise
     finally: trailPop(ctx0)
     if ty is not None: ty.checkTy(expr)
     return expr # when ctx is None, expr will be a final value
 class Expr:
     def freeVars(self): return set()
     def subst(self, subs): pass
+    def trailIncludes(self): return True
     def __repr__(self): return '%s(%s)'%(self.__class__.__name__, str(self))
     def __str__(self): return 'todo: '+self.__class__.__name__
 
@@ -267,12 +268,16 @@ def trailPop(ctx): ctx and ctx.thread.trail.pop()
 def trailUpdate(ctx0, ctx, expr): trailPop(ctx0); trailPush(ctx0, ctx, expr)
 def trailUnwind(ctx0): ctx0 and ctx0.thread.unwind()
 def trailCatch(ctx0): ctx0 and ctx0.thread.catch()
-def trailPretty(trail):# todo: free var bindings
-    return ''.join(repr(expr)+':\n'+prettySrc(expr.ctx.src) for ctx, expr in trail)
-def prettySrc(src):
-    if src is None: return '<unknown source>'
-    name, text, start, end = src; lead = '%s:%s-%s: '%(name,start,end)
-    return lead+(' '*len(lead)).join(text)
+def trailPretty(trail, indent=''):# todo: free var bindings
+    return ''.join(prettySrc(expr, indent) for ctx, expr in trail)
+def prettySrc(expr, indent=''):
+    if not expr.trailIncludes(): return ''
+    src = expr.ctx.src
+    if src is None: return indent+repr(expr)+'\n'+indent+'<unknown source>'
+    name, text, start, end = src
+    loc = indent+('%r\n%s"%s":%s-%s\n'%
+                  (expr, indent, name, start, end))+indent*2
+    return loc+(indent*2).join(text)
 class Context: # current file resolution dir
     def __init__(self, root, thread, nspace, readers, ops, tenv, senv, env,
                  src, hist=None):
@@ -442,12 +447,15 @@ class FileSource(StreamSource):
 
 class Thread:
     def __init__(self, root):
-        self.root = root; self.tid = None; self.tls = {}; self.trail = []
-        self.unwinding = False
-    def unwind(self):
-        if not self.unwinding:
-            self.unwinding = True; self.report = trailPretty(self.trail)
-    def catch(self): self.unwinding = False
+        self.root = root; self.tid = None; self.tls = {}; self.catches = 0
+        self.trail = []; self.unwoundTrail = []
+    def fullTrail(self): return self.trail+list(reversed(self.unwoundTrail))
+    def unwind(self): self.unwoundTrail.append(self.trail[-1])
+    def isUnwinding(self): return len(self.unwoundTrail) > 0
+    def catch(self): self.unwoundTrail = []
+    def pushCatch(self): self.catches += 1
+    def popCatch(self): self.catches -= 1; assert self.catches >= 0
+    def canCatch(self): return self.catches > 0
     def getDataTLS(self, ctx, key):
         data = self.tls.get(key)
         if data is None:

@@ -378,10 +378,7 @@ def interact(thread, mod):
     for stream in interactStreams('%s> '%mod.name):
         try: DirectStreamSource(mod.nspace, mod.name, stream).eval(thread,
                                                                    evalPrint)
-        except:
-            print('unhandled error: evaluation trail (most recent expr last)')
-            print(thread.report)
-            raise
+        except: raise
         # except LexError: raise
         # except ParseError: raise
         # except TyError: raise
@@ -391,6 +388,33 @@ def evalFile(thread, mod, absPath):
     def evalSave(ctx, expr): result[0] = evaluate(ctx, expr)
     FileSource(mod.nspace, absPath).eval(thread, evalSave)
     return result[0]
+debugOpts = [('quit', None, 'leave the debugger')]; debugOptNames = set()
+def dbgopt(name): # todo: add help descriptions
+    def mkdopt(f):
+        assert name not in debugOptNames
+        debugOptNames.add(name); debugOpts.append((name, f, None))
+        return f
+    return mkdopt
+def debugErr(ctx, exc):
+    print('ERROR:', pretty(exc))
+    while True:
+        print('debug options:')
+        for idx, (name, opt, hlp) in enumerate(debugOpts):
+            print('(%d)'%idx, name)
+        while True:
+            try:
+                idx = input('choose an option by number (? to reprint): ')
+                if idx.strip() == '?': break
+                idx = int(idx)
+                if 0 <= idx < len(debugOpts):
+                    dopt = debugOpts[idx][1]
+                    if dopt is None: return
+                    dopt(ctx); break
+            except ValueError: pass
+@dbgopt('trail')
+def printTrail(ctx):
+    print('evaluation trail (most recent expr last)')
+    print(trailPretty(ctx.thread.fullTrail(), '  '))
 # def debugErr(exc, ctx, expr): # todo: exit without resume?
 #     root = ctx.nspace.mod.root
 #     if root.debugging: return None

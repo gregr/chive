@@ -202,6 +202,7 @@ class Apply(Expr):
     def __init__(self, proc, args): self.proc = proc; self.args = args
     def __str__(self):
         return '(%s)'%' '.join(str(arg) for arg in [self.proc]+self.args)
+    def trailIncludes(self): return False
     def freeVars(self): return accFreeVars(self.args)
     def subst(self, subs): mapSubst(subs, self.args)
     def eval(self, ctx): return applyFull(ctx, self.proc, self.args)
@@ -230,10 +231,14 @@ class Let(Expr):
         return cont(newCtx, self.body)
 ################################################################
 class Unwind(Expr):
-    def eval(self, ctx): raise UnwindExc
+    def eval(self, ctx):
+        if ctx.thread.canCatch(): raise UnwindExc
+        else: raise UncaughtUnwindExc
 class CatchUnwind(Expr):
     def __init__(self, cnsq, altrn): self.cnsq = cnsq; self.altrn = altrn
     def eval(self, ctx):
         ctx0 = ctx
+        ctx0.thread.pushCatch()
         try: return final(evalExpr(ctx, self.cnsq))
         except UnwindExc: trailCatch(ctx0); return cont(ctx, self.altrn)
+        finally: ctx0.thread.popCatch()
