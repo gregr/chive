@@ -388,18 +388,18 @@ def evalFile(thread, mod, absPath):
     def evalSave(ctx, expr): result[0] = evaluate(ctx, expr)
     FileSource(mod.nspace, absPath).eval(thread, evalSave)
     return result[0]
-debugOpts = [('quit', None, 'leave the debugger')]; debugOptNames = set()
-def dbgopt(name): # todo: add help descriptions
+debugOpts = [('halt', 'abort this computation', None)]; debugOptNames = set()
+def dbgopt(name, desc): # todo: add help descriptions
     def mkdopt(f):
         assert name not in debugOptNames
-        debugOptNames.add(name); debugOpts.append((name, f, None))
+        debugOptNames.add(name); debugOpts.append((name, desc, f))
         return f
     return mkdopt
 def debugErr(ctx, exc):
     print('ERROR:', pretty(exc))
     while True:
         print('debug options:')
-        for idx, (name, opt, hlp) in enumerate(debugOpts):
+        for idx, (name, desc, opt) in enumerate(debugOpts):
             print('(%d)'%idx, name)
         while True:
             try:
@@ -407,12 +407,17 @@ def debugErr(ctx, exc):
                 if idx.strip() == '?': break
                 idx = int(idx)
                 if 0 <= idx < len(debugOpts):
-                    dopt = debugOpts[idx][1]
+                    name, desc, dopt = debugOpts[idx]
                     if dopt is None: return
                     dopt(ctx); break
             except ValueError: pass
-@dbgopt('trail')
-def printTrail(ctx):
+@dbgopt('help', 'describe debugging options')
+def dbgHelp(ctx):
+    print('debug option descriptions:')
+    for idx, (name, desc, opt) in enumerate(debugOpts):
+        print('(%d) %s - %s'%(idx, name, desc))
+@dbgopt('trail', 'view a partial traceback')
+def dbgTrail(ctx):
     print('evaluation trail (most recent expr last)')
     print(trailPretty(ctx.thread.fullTrail(), '  '))
 # def debugErr(exc, ctx, expr): # todo: exit without resume?
