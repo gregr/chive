@@ -395,12 +395,12 @@ def dbgopt(name, desc): # todo: add help descriptions
         debugOptNames.add(name); debugOpts.append((name, desc, f))
         return f
     return mkdopt
-def debugErr(ctx, exc):
-    print('ERROR:', pretty(exc))
+def debugErr(ctx, exc): print('ERROR:', pretty(exc)); return debugInteract(ctx)
+def debugInteract(ctx):
     while True:
-        print('debug options:')
+        print('status: stopped on error') # todo: stepping
         for idx, (name, desc, opt) in enumerate(debugOpts):
-            print('(%d)'%idx, name)
+            print('(%d) %s - %s'%(idx, name, desc))
         while True:
             try:
                 idx = input('choose an option by number (? to reprint): ')
@@ -409,23 +409,18 @@ def debugErr(ctx, exc):
                 if 0 <= idx < len(debugOpts):
                     name, desc, dopt = debugOpts[idx]
                     if dopt is None: return
-                    dopt(ctx); break
+                    dopt(ctx)
             except ValueError: pass
-@dbgopt('help', 'describe debugging options')
-def dbgHelp(ctx):
-    print('debug option descriptions:')
-    for idx, (name, desc, opt) in enumerate(debugOpts):
-        print('(%d) %s - %s'%(idx, name, desc))
-@dbgopt('trail', 'view a partial traceback')
-def dbgTrail(ctx):
-    print('evaluation trail (most recent expr last)')
-    print(trailPretty(ctx.thread.fullTrail(), '  '))
-# def debugErr(exc, ctx, expr): # todo: exit without resume?
-#     root = ctx.nspace.mod.root
-#     if root.debugging: return None
-#     root.debugging = True; name = ctx.nspace.mod.name
-#     print('ERROR:', exc); print(ctx.hist.show()); print(expr) # todo: pretty
-#     if input('enter debug mode?: ').lower() in ('n', 'no'): return None
-#     mod = root.moduleFromCtx('%s debug'%name, ctx)
-#     result = interact(ctx.thread, mod)
-#     root.debugging = False; return result
+# @dbgopt('help', 'describe debugging options (not very helpful yet)')
+# def dbgHelp(ctx):
+#     print('debug option descriptions:')
+#     for idx, (name, desc, opt) in enumerate(debugOpts):
+#         print('(%d) %s - %s'%(idx, name, desc))
+@dbgopt('traceback', 'view traceback')
+def dbgTraceback(ctx):
+    print('\ntraceback (most recent expression last):\n')
+    print(trailPretty(ctx.thread.fullTrail(), False, '  '))
+@dbgopt('traceback detailed', 'view traceback with evaluation steps')
+def dbgTracebackDetailed(ctx):
+    print('\ndetailed traceback (most recent expression last):\n')
+    print(trailPretty(ctx.thread.fullTrail(), True, '  '))

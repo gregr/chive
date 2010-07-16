@@ -20,6 +20,8 @@ def options():
                   action='store_true', help='evaluate interactively')
     op.add_option('-b', '--bootstrap', dest='bootstrap', default=False,
                   action='store_true', help='evaluate at the bootstrap phase')
+    op.add_option('-t', '--tracing', dest='tracing', default=False,
+                  action='store_true', help='trace procedures by default') # todo
     opts, args = op.parse_args()
     opts.interact = opts.interact or len(args)==0
     return opts, args

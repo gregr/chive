@@ -15,37 +15,64 @@ limitations under the License.
 ================================================================
 = debugging
 ================================================================
+function tracing
+status description
+
+# do these need to be in the debugger directly?
+# alternative: start a new interactive evaluator and provide these primitives
 eval
 expand
 expand-once (single-step expansion)
-inspect (inspect result of last expression)
-
-trail (partial backtrace due to tail recursion)
 history (of expansions)
+inspect (inspect result of last eval)
+trace
+untrace
+        [un]trace all by default; later add a way to specify procedures
+show traced
+find/locate (source location of a definition)
+break
+
+debugger proper
+---------------
+traceback (partial due to tail recursion unless tracing all)
 
 show/view
-        context (is this necessary given the other options?)
+        status: stepping or stopped (error)
         env (part of trail? show free vars of current expr?)
-        condition
-        restarts
-restart
-resume (not applicable for non-continuable conditions)
+        procedures being traced
+        context (is this necessary given the other options?)
+where (show current line; possibly some surrounding lines)
 
 breaking
-        break (can be passed a condition)
-        set/unset breakpoint
+        set/unset breakpoint; by line, by procedure? conditional?
         show breakpoints
-step
+stepping
         next
         over
         out
-go (continue running without steps)
-halt (stop all further evaluation)
-where (show current line; show some surrounding lines)
+resume (continue running without stepping)
 
-trace
-untrace
-find (source location of a definition)
+================================================================
+= conditions
+================================================================
+interactive default handler
+---------------------------
+break (enter the debugger to have a look around)
+show
+        condition
+        restarts
+restart (choosing a restart from shown list)
+continue
+         not applicable for non-continuable conditions such as errors
+         given a value to return to the signalling computation
+----------------------------------------------------------------
+don't truncate handler stack upon finding a handler
+      -unwound handlers pop themselves
+derive throw and build on that
+restart lists need to be segmented by interleaved handler pushes
+
+conditions: signals/restarts
+type-error hook
 
 ================================================================
 = general
@@ -79,17 +106,6 @@ make-foo a b c =
                                 g = ...
                         files ["blah" "bleh"]
                         text "j k = ..."
-
-================================================================
-= conditions
-================================================================
-don't truncate handler stack upon finding a handler
-      -unwound handlers pop themselves
-derive throw and build on that
-restart lists need to be segmented by interleaved handler pushes
-
-conditions: signals/restarts
-type-error hook
 
 ================================================================
 = low-level
