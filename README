@@ -13,17 +13,27 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
+= Recommendations
+================================================================
+Until the core libraries are finished, the best way to experiment with this
+project is to run the following:
+
+python3 chive.py -ibt boot.chive
+
+This will evaluate the boot.chive file and drop you into interactive mode.
+
+================================================================
 = Interpreter Overview
 ================================================================
 Phases of interpretation:
 
-    text -> (lexer) -> tokens -> (parser) -> s-exprs -> (evaluator) -> values
+    text -> (parser) -> s-exprs -> (evaluator) -> values
 
 A closer look at how the evaluator processes each s-expr:
 
-    s-expr -> (expander) -> s-expr -> (analyzer) -> AST -> (eval) -> value
+    s-expr -> (expand) -> s-expr -> (semantize) -> AST -> (eval) -> value
 
 ================================================================
 = Work In Progress
 ================================================================
-Bootstrap interpreter implemented in python
+Bootstrap interpreter implemented in python 3

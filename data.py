@@ -776,7 +776,7 @@ class DepGraph:
             self.finish(name)
         return components
 
-from syntax2 import *# todo: syntax is already dependent on this module
+from syntax import *# todo: syntax is already dependent on this module
 for chs, reader in stdDispatchers.bindings().items():
     primNS.defReader(chs, reader)
 ubParserTy, parserTy, toParser, fromParser = basicTy('Parser', Parser)

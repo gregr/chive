@@ -12,244 +12,281 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from lex import SrcAttr, tokens
-from data import (prodTy, isSymbol, symbol, symbol_eq, Env, EnvKey, toList, fromList, pretty,
-                  makeStream)
-from type import *
-from itertools import chain
+from data import *
+from collections import namedtuple
+import re
 
 class ParseError(Exception): pass
-def parseErr(attr, msg): raise ParseError(attr, msg)
-
-tokToAtomCons = dict(
-    ident=(lambda _,tok: symbol(tok.val)),
-    operator=(lambda ops,tok: makeOperator(ops, symbol(tok.val), tok.attr)),
-    literal=(lambda _,tok: tok.val),
-    )
-ubAttrTy = PyType('#Attr', SrcAttr)
-attrTy = prodTy('Attr', ubAttrTy)
-def toAttr(at): return attrTy.new(ubAttrTy.new(at))
-def fromAttr(at): return getVal(attrTy.unpackEl(at, 0))
-def makeAtom(opsTable, tok):
-    constr = tokToAtomCons.get(tok.ty)
-    if constr is None: parseErr(tok.attr, 'invalid atom')
-    return constr(opsTable, tok), toAttr(tok.attr)
-def makeApp(terms, attr=None):
-    if len(terms) > 0:
-        def fromAt(at):
-            at = getVal(attrTy.unpackEl(at, 0))
-            return at.start, at
-        subs = sorted(fromAt(at) for _,at in terms)
-        srcs = []
-        for (_,at) in subs:
-            for atsrc in at.srcs:
-                if atsrc not in srcs: srcs.append(atsrc)
-        attr = SrcAttr(subs[0][1].streamName, srcs, subs[0][1].start,
-                       subs[-1][1].end)
-    assert attr is not None # attr=None only valid when len(terms)>0
-    tas = list(zip(*terms))
-    if not tas: tas = ([], [])
-    attr.subs = toList(tas[1])
-    return toList(tas[0]), toAttr(attr)
-
-def maybeMakeApp(arg, attr=None):
-    terms, hasOp = arg
-    terms = list(terms)
-    if len(terms) == 1 and hasOp: return terms[0]
-    return makeApp(terms, attr)
-
-def makeMacroApp(datum):
-    def _makeMacroApp(arg, attr):
-        terms, hasOp = arg
-        datAt = SrcAttr(attr.streamName, attr.srcs, attr.start, attr.start)
-        return makeApp(list(chain([(datum, toAttr(datAt))], terms)), attr)
-    return _makeMacroApp
-
-def newOperator(name, fixity, assoc, prec):
-    return fixities[fixity](name, assoc, prec)
-
-def tryMakeAtom(*args):
-    try: return makeAtom(*args)
-    except ParseError: return None, None
-def isInfixOp(atom): return isinstance(atom[0], (InfixOp, InfixTightOp))
-
-def unindented(ts): return (t for t in ts if t.ty != 'indentation')
-class Datums: pass
-openBraces = list('([{')
-openBraces += ['#'+br for br in openBraces]
-closeBraces = list(')]}')
-openToCloseBraces = dict(zip(openBraces, 2*closeBraces))
-class Parser:
-    def __init__(self, opsTable):
-        self.opsTable = opsTable
-        self.brackets = {'(': maybeMakeApp}
-        self.datums = Datums()
-        self.setRhsSlice(None)
-    def setRhsSlice(self, datum): self.datums.rhsSliceDatum = datum
-    def addBracketDatums(self, bracketDatums):
-        for brack, datum in bracketDatums:
-            assert brack in openToCloseBraces
-            self.brackets[brack] = makeMacroApp(datum)
-    def parse(self, streamName, stream):
-        return self.exprs(tokens(streamName, stream))
-    def exprs(self, ts):
-        ts = makeStream(iter(ts))
-        for tok in ts:
-            indent = tok.val
-            assert tok.ty == 'indentation', (tok.ty, tok.attr)
-            if indent < 0: break
-            yield self.indentedExpr(indent, tok.attr, ts)
-    def parseOps(self, ts):
-        ts = makeStream(ts)
-        rhs = []
-        hasOp = False
-        for term in ts:
-            t, a = term
-            if isinstance(t, Operator):
-                hasOp = True
-                rhs = t.parse(rhs, a, ts, self.datums)
-            else: rhs.append(term)
-        return rhs, hasOp
-    def indentedExpr(self, i, a, ts):
-        return maybeMakeApp((self.parseOps(self.indentedTerms(i,a,ts))[0],
-                             True), a)
-    def indentedTerms(self, indent, firstAttr, ts):
-        subIndent = None
-        for tok in ts:
-            if tok.ty == 'indentation':
-                if tok.val <= indent:
-                    ts.put(tok) # parent has to handle this indent too
-                    return
-                else:
-                    if subIndent is None: subIndent = tok.val
-                    peek = next(ts)
-                    atom = tryMakeAtom(self.opsTable, peek)
-                    if isInfixOp(atom): yield atom
-                    else:
-                        ts.put(peek)
-                        if subIndent > tok.val:
-                            parseErr(tok.attr,
-                                     'misaligned indentation; expected '+
-                                     '%d or %d but found %d' %
-                                     (subIndent, indent, tok.val))
-                    yield self.indentedExpr(tok.val, tok.attr, ts)
-            elif tok.ty == 'syntax':
-                yield self.bracketedExpr(tok.val, tok.attr,
-                                         ts.compose(unindented))
-            else: yield makeAtom(self.opsTable, tok)
-        parseErr(firstAttr, 'unexpected eof while parsing indented expr')
-    def bracketedExpr(self, openBrace, attr, ts):
-        makeExpr = self.brackets.get(openBrace)
-        if makeExpr is None:
-            if openBrace in closeBraces:
-                parseErr(attr, 'unmatched %s'%openBrace)
-            else: parseErr(attr, 'unknown syntax %s'%openBrace)
-        closeBrace = openToCloseBraces.get(openBrace)
-        return makeExpr(self.parseOps(self.bracketedTerms(closeBrace,
-                                                          attr, ts)),
-                        attr)
-    def bracketedTerms(self, closeBrace, firstAttr, ts):
-        for tok in ts:
-            if tok.ty == 'syntax':
-                if tok.val == closeBrace: return
-                yield self.bracketedExpr(tok.val, tok.attr, ts)
-            else: yield makeAtom(self.opsTable, tok)
-        parseErr(firstAttr, 'unexpected eof while parsing bracketed expr')
-
-def makeOperator(opsTable, name, attr):
-    op = opsTable.get(EnvKey(name))
-    if op is None: op = NullOp(name, symbol('none'), 0)
+def parseErr(src, msg): raise ParseError(src, msg)
+nullTerm = unit
+def makeIdent(_, s): # strip escapes
+    sym = symbol('\\'.join(ss.replace('\\', '') for ss in s.split('\\\\')))
+    if s == '_': sym = alias_new(sym) # each non-escaped underscore is unique
+    return sym
+def makeIdentOp(_, s): return makeIdent(s[1:-1])
+def makeInt(_, s): return toInt(int(s)) # todo: Iu32, Is32, etc.
+def makeFloat(_, s): return toFloat(float(s))
+def makeChar(_, s): return toChar(eval(s))
+def makeString(_, s): return toString(eval(s))
+def makeOp(parser, s):
+    sym = makeIdent(parser, s); op = parser.ctx.ops.get(EnvKey(sym))
+    if op is None: return NullOp(sym)
     return op
-
+def srcWrap_(src, term): return synclo_new(toCtx(nullCtx(src)), nil, term)
+def srcWrap(parser, term): return srcWrap_(parser.stream.popRgn(), term)
+SrcRgn = namedtuple('SrcRgn', 'name text start end')
+def aggSrcs(srcs):
+    if not srcs: return None
+    start = min(src.start for src in srcs); end = max(src.end for src in srcs)
+    name = srcs[0].name; text = [None]*(end[0]-start[0]+1)
+    for src in srcs:
+        assert src.name == name, (name, src.name)
+        base = start[0]; text[src.start[0]-base:src.end[0]-base+1] = src.text
+    return SrcRgn(name, text, start, end)
+def makeExpr(terms, exprSrc=None):
+    srcs = tuple(fromCtx(synclo_ctx(tm)).src for tm in terms)
+    if exprSrc is not None: srcs += (exprSrc,)
+    return srcWrap_(aggSrcs(tuple(srcs)), toList(terms))
+def makeExprNonSingle(terms, exprSrc=None):
+    if len(terms) > 1: return makeExpr(terms, exprSrc)
+    elif len(terms) == 1: return terms[0]
+    return nullTerm
+OpTerm = namedtuple('OpTerm', 'op term')
+def mkTerm(f):
+    def termMaker(parser, cs):
+        tm = f(parser, cs)
+        if isinstance(tm, Operator): tm = OpTerm(tm, srcWrap(parser, tm.sym))
+        else: tm = srcWrap(parser, tm)
+        return tm
+    return termMaker
+def makeTokClass(tokSpec): return (re.compile(tokSpec[0]), mkTerm(tokSpec[1]))
+def makeTokClasses(tokSpecs): return [makeTokClass(c) for c in tokSpecs]
+commentStr = '##'
+operPat = '[~!@$%^&*\\=+|;:,.<>/?-]+'
+identPat = r"([a-zA-Z_]|(\\.))([-]?(\w|(\\.)))*[!?]*[']*"
+tokClassesNonDelimiter = makeTokClasses((
+        (identPat, makeIdent),
+        ('`%s`'%identPat, makeIdentOp),
+        (r'-?(\d+\.\d+)([eE][+-]?\d+)?', makeFloat),
+        (r'-?(0x)?\d+', makeInt),
+        (r"'((\\.)|[^\\'])'", makeChar),
+        (r'"((\\.)|[^\\"])*"', makeString),
+        ))
+tokClassesDelimiter = makeTokClasses((
+        (operPat, makeOp),
+        ))
+tokClassesAll = tokClassesNonDelimiter+tokClassesDelimiter
+class Stream:
+    def __init__(self, name, ios, row=1, col=0):
+        self.name = name
+        self.ios = ios; self.lineBuf = None; self.row = row; self.col = col
+        self.lenHist = None; self.lineHist = []; self.locHist = (row, col)
+    def getln(self, default=None):
+        if self.lineBuf is not None: line = self.lineBuf; self.lineBuf = None
+        elif default is not None: line = default
+        else: line = next(self.ios); self.lineHist.append(line)
+        self.row+=1; self.lenHist = len(line)+self.col; self.col = 0
+        return line
+    def putln(self, line):
+        if not line: return
+        assert self.lenHist is not None
+        assert self.lineBuf is None, self.lineBuf
+        self.col = self.lenHist-len(line); self.lineBuf = line; self.row-=1
+    def getch(self, num=1):
+        line = self.getln(); self.putln(line[num:]); return line[:num]
+    def putch(self, ch): line = ch+self.getln(''); self.putln(line)
+    def empty(self):
+        try: self.putln(self.getln())
+        except StopIteration: return True
+        return False
+    def popRgn(self):
+        newLoc = (self.row, self.col)
+        src = SrcRgn(self.name, self.lineHist, self.locHist, newLoc)
+        if self.lineBuf is None: self.lineHist = []
+        else: self.lineHist = self.lineHist[-1:]
+        self.locHist = newLoc; return src
+def memoTrue(f):
+    state = [False]
+    def memo(*args):
+        if not state[0] and f(*args): state[0] = True
+        return state[0]
+    return memo
+class Parser:
+    def __init__(self, ctx, stream):
+        self.ctx = ctx; self.stream = stream
+        self.indent = None; self.pendingTerm = None
+    def parse(self):
+        self.indent = self.skipSpace(0)
+        while not self.stream.empty():
+            term = self.term()
+            if term is not nullTerm: yield term
+    def delimit(self, cls=None):
+        if cls is None or cls in tokClassesDelimiter:
+            self.tokClasses = tokClassesAll
+        else: self.tokClasses = tokClassesDelimiter
+    def dispatch(self, ch=''):
+        chs = ch+self.stream.getch(); proc = self.ctx.readers.get(chs)
+        if proc is not None: return proc(self, chs)
+        self.stream.putch(chs); return None
+    def skipSpace(self, newlines=-1):
+        sline = None
+        while not sline:
+            if self.stream.empty(): self.delimit(); return -1
+            line = self.stream.getln(); sline = line.lstrip()
+            if sline.startswith(commentStr): sline = ''
+            if sline == '\\\n': sline = ''
+            else: newlines += 1
+        self.stream.putln(sline); self.stream.popRgn()
+        diff = len(line)-len(sline)
+        if newlines > 0 or diff > 0: self.delimit()
+        if newlines > 0: return diff
+    def expr(self, eoe, mkExpr):
+        self.delimit(); terms = []; hasOp = False
+        while not eoe():
+            term = self.term()
+            if termIs(term, Operator):
+                terms = parseOp(term, self, terms, eoe); hasOp = True
+            elif term is not nullTerm: terms.append(term)
+        self.delimit();
+        if hasOp: return makeExprNonSingle(terms)
+        return mkExpr(terms, self.stream.popRgn())
+    def indentedExpr(self, curIndent):
+        @memoTrue
+        def eoeIndented():
+            if self.pendingTerm is not None: return False
+            else:
+                if self.indent is not None: indent = self.indent
+                else: indent = self.skipSpace(); self.indent = indent
+                if indent is None: return False
+                else: return indent <= curIndent
+        return self.expr(eoeIndented, makeExprNonSingle)
+    def bracketedExpr(self, closeBracket):
+        @memoTrue
+        def eoeBracketed():
+            if self.pendingTerm is not None: return False
+            else:
+                indent = self.skipSpace()
+                if indent == -1: parseErr(None, 'unexpected end of stream')
+                ch = self.stream.getch(len(closeBracket))
+                if ch == closeBracket: return True
+                else: self.stream.putch(ch); return False
+        return self.expr(eoeBracketed, makeExpr)
+    def putTerm(self, term):
+        assert self.pendingTerm is None, self.pendingTerm
+        self.pendingTerm = term
+    def term(self):
+        if self.pendingTerm is not None:
+            term = self.pendingTerm; self.pendingTerm = None; return term
+        if self.indent is not None:
+            indent = self.indent; self.indent = None
+            return self.indentedExpr(indent)
+        term = self.dispatch()
+        if term is not None: return term
+        line = self.stream.getln()
+        for tc in self.tokClasses:
+            rxp, toTerm = tc; mtch = rxp.match(line)
+            if mtch is not None:
+                end = mtch.end(); self.stream.putln(line[end:])
+                self.delimit(tc); return toTerm(self, line[:end])
+        parseErr(line, 'term error') # todo
+################################################################
+# operators
+def termIs(tm, cls): return isinstance(tm, OpTerm) and isinstance(tm.op, cls)
+def parseOp(op, parser, terms, eoe):
+    return op.op.parse(parser, op.term, terms, eoe)
 class Operator:
     def __init__(self, sym, assoc, prec):
         assert isSymbol(sym), sym
         assert type(prec) is int, prec
         assert isSymbol(assoc), assoc
-        assert any(symbol_eq(assoc, symbol(nm)) for nm in ('left', 'right', 'none'))
-        self.sym = sym
-        self.assocRight = symbol_eq(assoc, symbol('right')) # todo: non-associative ops
-        self.prec = prec
-    def parse(self, lhs, attr, ts, dats): abstract
-
+        assert any(symbol_eq(assoc, symbol(nm))
+                   for nm in ('left', 'right', 'none'))
+        self.sym = sym; self.prec = prec
+        # todo: non-associative ops
+        self.assocRight = symbol_eq(assoc, symbol('right'))
+    def precLT(self, term): return self._precLT(term.op)
 class NullOp(Operator): # undeclared op
-    def parse(self, lhs, attr, ts, dats):
-        if not lhs and ts.empty(): return [(self.sym, attr)]
-        else: parseErr(attr, "unknown operator '%s'"%pretty(self.sym))
-
+    def __init__(self, sym): super().__init__(sym, symbol('none'), 0)
+    def parse(self, parser, tm, lhs, eoe):
+        if not lhs and eoe(): return [tm]
+        else: parseErr(None, "unknown operator '%s'"%pretty(tm))
 class PrefixOp(Operator):
-    def parse(self, lhs, attr, ts, dats):
-        if ts.empty(): return lhs+[(self.sym, attr)] # slice
-        t, a = next(ts)
-        rhs = [(t,a)]
-        if isinstance(t, Operator):
-            if isinstance(t, PrefixOp): rhs = t.parse([], a, ts, dats)
-            else: parseErr(a, 'unexpected operator while parsing prefix op')
-        return lhs+[makeApp([(self.sym, attr)]+rhs)]
-
-def makeReducedApp(terms): return maybeMakeApp((terms, True))
-
-def makeInfixApp(sym, lhs, rhs, attr, dats):
-    op = (sym, attr)
+    def parse(self, parser, tm, lhs, eoe):
+        if eoe(): return lhs+[tm] # slice
+        term = parser.term(); rhs = [term]
+        if termIs(term, Operator):
+            if termIs(term, PrefixOp): rhs = term.parse(parser, [], eoe)
+            else: parseErr(None, 'unexpected operator while parsing prefix op')
+        return lhs+[makeExpr([tm]+rhs)]
+def infixTerms(op, lhs, rhs):
     if lhs:
-        if rhs: return [makeApp([op,makeReducedApp(lhs),makeReducedApp(rhs)])]
-        else: return [makeApp([op, makeReducedApp(lhs)])]
-    elif rhs:
-        datum = dats.rhsSliceDatum
-        if datum is None: parseErr('rhs-slice handler is unspecified')
-        return [makeApp([(datum, attr), op, makeReducedApp(rhs)])]
+        terms = [op, makeExprNonSingle(lhs)]
+        if rhs: terms.append(makeExprNonSingle(rhs))
+        return [makeExpr(terms)]
+    elif rhs: parseErr(None, 'rhs-slice not yet supported')
     else: return [op]
-
 class InfixOp(Operator):
-    def parse(self, lhs, attr, ts, dats):
-        if ts.empty(): return makeInfixApp(self.sym, lhs, [], attr, dats)
-        t, a = next(ts)
-        rhs = [(t,a)]
-        if isinstance(t, Operator):
-            if isinstance(t, PrefixOp): rhs = t.parse([], a, ts, dats)
-            else: parseErr(a, 'unexpected operator while parsing infix op')
-        for term in ts:
-            t, a = term
-            if isinstance(t, Operator):
-                if self.precLT(t): rhs = t.parse(rhs, a, ts, dats)
+    def parse(self, parser, tm, lhs, eoe):
+        if eoe(): return infixTerms(tm, lhs, [])
+        term = parser.term(); rhs = [term]
+        if termIs(term, Operator):
+            if termIs(term, PrefixOp): rhs = parseOp(term, parser, [], eoe)
+            else: parseErr(None, 'unexpected operator while parsing infix op')
+        while not eoe():
+            term = parser.term()
+            if termIs(term, Operator):
+                if self.precLT(term): rhs = parseOp(term, parser, rhs, eoe)
                 else:
-                    ts.put(term)
-                    return makeInfixApp(self.sym, lhs, rhs, attr, dats)
+                    parser.putTerm(term); return infixTerms(tm, lhs, rhs)
             else: rhs.append(term)
-        return makeInfixApp(self.sym, lhs, rhs, attr, dats)
-    def precLT(self, op): return (isinstance(op, (PrefixOp, InfixTightOp))
-                                  or (op.prec > self.prec) or
-                                  ((op.prec == self.prec) and self.assocRight))
-
+        return infixTerms(tm, lhs, rhs)
+    def _precLT(self, op): return (isinstance(op, (PrefixOp, InfixTightOp))
+                                   or (op.prec > self.prec) or
+                                   ((op.prec == self.prec) and self.assocRight))
 class InfixTightOp(Operator):
-    def parse(self, lhs, attr, ts, dats):
-        if lhs:
-            rest = lhs[:-1]
-            lhs = [lhs[-1]]
+    def parse(self, parser, tm, lhs, eoe):
+        if lhs: rest = lhs[:-1]; lhs = [lhs[-1]]
         else: rest = []
-        if ts.empty(): return rest+makeInfixApp(self.sym, lhs, [], attr, dats)
-        t, a = next(ts)
-        rhs = [(t,a)]
-        if isinstance(t, Operator):
-            if isinstance(t, PrefixOp): rhs = t.parse([], a, ts, dats)
-            else: parseErr(a, 'unexpected operator while parsing infix op')
-        if not ts.empty():
-            term = next(ts)
-            t, a = term
-            if isinstance(t, InfixTightOp) and self.precLT(t):
-                rhs = t.parse(rhs, a, ts, dats)
-            else: ts.put(term)
-        return rest + makeInfixApp(self.sym, lhs, rhs, attr, dats)
-    def precLT(self, op): return ((op.prec > self.prec) or
+        if eoe(): return rest + infixTerms(tm, lhs, [])
+        term = parser.term(); rhs = [term]
+        if termIs(term, Operator):
+            if termIs(term, PrefixOp): rhs = parseOp(term, parser, [], eoe)
+            else: parseErr(None, 'unexpected operator while parsing infix op')
+        if not eoe():
+            term = parser.term()
+            if termIs(term, InfixTightOp) and self.precLT(term):
+                rhs = parseOp(term, parser, rhs, eoe)
+            else: parser.putTerm(term)
+        return rest + infixTerms(tm, lhs, rhs)
+    def _precLT(self, op): return ((op.prec > self.prec) or
                                   ((op.prec == self.prec) and self.assocRight))
-
 fixities = dict(prefix=PrefixOp, infixTight=InfixTightOp, infix=InfixOp)
-
-def deepFromList(attr, seen=set()):
-#    assert attr not in seen, attr
-#    seen.add(attr)
-    return attr, list(map(deepFromList, fromList(fromAttr(attr).subs)))
-
+def newOperator(name, fixity, assoc, prec):
+    return fixities[fixity](name, assoc, prec)
+################################################################
+# standard dispatch
+stdDispatchers = Env()
+def dispAgain(parser, ch):
+    f = parser.dispatch(ch)
+    if f is None: parseErr(None, "invalid reader dispatch '%s'"%ch)
+    return f
+def addDisp(chs, f, dispatchers):
+    while chs:
+        disp = dispatchers.get(chs)
+        assert disp is None or disp is dispAgain, disp
+        dispatchers.add(chs, f); chs = chs[:-1]; f = dispAgain
+def addStdDisp(chs, f): return addDisp(chs, f, stdDispatchers)
+def stddisp(chs):
+    def mkDisp(f): addStdDisp(chs, f); return f
+    return mkDisp
+@stddisp('(')
+def parenExpr(parser, ch): return parser.bracketedExpr(')')
+@stddisp(commentStr)
+def commentLine(parser, ch):
+    parser.stream.getln(); parser.stream.popRgn(); parser.stream.putln('\n')
+    return nullTerm
+################################################################
+# testing
 def _test(s):
     from io import StringIO
     ops = (
@@ -261,22 +298,24 @@ def _test(s):
         ('*', 'infix', symbol('left'), 6),
         ('->', 'infix', symbol('right'), 3),
         ('=', 'infix', symbol('right'), 2),
+        (':', 'infix', symbol('right'), 4),
         )
     opsTable = Env()
     for op in ops:
         opName = symbol(op[0])
         opsTable.add(EnvKey(opName), newOperator(opName, *op[1:]))
-    parser = Parser(opsTable); parser.addBracketDatums([('[', symbol('list'))])
-    for t,a in parser.parse('syntax.test', StringIO(s)):
-        print(pretty(t))
-        print(deepFromList(a))
+    FakeCtx = namedtuple('FakeCtx', 'ops readers')
+    parser = Parser(FakeCtx(opsTable, stdDispatchers),
+                    Stream('test', StringIO(s)))
+    for src, dat in parser.parse(): print(src, ':\n', pretty(dat))
 
 if __name__ == '__main__':
-    _test('hello world\n  4+ 3\n\n  5 - 6\n  \nf 7-8+9 -10\n## comments\n\n')
-    _test('hello world\n  4+ 3')
-    _test('hello world\n  4+ ! 3 *5 + $7 + !')
-    _test('hello world.tour\n  4+ ! 3 *5 + $7 + !')
-    _test('hello world.tour\n  - 4+ ! 3 *5 + $7 + !')
-    _test('1 * 2')
-    _test('quote (1 . 2)')
-    _test('abc [1 2 3]')
+    _test(open('boot.chive').read())
+    # _test('hello world')
+    # _test('1 * 2')
+    # _test('quote (1 . 2)')
+    # _test('hello world\n  4+ 3')
+    # _test('hello world\n  4+ ! 3 *5 + $7 + !')
+    # _test('hello world.tour\n  4+ ! 3 *5 + $7 + !')
+    # _test('hello world\n  4+ 3\n\n  5 - 6\n  \nf 7-8+9 -10\n## comments\n\n')
+#    _test('hello world.tour\n  - 4+ ! 3 *5 + $7 + !') # todo: rhs-slice
