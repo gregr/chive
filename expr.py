@@ -190,7 +190,7 @@ class TableFold(NodeAccess):
     def eval(self, ctx):
         proc = evalExpr(ctx, self.proc); lhs = evalExpr(ctx, self.lhs)
         for key, val in self.ty.items(self._evalNode(ctx)):
-            lhs = evalExpr(*applyDirect(ctx, proc, (lhs, key, val)))
+            lhs = applyDirect(ctx, proc, (lhs, key, val))
         return final(lhs)
 ################################################################
 class Seq(Expr):

@@ -15,8 +15,9 @@ limitations under the License.
 ================================================================
 = debugging
 ================================================================
-function tracing
 status description
+breaking/stepping
+procedure tracing: prune iterative recalls
 
 # do these need to be in the debugger directly?
 # alternative: start a new interactive evaluator and provide these primitives

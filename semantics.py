@@ -356,8 +356,7 @@ def semDefReader(ctx, form):
 # parser
 def wrapReader(proc):
     def wrapped(parser, chs):
-        tm = evalExpr(*applyDirect(parser.ctx, proc,
-                                   (toParser(parser), toString(chs))))
+        tm = applyDirect(parser.ctx, proc, (toParser(parser), toString(chs)))
         if tm is not unit and not isSynClo(tm): tm = srcWrap(parser, tm)
         return tm
     return wrapped
@@ -366,6 +365,12 @@ def primReadBracketedForm(ctx0, parser, closeBracket):
     closeBracket = fromString(closeBracket)
     return final(fromParser(parser).bracketedExpr(closeBracket))
 # todo: expose other parser primitives
+################################################################
+# debugging
+@primproc('_trace', procType(anyTy, anyTy), unitTy)
+def primTrace(ctx0, proc): getVal(proc).trace(ctx0); return final(unit)
+@primproc('_untrace', procType(anyTy, anyTy), unitTy)
+def primTrace(ctx0, proc): getVal(proc).untrace(ctx0); return final(unit)
 ################################################################
 # interaction
 from lex import LexError

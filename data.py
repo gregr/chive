@@ -17,6 +17,7 @@ from functools import reduce
 from itertools import chain
 import os
 
+def flatten(xs): return reduce(list.__add__, xs, [])
 class UnwindExc(Exception): pass
 class UncaughtUnwindExc(Exception): pass
 def final(val): return None, val
@@ -136,18 +137,31 @@ class EnvKey:
 class NativeProc:
     def __init__(self, name, code, binders):
         self.name = name; self.code = code; self.binders = binders
+        self.tracing = None
     def freeVars(self): return self.code.freeVars()-set(self.binders)
     def subst(self, subs):
         subs = dict((old, new) for old, new in subs if old not in self.binders)
         self.code.subst(subs)
-    def call(self, ctx, args): # todo: tracing
+    def call(self, ctx, args):
         ctx = ctx.extendValues()
         for binder, arg in zip(self.binders, args): ctx.env.add(binder, arg)
+        if self.isTracing(ctx): trailPushCall(ctx, ctx, self.code)
         return cont(ctx, self.code)
     def arity(self): return len(self.binders)
+    def trace(self, ctx):
+        if ctx.isTracing(): self.tracing = None
+        else: self.tracing = True
+    def untrace(self, ctx):
+        if ctx.isTracing(): self.tracing = False
+        else: self.tracing = None
+    def isTracing(self, ctx):
+        if self.tracing is None: return ctx.isTracing()
+        return self.tracing
 class NativeClosure:
     def __init__(self, proc, ctx): self.proc = proc; self.ctx = ctx
     def __str__(self): return str(self.proc.name)
+    def trace(self, ctx): self.proc.trace(ctx)
+    def untrace(self, ctx): self.proc.untrace(ctx)
     def call(self, ctx, args):
         return self.proc.call(self.ctx.withThread(ctx.thread), args)
     def arity(self): return self.proc.arity()
@@ -162,6 +176,8 @@ class PartialApp:
         self.proc = proc; self.saved = saved; self.ty = ty
     def __repr__(self):
         return '<PApp %s %s>'%(self.proc, tuple(map(pretty, self.saved)))
+    def trace(self, ctx): self.proc.trace(ctx)
+    def untrace(self, ctx): self.proc.untrace(ctx)
     def arity(self): return self.proc.arity()-len(self.saved)
     def apply(self, ctx, args):
         nextTy, argts, nextArity = self.ty.appliedTy(len(args), self.arity())
@@ -181,7 +197,8 @@ def applyFull(ctx, proc, args):
         else: typeErr(ctx, "cannot apply non-procedure: '%s'"%pretty(proc))
     return cprc
 def applyDirect(ctx, proc, args):
-    return applyFull(ctx, PrimVal(proc), tuple(PrimVal(arg) for arg in args))
+    return evalExpr(ctx, expr.Apply(PrimVal(proc),
+                                    tuple(PrimVal(arg) for arg in args)))
 ################################################################
 # thunks
 class Thunk:
@@ -262,14 +279,18 @@ class History:
         self.subs = [sh for sh in self.subs if sh.main or sh.subs]
     def show(self):
         return '\n'.join(map(pretty, chain(self.main, [self.final])))
-def trailPush(ctx0, ctx, expr): ctx0 and ctx0.thread.trail.append((ctx, expr))
+def trailPush(ctx0, ctx, expr):
+    if ctx0: ctx0.thread.trail.append(([(ctx, expr)]))
 def trailPop(ctx): ctx and ctx.thread.trail.pop()
-def trailUpdate(ctx0, ctx, expr): trailPop(ctx0); trailPush(ctx0, ctx, expr)
+def trailUpdate(ctx0, ctx, expr):
+    if ctx0: ctx0.thread.trail[-1][-1] = (ctx, expr)
+def trailPushCall(ctx0, ctx, expr):
+    if ctx0: ctx0.thread.trail[-1].append((ctx, expr))
 def trailUnwind(ctx0): ctx0 and ctx0.thread.unwind()
 def trailCatch(ctx0): ctx0 and ctx0.thread.catch()
 def trailPretty(trail, detailed, indent=''):# todo: free var bindings
     exprsBySrc = []; lastSrc = None
-    for ctx, expr in trail:
+    for ctx, expr in flatten(trail):
         src = expr.ctx.src
         if not srcIncludes(lastSrc, src): exprsBySrc.append([src, src, []])
         exprsBySrc[-1][2].append(expr); exprsBySrc[-1][1] = src; lastSrc = src
@@ -312,6 +333,7 @@ class Context: # current file resolution dir
         return ctx
     def extendValues(self):
         ctx = self.copy(); ctx.env = Env(self.env); return ctx
+    def isTracing(self): return self.root and self.root.tracing
 def nullCtx(src):
     return Context(None, None, None, None, None, None, None, None, src)
 def newDen(ctx, sym):
@@ -475,7 +497,8 @@ class Thread:
         return data
 class Root:
     env = Env(); onErr = None
-    def __init__(self, searchPaths):
+    def __init__(self, searchPaths, tracing=False):
+        self.tracing = tracing
         self.searchPaths = searchPaths; self.tlsInit = {}
     def getInitTLS(self, ctx, key):
         thunk = self.tlsInit.get(key)
@@ -627,8 +650,7 @@ macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), anyTy), const=True)
 def isMacro(v): return isTyped(v) and getTag(v) is macroTy
 def macro_proc(mac): return macroTy.unpackEl(mac, 0)
 def applyMacro(ctx, mac, form):
-    args = PrimVal(macro_proc(mac)), [PrimVal(toCtx(ctx)), PrimVal(form)]
-    return evalExpr(*applyFull(ctx, *args))
+    return applyDirect(ctx, macro_proc(mac), (toCtx(ctx), form))
 ubSemanticTy, semanticTy, toSem, fromSem = basicTy('Semantic', object)
 def isSemantic(v): return isTyped(v) and getTag(v) is semanticTy
 def applySemantic(ctx, sem, form): return fromSem(sem)(ctx, form)
@@ -754,3 +776,4 @@ from syntax2 import *# todo: syntax is already dependent on this module
 for chs, reader in stdDispatchers.bindings().items():
     primNS.defReader(chs, reader)
 ubParserTy, parserTy, toParser, fromParser = basicTy('Parser', Parser)
+import expr

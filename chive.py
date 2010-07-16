@@ -29,7 +29,7 @@ oas = options()
 from semantics import *
 splash = """chive 0.0.0: help system is still a work in progress..."""
 def run(opts, args):
-    root = Root(()); thread = Thread(root); root.onErr = debugErr
+    root = Root((), opts.tracing); thread = Thread(root); root.onErr = debugErr
     bootMod = root.emptyModule(); primMod.openIn(bootMod.nspace)
     bootMod.name = 'boot'
     if opts.bootstrap: mod = bootMod
