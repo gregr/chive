@@ -565,6 +565,10 @@ ubCharTy, charTy, toChar, fromChar = basicTy('Char', str)
 falseTy, false = singleton('False')
 trueTy, true = singleton('True')
 boolTy = VariantType((falseTy, trueTy))
+def fromBool(val):
+    if val is true: return True
+    elif val is false: return False
+    typeErr(None, "expected boolean; found %s"%pretty(val))
 ################################################################
 # lists
 listTy = VariantType()

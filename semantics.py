@@ -367,10 +367,13 @@ def primReadBracketedForm(ctx0, parser, closeBracket):
 # todo: expose other parser primitives
 ################################################################
 # debugging
+@primproc('_set-tracing', boolTy, unitTy)
+def primSetTracing(ctx0, tracing):
+    ctx0.root.tracing = fromBool(tracing); return final(unit)
 @primproc('_trace', procType(anyTy, anyTy), unitTy)
 def primTrace(ctx0, proc): getVal(proc).trace(ctx0); return final(unit)
 @primproc('_untrace', procType(anyTy, anyTy), unitTy)
-def primTrace(ctx0, proc): getVal(proc).untrace(ctx0); return final(unit)
+def primUntrace(ctx0, proc): getVal(proc).untrace(ctx0); return final(unit)
 ################################################################
 # interaction
 from lex import LexError
