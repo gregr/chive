@@ -62,7 +62,7 @@ def mkTerm(f):
 def makeTokClass(tokSpec): return (re.compile(tokSpec[0]), mkTerm(tokSpec[1]))
 def makeTokClasses(tokSpecs): return [makeTokClass(c) for c in tokSpecs]
 commentStr = '##'
-operPat = '[~!@$%^&*\\=+|;:,.<>/?-]+'
+operPat = '[~!@$%^&*=+|;:,.<>/?-]+'
 identPat = r"([a-zA-Z_]|(\\.))([-]?(\w|(\\.)))*[!?]*[']*"
 tokClassesNonDelimiter = makeTokClasses((
         (identPat, makeIdent),

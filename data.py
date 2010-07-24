@@ -169,6 +169,8 @@ class ForeignProc:
     def __init__(self, name, code, argc):
         self.name = name; self.code = code; self.argc = argc
     def __str__(self): return str(self.name)
+    def trace(self, ctx): pass
+    def untrace(self, ctx): pass
     def call(self, ctx, args): return self.code(ctx, *args)
     def arity(self): return self.argc
 class PartialApp:
