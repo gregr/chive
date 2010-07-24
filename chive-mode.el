@@ -54,7 +54,7 @@
    '("\\(`\\([a-zA-Z_]\\|\\(\\\\.\\)\\)\\([-]?[[:word:]]\\|\\(\\\\.\\)\\)*`\\)" 1 chive-face-op)
    '("\\<\\([_]?[A-Z]\\([-]?[[:word:]]\\)*\\)" 1 font-lock-type-face);[A-Za-z0-9]+
    '("\\([_]\\([-]?[[:word:]]\\)*\\)" 1 font-lock-keyword-face)
-   '("\\(\\(\\\\.\\)*\\)" 1 font-lock-warning-face)
+   '("\\(\\(\\\\.\\)*\\)" 1 font-lock-negation-char-face)
    '("\\(#\\)" 1 font-lock-preprocessor-face)
    '("\\([~!@$%^&*=+|;:,.<>/?][-~!@$%^&*=+|;:,.<>/?]*\\)" 1 chive-face-op)
    '("\\([-][-~!@$%^&*=+|;:,.<>/?]+\\)" 1 chive-face-op)
