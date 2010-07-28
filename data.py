@@ -632,7 +632,7 @@ def applySynCloCtx(ctx, sc):
     if src is not None: ctx.src = src
     if tenv is not None: ctx.tenv = tenv
     if senv is not None:
-        frees = fromList(synclo_frees(sc), ctx)
+        frees = tuple(fromList(synclo_frees(sc), ctx))
         if frees:
             senv = Env(senv)
             for n in frees:
