@@ -571,6 +571,9 @@ def fromBool(val):
     if val is true: return True
     elif val is false: return False
     typeErr(None, "expected boolean; found %s"%pretty(val))
+def toBool(val):
+    if val: return true
+    return false
 ################################################################
 # lists
 listTy = VariantType()

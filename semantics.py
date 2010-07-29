@@ -384,6 +384,74 @@ def primTrace(ctx0, proc): getVal(proc).trace(ctx0); return final(unit)
 @primproc('_untrace', procType(anyTy, anyTy), unitTy)
 def primUntrace(ctx0, proc): getVal(proc).untrace(ctx0); return final(unit)
 ################################################################
+# io
+# todo: expose io ports for read/write instead
+@primproc('_put-char', charTy, unitTy)
+def primPutChar(ctx0, ch): print(fromChar(ch), end=''); return final(unit)
+@primproc('_put-string', stringTy, unitTy)
+def primPutString(ctx0, chs):
+    print(fromString(chs), end=''); return final(unit)
+################################################################
+# arithmetic
+@primproc('_int-add', intTy, intTy, intTy)
+def primIntAdd(ctx0, i1, i2): return final(toInt(fromInt(i1)+fromInt(i2)))
+@primproc('_int-sub', intTy, intTy, intTy)
+def primIntSub(ctx0, i1, i2): return final(toInt(fromInt(i1)-fromInt(i2)))
+@primproc('_int-mul', intTy, intTy, intTy)
+def primIntMul(ctx0, i1, i2): return final(toInt(fromInt(i1)*fromInt(i2)))
+@primproc('_int-div', intTy, intTy, intTy)
+def primIntDiv(ctx0, i1, i2): return final(toInt(fromInt(i1)//fromInt(i2)))
+@primproc('_int-mod', intTy, intTy, intTy)
+def primIntMod(ctx0, i1, i2): return final(toInt(fromInt(i1)%fromInt(i2)))
+@primproc('_float-add', floatTy, floatTy, floatTy)
+def primFloatAdd(ctx0, f1, f2):
+    return final(toFloat(fromFloat(f1)+fromFloat(f2)))
+@primproc('_float-sub', floatTy, floatTy, floatTy)
+def primFloatSub(ctx0, f1, f2):
+    return final(toFloat(fromFloat(f1)-fromFloat(f2)))
+@primproc('_float-mul', floatTy, floatTy, floatTy)
+def primFloatMul(ctx0, f1, f2):
+    return final(toFloat(fromFloat(f1)*fromFloat(f2)))
+@primproc('_float-div', floatTy, floatTy, floatTy)
+def primFloatDiv(ctx0, f1, f2):
+    return final(toFloat(fromFloat(f1)/fromFloat(f2)))
+################################################################
+# comparisons
+@primproc('_int-eq', intTy, intTy, boolTy)
+def primIntEq(ctx0, i1, i2): return final(toBool(fromInt(i1) == fromInt(i2)))
+@primproc('_int-neq', intTy, intTy, boolTy)
+def primIntNeq(ctx0, i1, i2): return final(toBool(fromInt(i1) != fromInt(i2)))
+@primproc('_int-lt', intTy, intTy, boolTy)
+def primIntLt(ctx0, i1, i2): return final(toBool(fromInt(i1) < fromInt(i2)))
+@primproc('_int-lte', intTy, intTy, boolTy)
+def primIntLte(ctx0, i1, i2): return final(toBool(fromInt(i1) <= fromInt(i2)))
+@primproc('_int-gt', intTy, intTy, boolTy)
+def primIntGt(ctx0, i1, i2): return final(toBool(fromInt(i1) > fromInt(i2)))
+@primproc('_int-gte', intTy, intTy, boolTy)
+def primIntGte(ctx0, i1, i2): return final(toBool(fromInt(i1) >= fromInt(i2)))
+@primproc('_float-lt', floatTy, floatTy, boolTy)
+def primFloatLt(ctx0, f1, f2):
+    return final(toBool(fromFloat(f1) < fromFloat(f2)))
+@primproc('_float-lte', floatTy, floatTy, boolTy)
+def primFloatLte(ctx0, f1, f2):
+    return final(toBool(fromFloat(f1) <= fromFloat(f2)))
+@primproc('_float-gt', floatTy, floatTy, boolTy)
+def primFloatGt(ctx0, f1, f2):
+    return final(toBool(fromFloat(f1) > fromFloat(f2)))
+@primproc('_float-gte', floatTy, floatTy, boolTy)
+def primFloatGte(ctx0, f1, f2):
+    return final(toBool(fromFloat(f1) >= fromFloat(f2)))
+################################################################
+# conversions
+@primproc('_char-to-int', charTy, intTy)
+def primCharToInt(ctx0, ch): return final(toInt(ord(fromChar(ch))))
+@primproc('_int-to-char', intTy, charTy)
+def primIntToChar(ctx0, ii): return final(toChar(chr(fromInt(ii))))
+@primproc('_int-to-float', intTy, floatTy)
+def primIntToFloat(ctx0, ii): return final(toFloat(float(fromInt(ii))))
+@primproc('_float-to-int', floatTy, intTy)
+def primFloatToInt(ctx0, ff): return final(toInt(int(fromFloat(ff))))
+################################################################
 # interaction
 from lex import LexError
 from syntax import ParseError, Parser
