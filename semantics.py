@@ -509,3 +509,14 @@ def dbgTraceback(ctx):
 def dbgTracebackDetailed(ctx):
     print('\ndetailed traceback (most recent expression last):\n')
     print(trailPretty(ctx.thread.fullTrail(), True, '  '))
+@dbgopt('view bindings', 'view variable bindings stratified by scope')
+def dbgViewBindings(ctx): # todo: trail navigation
+    answer = None; lastCtx = flatten(ctx.thread.fullTrail())[-1][0]
+    for bs in reversed(tuple(lastCtx.env.stratified())):
+        while answer and answer.lower() != 'y':
+            answer = input('view next scope? (y/n)[y]: ')
+            if answer.lower() == 'n': return
+#        lst = list(map(str, bs.keys())); lst.sort(); print(lst)
+        for name in bs.keys(): print(name, '=', pretty(bs.get(name)))
+        answer = ' '
+        print('#'*64)

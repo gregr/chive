@@ -715,6 +715,11 @@ tagToPretty = {nilTy: prettyList, consTy: prettyList,
                stringTy: prettyString,
                arrayTy: prettyArray,
                }
+def prettyTable(tab, _=None):
+    keyt = getTag(tab).keyt
+    data = ' '.join('(%s => %s)'%(pretty(keyt.new(kk)), pretty(vv))
+                    for kk, vv in getVal(tab).items())
+    return '<Table {%s}>'%data
 def pretty(v, seen=None, nested=False):
     if seen is None: seen = []
     if id(v) in seen: return '(...)'
@@ -729,6 +734,7 @@ def pretty(v, seen=None, nested=False):
                 if nested and ty.numIndices() > 0: tyEls = '(%s)'%tyEls
                 return tyEls
             elif isinstance(getTag(v), ThunkType): return '(%s)'%str(getTag(v))
+            elif isinstance(getTag(v), TableType): return prettyTable(v)
             return '<%s %s>'%(getTag(v), getVal(v))
         else: return pp(v, seen)
     else: return '<ugly %s>'%repr(v)
