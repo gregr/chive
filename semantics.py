@@ -118,16 +118,25 @@ def primEval(ctx0, ctx, form):
     return final(evaluate(fromCtx(ctx).withThread(ctx0.thread), form, anyTy))
 @primproc('_alias', symTy, symTy)
 def primAlias(ctx0, sym): return final(alias_new(sym))
-def repackSymbols(names):
-    return toList(tuple(toSymbol(symbol_prim(name.sym)) for name in names))
-def repackEnvSymbols(env):
+def repackSymbol(name): return toSymbol(symbol_prim(name.sym))
+def repackKeys(ctx, bs):
+    return toList(tuple(repackSymbol(nm) for nm in bs.keys()))
+def repackKeysPretties(ctx, bs):
+    return toList(tuple(toList((repackSymbol(name),
+                                toString(pretty(getVar(ctx, name.sym)))))
+                        for name in bs.keys()))
+def repackEnvX(fx, ctx):
     strat = nil
-    for bs in env.stratified(): strat = cons(repackSymbols(bs.keys()), strat)
+    for bs in ctx.senv.stratified(): strat = cons(fx(ctx, bs), strat)
     return strat
+def repackEnvSymbols(ctx): return repackEnvX(repackKeys, ctx)
+def repackEnvBindings(ctx): return repackEnvX(repackKeysPretties, ctx)
 @semproc('_ctx')
 def semContext(ctx, form): semArgs(ctx, form, 0); return PrimVal(toCtx(ctx))
 @primproc('_ctx-env', ctxTy, listTy)
-def primCtxEnv(ctx0, ctx): return final(repackEnvSymbols(fromCtx(ctx).senv))
+def primCtxEnv(ctx0, ctx): return final(repackEnvBindings(fromCtx(ctx)))
+@primproc('_ctx-env-vars', ctxTy, listTy)
+def primCtxEnvVars(ctx0, ctx): return final(repackEnvSymbols(fromCtx(ctx)))
 ################################################################
 # modules
 @primproc('_module', ifaceTy, nspaceTy, modTy)

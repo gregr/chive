@@ -712,7 +712,7 @@ tagToPretty = {nilTy: prettyList, consTy: prettyList,
                stringTy: prettyString,
                arrayTy: prettyArray,
                }
-def pretty(v, seen=None):
+def pretty(v, seen=None, nested=False):
     if seen is None: seen = []
     if id(v) in seen: return '(...)'
     if isTyped(v):
@@ -720,9 +720,11 @@ def pretty(v, seen=None):
         if pp is None:
             if isinstance(getTag(v), ProductType):
                 seen.append(id(v)); ty = getTag(v)
-                els = ' '.join(pretty(ty.unpackEl(v, idx), seen)
+                els = ' '.join(pretty(ty.unpackEl(v, idx), seen, True)
                                for idx in range(ty.numIndices()))
-                seen.remove(id(v)); return '(%s)'%('%s %s'%(ty, els)).rstrip()
+                seen.remove(id(v)); tyEls = ('%s %s'%(ty, els)).rstrip()
+                if nested and ty.numIndices() > 0: tyEls = '(%s)'%tyEls
+                return tyEls
             elif isinstance(getTag(v), ThunkType): return '(%s)'%str(getTag(v))
             return '<%s %s>'%(getTag(v), getVal(v))
         else: return pp(v, seen)
