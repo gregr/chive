@@ -129,6 +129,7 @@ class EnvKey:
     def __init__(self, sym): assert isSymbol(sym), sym; self.sym = sym
     def __hash__(self): return symbol_id(self.sym)
     def __eq__(self, n): return hash(self) == hash(n)
+    def __lt__(self, n): return symbol_name(self.sym) < symbol_name(n.sym)
     def __repr__(self): return '<EnvKey %r>' % prettySymbol(self.sym)
     def __str__(self): return prettySymbol(self.sym)
 

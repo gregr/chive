@@ -203,8 +203,8 @@ class Apply(Expr):
     def __str__(self):
         return '(%s)'%' '.join(str(arg) for arg in [self.proc]+self.args)
     def trailIncludes(self): return False
-    def freeVars(self): return accFreeVars(self.args)
-    def subst(self, subs): mapSubst(subs, self.args)
+    def freeVars(self): return self.proc.freeVars()|accFreeVars(self.args)
+    def subst(self, subs): self.proc.subst(subs); mapSubst(subs, self.args)
     def eval(self, ctx): return applyFull(ctx, self.proc, self.args)
 # todo: extensible dispatch-proc?
 class Switch(Expr): 
