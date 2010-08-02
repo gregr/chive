@@ -308,10 +308,11 @@ def trailPretty(trail, showSteps, showBinds):
 def srcIncludes(outer, inner):
     return (outer is not None and outer.name == inner.name and
             outer.start <= inner.start and outer.end >= inner.end)
+def prettyLoc(loc): return '(%s,%s)'%loc#(loc.row, loc.col)
 def prettySrc(src):
     if src is None: return '<unknown source>'
     name, text, start, end = src
-    loc = '"%s":%s-%s\n'%(name, start, end)
+    loc = '"%s": %s-%s\n'%(name, prettyLoc(start), prettyLoc(end))
     return (loc+''.join(text)).rstrip()
 def prettyExprSrc(outer, inner, ces, showSteps, showBinds, indent='  '):
     if showBinds: bindings = prettyBindings(showSteps, *tuple(zip(*ces)))
