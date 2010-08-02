@@ -291,15 +291,20 @@ def trailPushCall(ctx0, ctx, expr):
     if ctx0: ctx0.thread.trail[-1].append((ctx, expr))
 def trailUnwind(ctx0): ctx0 and ctx0.thread.unwind()
 def trailCatch(ctx0): ctx0 and ctx0.thread.catch()
-def trailPretty(trail, detailed, indent=''):# todo: free var bindings
+sdvdr = '#'*64
+wdvdr = '-'*64
+def trailExprsBySrc(trail):
     exprsBySrc = []; lastSrc = None
     for ctx, expr in flatten(trail):
         src = expr.ctx.src
         if not srcIncludes(lastSrc, src): exprsBySrc.append([src, src, []])
-        exprsBySrc[-1][2].append(expr); exprsBySrc[-1][1] = src; lastSrc = src
-    divider = ('#'*64+'\n')
-    return divider.join(prettyExprSrc(outer, inner, exprs, detailed, indent)
-                        for outer, inner, exprs in exprsBySrc)
+        exprsBySrc[-1][2].append((ctx, expr))
+        exprsBySrc[-1][1] = src; lastSrc = src
+    return exprsBySrc
+def trailPretty(trail, showSteps, showBinds):
+    exprsBySrc = trailExprsBySrc(trail); divider = '\n'+sdvdr+'\n'
+    return divider.join(prettyExprSrc(outer, inner, ces, showSteps, showBinds)
+                        for outer, inner, ces in exprsBySrc)
 def srcIncludes(outer, inner):
     return (outer is not None and outer.name == inner.name and
             outer.start <= inner.start and outer.end >= inner.end)
@@ -307,12 +312,30 @@ def prettySrc(src):
     if src is None: return '<unknown source>'
     name, text, start, end = src
     loc = '"%s":%s-%s\n'%(name, start, end)
-    return loc+''.join(text)
-def prettyExprSrc(outer, inner, exprs, detailed, indent=''):
+    return (loc+''.join(text)).rstrip()
+def prettyExprSrc(outer, inner, ces, showSteps, showBinds, indent='  '):
+    if showBinds: bindings = prettyBindings(showSteps, *tuple(zip(*ces)))
+    else: bindings = ''
     inner = prettySrc(inner)
-    if not detailed: return inner
-    exprs = indent+('\n'+indent).join(repr(expr) for expr in exprs)+'\n'
-    return ''.join((prettySrc(outer), exprs, inner))
+    if not showSteps: return '\n'.join((bindings, inner)).lstrip()
+    exprs = indent+('\n'+indent).join(repr(expr) for (_, expr) in ces)
+    return '\n'.join((bindings, prettySrc(outer), exprs, inner)).lstrip()
+def prettyBindings(showAll, ctxs, exprs):
+    frees = (showAll and accFreeVars(exprs)) or exprs[-1].freeVars()
+    ctx = ctxs[-1]; lines = []
+    for bs in ctx.env.stratified():
+        bindings = []; maxNameLen = 0
+        for name, val in sorted(bs.items()):
+            if name in frees:
+                frees.remove(name); name = str(name)
+                bindings.append((name, pretty(val)))
+                maxNameLen = max(maxNameLen, len(name))
+        for name, val in bindings:
+            lines.append(name+(' '*(maxNameLen-len(name)))+' = '+val)
+        lines.append(wdvdr)
+    if frees: lines.extend(['***UNBOUND VARIABLES***',
+                            ' '.join(str(name) for name in frees), wdvdr])
+    return '\n'.join(lines)
 class Context: # current file resolution dir
     def __init__(self, root, thread, nspace, readers, ops, tenv, senv, env,
                  src, hist=None):

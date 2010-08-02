@@ -485,7 +485,8 @@ def debugInteract(ctx):
     while True:
         print('status: stopped on error') # todo: stepping
         for idx, (name, desc, opt) in enumerate(debugOpts):
-            print('(%d) %s - %s'%(idx, name, desc))
+            if desc: print('(%d) %s - %s'%(idx, name, desc))
+            else: print('(%d) %s'%(idx, name))
         while True:
             try:
                 idx = input('choose an option by number (? to reprint): ')
@@ -494,31 +495,22 @@ def debugInteract(ctx):
                 if 0 <= idx < len(debugOpts):
                     name, desc, dopt = debugOpts[idx]
                     if dopt is None: return
-                    dopt(ctx)
+                    dopt(ctx); print()
             except ValueError: pass
 # @dbgopt('help', 'describe debugging options (not very helpful yet)')
 # def dbgHelp(ctx):
 #     print('debug option descriptions:')
 #     for idx, (name, desc, opt) in enumerate(debugOpts):
 #         print('(%d) %s - %s'%(idx, name, desc))
-@dbgopt('traceback', 'view traceback')
-def dbgTraceback(ctx):
-    print('\ntraceback (most recent expression last):\n')
-    print(trailPretty(ctx.thread.fullTrail(), False, '  '))
-@dbgopt('traceback detailed', 'view traceback with evaluation steps')
-def dbgTracebackDetailed(ctx):
-    print('\ndetailed traceback (most recent expression last):\n')
-    print(trailPretty(ctx.thread.fullTrail(), True, '  '))
-@dbgopt('view bindings', 'view variable bindings stratified by scope')
-def dbgViewBindings(ctx0): # todo: collapse Apply as in trailPretty
-    answer = None
-    for ctx, expr in reversed(flatten(ctx0.thread.fullTrail())):
-        while answer and answer.lower() != 'y':
-            answer = input('view parent frame? (y/n)[y]: ')
-            if answer.lower() == 'n': return
-        frees = expr.freeVars()
-        for bs in ctx.env.stratified():
-            print('-'*64)
-            for name, val in sorted(bs.items()):
-                if name in frees: print(name, '=', pretty(val))
-        answer = ' '; print('#'*64); print('expr:', expr); print()
+def printTB(ctx, desc, *args):
+    print('\ntraceback %s(most recent expression last):\n'%desc)
+    print(trailPretty(ctx.thread.fullTrail(), *args))
+@dbgopt('traceback', '')
+def dbgTraceback(ctx): printTB(ctx, '', False, False)
+@dbgopt('traceback with steps', '')
+def dbgTracebackSteps(ctx): printTB(ctx, 'w/steps ', True, False)
+@dbgopt('traceback with bindings', '')
+def dbgTracebackBindings(ctx): printTB(ctx, 'w/bindings ', False, True)
+@dbgopt('traceback with steps and bindings', '')
+def dbgTracebackStepsBindings(ctx):
+    printTB(ctx, 'w/steps w/bindings ', True, True)

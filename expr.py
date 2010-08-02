@@ -121,7 +121,7 @@ class NodeIndex(NodeAccess):
                                (self.ty, self.idx))
     def freeVars(self):
         idx = not isinstance(self.idx, int) and self.idx.freeVars() or set()
-        return super().freeVars()+idx
+        return super().freeVars()|idx
     def subst(self, subs):
         super().subst(subs)
         if not isinstance(self.idx, int): self.idx.subst(subs)
@@ -135,7 +135,7 @@ class NodeUnpack(NodeIndex):
     def eval(self, ctx): return final(self.ty.unpackEl(*self._eval(ctx)))
 class NodePack(NodeIndex):
     def __init__(self, rhs, *args): super().__init__(*args); self.rhs = rhs
-    def freeVars(self): return super().freeVars()+self.rhs.freeVars()
+    def freeVars(self): return super().freeVars()|self.rhs.freeVars()
     def subst(self, subs): super().subst(subs); self.rhs.subst(subs)
     def eval(self, ctx):
         node, idx = self._eval(ctx); rhs = evalExpr(ctx, self.rhs)
@@ -148,7 +148,7 @@ class ArraySlice(NodeAccess):
     def __init__(self, start, end, *args):
         super().__init__(*args); self.start = start; self.end = end
     def freeVars(self):
-        return super().freeVars()+self.start.freeVars()+self.end.freeVars()
+        return super().freeVars()|self.start.freeVars()|self.end.freeVars()
     def subst(self, subs):
         super().subst(subs); self.start.subst(subs); self.end.subst(subs)
     def _eval(self, ctx):
@@ -160,7 +160,7 @@ class ArraySliceUnpack(ArraySlice):
     def eval(self, ctx): return final(arrSliceUnpack(ctx, *self._eval(ctx)))
 class ArraySlicePack(ArraySlice):
     def __init__(self, rhs, *args): super().__init__(*args); self.rhs = rhs
-    def freeVars(self): return super().freeVars()+self.rhs.freeVars()
+    def freeVars(self): return super().freeVars()|self.rhs.freeVars()
     def subst(self, subs): super().subst(subs); self.rhs.subst(subs)
     def eval(self, ctx):
         arr, beg, end = self._eval(ctx); rhs = evalExpr(ctx, self.rhs, self.ty)
@@ -169,7 +169,7 @@ class ArrayPop(NodeAccess):
     def eval(self, ctx): arrPop(ctx, self._evalNode(ctx)); return final(unit)
 class ArrayPush(NodeAccess):
     def __init__(self, rhs, *args): super().__init__(*args); self.rhs = rhs
-    def freeVars(self): return super().freeVars()+self.rhs.freeVars()
+    def freeVars(self): return super().freeVars()|self.rhs.freeVars()
     def subst(self, subs): super().subst(subs); self.rhs.subst(subs)
     def eval(self, ctx):
         arrPush(self._evalNode(ctx), evalExpr(ctx, self.rhs))
@@ -184,7 +184,7 @@ class TableFold(NodeAccess):
     def __init__(self, proc, lhs, *args):
         super().__init__(*args); self.proc = proc; self.lhs = lhs
     def freeVars(self):
-        return super().freeVars()+self.proc.freeVars()+self.lhs.freeVars()
+        return super().freeVars()|self.proc.freeVars()|self.lhs.freeVars()
     def subst(self, subs):
         super().subst(subs); self.proc.subst(subs); self.lhs.subst(subs)
     def eval(self, ctx):
