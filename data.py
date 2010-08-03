@@ -275,13 +275,17 @@ class History:
         self.parent = parent; self.main = []; self.subs = []
         self.final = None
     def add(self, form): self.main.append(form)
-    def newSub(self): sh = History(self); self.subs.append(sh); return sh
-    def finish(self, form):# pass
+    # def newSub(self): sh = History(self); self.subs.append(sh); return sh
+    def finish(self, form):
         if self.final is None: self.final = form
-        else: assert form is self.final, (pretty(form), pretty(self.final))
+        else: assert form is self.final, (pretty(stripDeepSynClo(form)),
+                                          pretty(stripDeepSynClo(self.final)))
         self.subs = [sh for sh in self.subs if sh.main or sh.subs]
-    def show(self):
-        return '\n'.join(map(pretty, chain(self.main, [self.final])))
+    def full(self): return chain(self.main, [self.final])
+    def show(self, stripped=False):
+        full = self.full()
+        if stripped: full = map(stripDeepSynClo, full)
+        return '\n'.join(map(pretty, full))
 def trailPush(ctx0, ctx, expr):
     if ctx0: ctx0.thread.trail.append(([(ctx, expr)]))
 def trailPop(ctx): ctx and ctx.thread.trail.pop()
@@ -291,8 +295,10 @@ def trailPushCall(ctx0, ctx, expr):
     if ctx0: ctx0.thread.trail[-1].append((ctx, expr))
 def trailUnwind(ctx0): ctx0 and ctx0.thread.unwind()
 def trailCatch(ctx0): ctx0 and ctx0.thread.catch()
-sdvdr = '#'*64
-wdvdr = '-'*64
+def mkDvdrs(*chs): return tuple(ch*64 for ch in chs)
+def withNL(dvdrs): return tuple((dvdr, '\n'+dvdr+'\n') for dvdr in dvdrs)
+((sdvdr, sdvdrnl), (mdvdr, mdvdrnl),
+ (wdvdr, wdvdrnl)) = withNL(mkDvdrs('#', '=', '-'))
 def trailExprsBySrc(trail):
     exprsBySrc = []; lastSrc = None
     for ctx, expr in flatten(trail):
@@ -302,9 +308,12 @@ def trailExprsBySrc(trail):
         exprsBySrc[-1][1] = src; lastSrc = src
     return exprsBySrc
 def trailPretty(trail, showSteps, showBinds):
-    exprsBySrc = trailExprsBySrc(trail); divider = '\n'+sdvdr+'\n'
-    return divider.join(prettyExprSrc(outer, inner, ces, showSteps, showBinds)
+    exprsBySrc = trailExprsBySrc(trail)
+    return sdvdrnl.join(prettyExprSrc(outer, inner, ces, showSteps, showBinds)
                         for outer, inner, ces in exprsBySrc)
+def trailExpansionPretty(trail):
+    return sdvdrnl.join(prettyExpansionSrc(outer, inner, tuple(zip(*ces))[1])
+                        for outer, inner, ces in trailExprsBySrc(trail))
 def srcIncludes(outer, inner):
     return (outer is not None and outer.name == inner.name and
             outer.start <= inner.start and outer.end >= inner.end)
@@ -314,6 +323,10 @@ def prettySrc(src):
     name, text, start, end = src
     loc = '"%s": %s-%s\n'%(name, prettyLoc(start), prettyLoc(end))
     return (loc+''.join(text)).rstrip()
+def prettyExpansionSrc(outer, inner, exprs, indent='  '):
+    exprs = wdvdrnl.join(expr.ctx.hist.show(True)
+                         for expr in exprs).replace('\n', indent+'\n')
+    return mdvdrnl.join(((prettySrc(outer), exprs, prettySrc(inner))))
 def prettyExprSrc(outer, inner, ces, showSteps, showBinds, indent='  '):
     if showBinds: bindings = prettyBindings(showSteps, *tuple(zip(*ces)))
     else: bindings = ''
@@ -343,15 +356,14 @@ class Context: # current file resolution dir
         self.root = root; self.thread = thread; self.nspace = nspace
         self.readers = readers; self.ops = ops
         self.tenv = tenv; self.senv = senv; self.env = env
-        self.src = src; self.hist = hist or History()
+        self.src = src; self.hist = hist
     def __eq__(self, rhs): return self._cmp() == rhs._cmp()
-    def _cmp(self): return (self.ops, self.tenv, self.senv, self.src)
+    def _cmp(self):
+        return (self.ops, self.tenv, self.senv, self.src, self.hist)
     def copy(self):
         return Context(self.root, self.thread, self.nspace,
                        self.readers, self.ops, self.tenv, self.senv, self.env,
                        self.src, self.hist)
-    def subHist(self):
-        ctx = self.copy(); ctx.hist = ctx.hist.newSub(); return ctx
     def withThread(self, thread):
         ctx = self.copy(); ctx.thread = thread; return ctx
     def extendSyntax(self, ops=False):
@@ -674,12 +686,18 @@ def syncloExpand(ctx, xs):
 def stripOuterSynClo(xs):
     while isSynClo(xs): xs = synclo_form(xs)
     return xs
+def stripDeepSynClo(xs):
+    xs = stripOuterSynClo(xs)
+    if isListCons(xs):
+        xs = toList(tuple(stripDeepSynClo(xx) for xx in fromList(xs)))
+    return xs
 stripSC = stripOuterSynClo
 def stripSCs(scs): return tuple(stripOuterSynClo(sc) for sc in scs)
 def primSC(form): return synclo_new(toCtx(primCtx), nil, form)
 ################################################################
 # macros and semantics
-#macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), formTy), const=True) # todo
+#macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), formTy), const=True)
+# todo
 macroTy = prodTy('Macro', curryProcType((ctxTy, formTy), anyTy), const=True)
 def isMacro(v): return isTyped(v) and getTag(v) is macroTy
 def macro_proc(mac): return macroTy.unpackEl(mac, 0)

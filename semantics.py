@@ -31,12 +31,12 @@ def unitExpr(ctx): expr = Var(EnvKey(unitDen)); expr.ctx = ctx; return expr
 def synclo_maybe(ctx0, ctx, form):
     if ctx0 != ctx: return synclo_new(toCtx(ctx), nil, form)
     return form
-def _expand(ctx, xs):
+def expand(ctx, xs):
+    ctx = ctx.copy(); hist = History()
     while True:
-        checkIsForm(ctx, xs)
-        ctx, xs = syncloExpand(ctx, xs)
+        checkIsForm(ctx, xs); ctx, xs = syncloExpand(ctx, xs)
         if isListCons(xs):
-            hdCtx, hd = _expand(ctx.subHist(), cons_head(xs))
+            hdCtx, hd = expand(ctx, cons_head(xs))
             if isSymbol(hd):
                 den = hdCtx.senv.get(EnvKey(hd))
                 if den is not None:
@@ -44,7 +44,7 @@ def _expand(ctx, xs):
                     if val is not None:
                         if isSemantic(val): break
                         elif isMacro(val):
-                            ctx.hist.add(xs); mfrm = cons(hd, cons_tail(xs))
+                            hist.add(xs); mfrm = cons(hd, cons_tail(xs))
                             xs = applyMacro(ctx, val, mfrm); continue
             wrapped = toList(tuple(synclo_maybe(ctx, *expand(ctx, form))
                                    for form in fromList(cons_tail(xs), ctx)))
@@ -53,11 +53,10 @@ def _expand(ctx, xs):
             ex = litExpanders.get(getTag(xs))
             if ex is not None: ctx, xs = ex(ctx, xs); continue
         break
-    ctx.hist.finish(xs); return ctx, xs
+    hist.finish(xs); ctx.hist = hist; return ctx, xs
 
 def _semantize(ctx, xs):
-    ctx, xs = syncloExpand(ctx, xs)
-    checkIsForm(ctx, xs)
+    checkIsForm(ctx, xs); ctx, xs = syncloExpand(ctx, xs)
     if isListCons(xs):
         hdCtx, hd = syncloExpand(ctx, cons_head(xs))
         if isSymbol(hd):
@@ -68,7 +67,7 @@ def _semantize(ctx, xs):
                     expr = applySemantic(ctx, val, cons(hd, cons_tail(xs)))
                     expr.ctx = ctx; return expr
         hd = _semantize(hdCtx, hd); rest = fromList(cons_tail(xs), ctx)
-        rest = [_semantize(ctx.subHist(), form) for form in rest]# todo: subHist?
+        rest = [_semantize(ctx, form) for form in rest]
         if isinstance(hd, Apply): hd.args.extend(rest); return hd
         else: expr = Apply(hd, rest)
     elif isSymbol(xs): expr = Var(EnvKey(getDen(ctx, xs)))
@@ -77,8 +76,7 @@ def _semantize(ctx, xs):
     else: typeErr(ctx, "invalid symbolic expression: '%s'"%pretty(xs))
     expr.ctx = ctx; return expr
 
-def expand(ctx, xs): return _expand(ctx.subHist(), xs)
-def semantize(ctx, xs): return _semantize(*_expand(ctx.subHist(), xs))
+def semantize(ctx, xs): return _semantize(*expand(ctx, xs))
 def evaluate(ctx, xs, ty=None):
     xs = semantize(ctx, xs); return evalExpr(ctx, xs, ty)
 
@@ -514,3 +512,7 @@ def dbgTracebackBindings(ctx): printTB(ctx, 'w/bindings ', False, True)
 @dbgopt('traceback with steps and bindings', '')
 def dbgTracebackStepsBindings(ctx):
     printTB(ctx, 'w/steps w/bindings ', True, True)
+@dbgopt('traceback with expansions', '')
+def dbgTracebackExpansions(ctx):
+    print('\ntraceback w/expansions (most recent expression last):\n')
+    print(trailExpansionPretty(ctx.thread.fullTrail()))

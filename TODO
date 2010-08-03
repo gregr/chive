@@ -24,23 +24,15 @@ procedure tracing: prune iterative recalls
 eval
 expand
 expand-once (single-step expansion)
-history (of expansions)
 inspect (inspect result of last eval)
-trace
-untrace
-        [un]trace all by default; later add a way to specify procedures
 show traced
 find/locate (source location of a definition)
 break
 
 debugger proper
 ---------------
-traceback (partial due to tail recursion unless tracing all)
-
 show/view
         status: stepping or stopped (error)
-        env (part of trail? show free vars of current expr?)
-        procedures being traced
         context (is this necessary given the other options?)
 where (show current line; possibly some surrounding lines)
 

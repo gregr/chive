@@ -32,11 +32,15 @@ def run(opts, args):
     root = Root((), opts.tracing); thread = Thread(root); root.onErr = debugErr
     bootMod = root.emptyModule(); primMod.openIn(bootMod.nspace)
     bootMod.name = 'boot'
-    if opts.bootstrap: mod = bootMod
-    else:
-        coreMod = fromMod(evalFile(thread, bootMod, 'boot.chive'))
-        mod = root.emptyModule(); coreMod.openIn(mod.nspace); mod.name = 'user'
-    if len(args) > 0: evalFile(thread, mod, args[0])
-    if opts.interact: print(splash); interact(thread, mod)
+    try:
+        if opts.bootstrap: mod = bootMod
+        else:
+            coreMod = fromMod(evalFile(thread, bootMod, 'boot.chive'))
+            mod = root.emptyModule(); coreMod.openIn(mod.nspace); mod.name = 'user'
+        if len(args) > 0: evalFile(thread, mod, args[0])
+        if opts.interact: print(splash); interact(thread, mod)
+    except TyError as exc:
+        if exc.args[0]: print(prettySrc(exc.args[0].src))
+        raise
     return thread, mod
 if __name__ == '__main__': thread, mod = run(*oas)
