@@ -210,4 +210,31 @@ set-projection
     _switch (_unpack Symbol 0 sym)
       ((((_unbox hd)) (hd nd)) (((_unbox tl)) (tl nd)))
 
+_def-proc _char-eq (ch0 ch1)
+  _int-eq
+    _char-to-int ch0
+    _char-to-int ch1
+_def-proc _read-delim-acc (prt delim acc)
+  _let () ((ch (_read-ch prt))) ()
+    _if (_char-eq ch delim) acc
+      _seq
+        _array-push String acc (_unpack Char 0 ch)
+        _read-delim-acc prt delim acc
+_def-proc _read-delim (prt delim)
+  _read-delim-acc prt delim (_coll-new String)
+_def-proc _read-line (prt)
+  _read-delim prt '\n'
+
+_def-proc _input (str)
+  _seq
+    _write-str _stdout str
+    _port-flush _stdout
+    _read-line _stdin
+_def-proc _print (str)
+  _write-str _stdout str
+_def-proc _printNL (str)
+  _seq
+    _print str
+    _write-ch _stdout '\n'
+
 core ## final result of bootstrap

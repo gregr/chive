@@ -15,7 +15,7 @@
 from type import *
 from functools import reduce
 from itertools import chain
-import os
+import os, sys
 
 def flatten(xs): return reduce(list.__add__, xs, [])
 class UnwindExc(Exception): pass
@@ -711,6 +711,11 @@ def applySemantic(ctx, sem, form): return fromSem(sem)(ctx, form)
 for ty in (ubTyTy, ubSymTy, ubCharTy, ubIntTy): ty.hashable = True
 symTabTy = tabTy('SymbolTable', ubSymTy, anyTy)
 tyTabTy = tabTy('TagTable', ubTyTy, anyTy, True)
+################################################################
+# i/o ports
+ubPortTy, portTy, toPort, fromPort = basicTy('Port', object)
+addPrim('_stdin', toPort(sys.stdin))
+addPrim('_stdout', toPort(sys.stdout))
 ################################################################
 # pretty printing
 def prettyList(xs, seen):

@@ -382,13 +382,25 @@ def primTrace(ctx0, proc): getVal(proc).trace(ctx0); return final(unit)
 @primproc('_untrace', procType(anyTy, anyTy), unitTy)
 def primUntrace(ctx0, proc): getVal(proc).untrace(ctx0); return final(unit)
 ################################################################
-# io
-# todo: expose io ports for read/write instead
-@primproc('_put-char', charTy, unitTy)
-def primPutChar(ctx0, ch): print(fromChar(ch), end=''); return final(unit)
-@primproc('_put-string', stringTy, unitTy)
-def primPutString(ctx0, chs):
-    print(fromString(chs), end=''); return final(unit)
+# i/o
+@primproc('_read-ch', portTy, charTy)
+def primReadCh(ctx0, prt):
+    return final(toChar(fromPort(prt).read(1)))
+@primproc('_write-ch', portTy, charTy, unitTy)
+def primWriteCh(ctx0, prt, ch):
+    fromPort(prt).write(fromChar(ch)); return final(unit)
+@primproc('_read-str', portTy, intTy, stringTy)
+def primReadStr(ctx0, prt, length):
+    return final(toString(fromPort(prt).read(fromInt(length))))
+@primproc('_write-str', portTy, stringTy, unitTy)
+def primWriteStr(ctx0, prt, cs):
+    fromPort(prt).write(fromString(cs)); return final(unit)
+@primproc('_file-open', stringTy, portTy)
+def primFileOpen(ctx0, name): return final(toPort(open(fromString(name))))
+@primproc('_port-close', portTy, unitTy)
+def primPortClose(ctx0, prt): fromPort(prt).close(); return final(unit)
+@primproc('_port-flush', portTy, unitTy)
+def primPortFlush(ctx0, prt): fromPort(prt).flush(); return final(unit)
 ################################################################
 # arithmetic
 @primproc('_int-add', intTy, intTy, intTy)
