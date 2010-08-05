@@ -35,18 +35,22 @@ def makeOp(parser, s):
 def srcWrap_(src, term): return synclo_new(toCtx(nullCtx(src)), nil, term)
 def srcWrap(parser, term): return srcWrap_(parser.stream.popRgn(), term)
 SrcRgn = namedtuple('SrcRgn', 'name text start end')
-def aggSrcs(srcs): # todo: fix missing text bug
-    if not srcs: return None
+SrcLoc = namedtuple('SrcLoc', 'row col')
+def aggSrcs(srcs):
+    assert not not srcs
     start = min(src.start for src in srcs); end = max(src.end for src in srcs)
-    name = srcs[0].name; text = ['***MISSING TEXT***']*(end[0]-start[0]+1)
+    missing = '***MISSING TEXT***\n'; base = start.row
+    name = srcs[0].name; text = [missing]*(end.row-start.row+1)
     for src in srcs:
         assert src.name == name, (name, src.name)
-        base = start[0]; text[src.start[0]-base:src.end[0]-base+1] = src.text
+        text[src.start.row-base:src.end.row-base+1] = src.text
+    for line in text:
+        assert line is not missing
     return SrcRgn(name, text, start, end)
 def makeExpr(terms, exprSrc=None):
     srcs = tuple(fromCtx(synclo_ctx(tm)).src for tm in terms)
-    if exprSrc is not None: srcs += (exprSrc,)
-    return srcWrap_(aggSrcs(tuple(srcs)), toList(terms))
+    if not srcs: srcs = (exprSrc,)
+    return srcWrap_(aggSrcs(srcs), toList(terms))
 def makeExprNonSingle(terms, exprSrc=None):
     if len(terms) > 1: return makeExpr(terms, exprSrc)
     elif len(terms) == 1: return terms[0]
@@ -76,15 +80,22 @@ tokClassesDelimiter = makeTokClasses((
         (operPat, makeOp),
         ))
 tokClassesAll = tokClassesNonDelimiter+tokClassesDelimiter
+def locRange(start, end):
+    if start == end: return start, end
+    if end.col != 0: return start, end
+    return start, SrcLoc(end.row-1, -1)#max(start.row, end.row-1), 0)
+def numRows(start, end):
+    if start == end: return 0
+    return end.row-start.row+1
 class Stream:
     def __init__(self, name, ios, row=1, col=0):
-        self.name = name
-        self.ios = ios; self.lineBuf = None; self.row = row; self.col = col
-        self.lenHist = None; self.lineHist = []; self.locHist = (row, col)
-    def getln(self, default=None):
+        self.name = name; self.ios = ios; self.row = row; self.col = col
+        self.lineBuf = None; self.lineHist = []; self.lenHist = None
+        self.locHist = SrcLoc(row, col)
+    def getln(self):
         if self.lineBuf is not None: line = self.lineBuf; self.lineBuf = None
-        elif default is not None: line = default
-        else: line = next(self.ios); self.lineHist.append(line)
+        else: line = next(self.ios)
+        if self.col == 0: self.lineHist.append(line)
         self.row+=1; self.lenHist = len(line)+self.col; self.col = 0
         return line
     def putln(self, line):
@@ -92,18 +103,24 @@ class Stream:
         assert self.lenHist is not None
         assert self.lineBuf is None, self.lineBuf
         self.col = self.lenHist-len(line); self.lineBuf = line; self.row-=1
+        if self.col == 0:
+            assert self.lineHist, line
+            self.lineHist.pop()
     def getch(self, num=1):
         line = self.getln(); self.putln(line[num:]); return line[:num]
-    def putch(self, ch): line = ch+self.getln(''); self.putln(line)
+    def putch(self, ch): line = ch+self.getln(); self.putln(line)
     def empty(self):
         try: self.putln(self.getln())
         except StopIteration: return True
         return False
     def popRgn(self):
-        newLoc = (self.row, self.col)
-        src = SrcRgn(self.name, self.lineHist, self.locHist, newLoc)
-        if self.lineBuf is None: self.lineHist = []
-        else: self.lineHist = self.lineHist[-1:]
+        newLoc = SrcLoc(self.row, self.col); nlines = len(self.lineHist)
+        rng = locRange(self.locHist, newLoc); nrows = numRows(*rng)
+        assert ((nrows == nlines-1 and rng[0].col == rng[1].col)
+                or nrows == nlines), (nlines, rng)
+        src = SrcRgn(self.name, self.lineHist[:nrows], *rng)
+        if self.col == 0: self.lineHist = []
+        else: self.lineHist = [self.lineHist[-1]]
         self.locHist = newLoc; return src
 def memoTrue(f):
     state = [False]
