@@ -153,15 +153,15 @@ def reachable(cfg, bnds):
         bnds = unionReduce(touchedBinding(cfg, bnd) for bnd in bnds) - seen
         seen |= bnds
     return seen
-class Config:
+class CountConfig:
     def __init__(self, store, count): self.store = store; self.count = count
     def __str__(self): return '(%s %s)'%str(self.store), str(self.count)
     def __repr__(self): return '<Config %s>'%str(self)
     def contains(self, cfg): return self.store.contains(cfg.store)
     def join(self, cfg):
-        return Config(self.store.join(cfg.store), self.addCounts(cfg))
+        return self.__class__(self.store.join(cfg.store), self.addCounts(cfg))
     def only(self, bnds):
-        return Config(self.store.only(bnds), self.count.only(bnds))
+        return self.__class__(self.store.only(bnds), self.count.only(bnds))
     def addCounts(self, cfg):
         newCounts = []
         for bnd, cnt in self.count.data.items():
@@ -173,8 +173,11 @@ class Config:
                     else: cnt = cfg.count.get(bnd)
             newCounts.append((bnd, cnt))
         return cfg.count.insert(newCounts)
+    def joinBindings(self, bindings):
+        count = Mapping(dict((bnd, 1) for bnd, _ in bindings))
+        return self.join(self.__class__(Env(dict(bindings)), count))
 def newConfig(vals=None, counts=None):
-    return Config(Env(vals), Mapping(counts))
+    return CountConfig(Env(vals), Mapping(counts))
 class State:
     def __init__(self, ctx, cfg): self.ctx = ctx; self.cfg = cfg
     def next(self): return self.ctx.code.eval(self.ctx.time, self.cfg)
@@ -221,8 +224,7 @@ def applyProc(proc, paramss, ptm, ntm, cfg):
     fvs = ((Binding(fv, ntm), cfg.store.get(Binding(fv, ptm)))
            for fv in proc.frees())
     bindings = tuple(chain(bvs, fvs))
-    ncfg = newConfig(dict(bindings), dict((bnd, 1) for bnd, _ in bindings))
-    return State(Context(proc.code, ntm), ncfg.join(cfg))
+    return State(Context(proc.code, ntm), cfg.joinBindings(bindings))
 
 class VExpr(Expr):
     def eval(self, tm, cfg): raise NotImplementedError
@@ -294,7 +296,7 @@ def search(seen, unseen):
     return seen
 def searchProg(proc, mx=0):
     return search({}, [progState(proc, (), AbstractTime((), mx))])
-def summary(seen): return reduce(Config.join, seen.values(), newConfig())
+def summary(seen): return reduce(CountConfig.join, seen.values(), newConfig())
 ################################################################
 # testing
 #  (let* ((id (lambda (x) x))
