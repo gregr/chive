@@ -94,6 +94,7 @@ def strDict(dct, joiner=' '):
 def strSet(st):
     if isinstance(st, set): return '#{%s}'%' '.join(str(el) for el in st)
     return str(st)
+def unionReduce(xs): return reduce(set.union, xs, set())
 ################################################################
 # interpreter
 class Env:
@@ -116,6 +117,9 @@ class Env:
         return all(self.get(key).issuperset(val)
                    for (key,val) in env.data.items())
     def join(self, env): return self.insert(env.data.items())
+    def only(self, keys):
+        dat = dict((key, val) for key, val in self.data.items() if key in keys)
+        return Env(dat)
 class ConcreteTime:
     def __init__(self, count): self.count = count
     def advance(self, code): return ConcreteTime(self.count+1)
@@ -136,29 +140,48 @@ Closure = namedTup('Closure', 'proc time')
 Binding = namedTup('Binding', 'name time')
 Context = namedTup('Context', 'code time')
 def advance(ctx): return ctx.time.advance(ctx.code)
+def touchedClosure(clo):
+    return set(Binding(name, clo.time) for name in clo.proc.frees())
+def touchedBinding(cfg, bnd):
+    return unionReduce(touchedClosure(clo) for clo in cfg.store.get(bnd))
+def reachable(cfg, bnds):
+    seen = set(bnds)
+    while bnds:
+        bnds = unionReduce(touchedBinding(cfg, bnd) for bnd in bnds) - seen
+        seen |= bnds
+    return seen
 class Config:
     def __init__(self, store): self.store = store
     def __str__(self): return str(self.store)
     def __repr__(self): return '<Config %s>'%str(self)
     def contains(self, cfg): return self.store.contains(cfg.store)
     def join(self, cfg): return Config(self.store.join(cfg.store))
+    def only(self, bnds): return Config(self.store.only(bnds))
 class State:
     def __init__(self, ctx, cfg): self.ctx = ctx; self.cfg = cfg
     def next(self): return self.ctx.code.eval(self.ctx.time, self.cfg)
+    def reachable(self):
+        return reachable(self.cfg, self.ctx.code.touched(self.ctx.time))
+    def garbageCollect(self):
+        return State(self.ctx, self.cfg.only(self.reachable()))
 
 class Expr:
     def __init__(self): self.lab = Label()
     def __str__(self): raise NotImplementedError
     def __repr__(self): return '<%s %s>'%(self.__class__.__name__, str(self))
     def frees(self): raise NotImplementedError
-def accFrees(xs): return reduce(set.union,(x.frees() for x in xs),set())
+def accFrees(xs): return unionReduce(x.frees() for x in xs)
 
 class CExpr(Expr):
+    def touched(self, tm): return set(Binding(nm, tm) for nm in self.frees())
     def eval(self, tm, cfg): raise NotImplementedError
 class Halt(CExpr):
+    def __init__(self, resultName='halt-result'):
+        super().__init__(); self.result = Name(resultName)
     def __str__(self): return '*HALT!*'
-    def frees(self): return set()
+    def frees(self): return set((self.result,))
     def eval(self, tm, cfg): return ()
+def makeHalt(): hlt = Halt(); return CProc((hlt.result,), hlt)
 class Call(CExpr):
     def __init__(self, proc, params):
         super().__init__(); self.proc = proc; self.params = params
@@ -200,11 +223,9 @@ class UProc(Proc):
 class CProc(Proc):
     strTag = 'cproc'
     def advance(self, ctx, tm): return tm
-finalResult = Name('final-result')
-halt = CProc((finalResult,), Halt())
 def progState(proc, params, tm):
     cfg = Config(Env())
-    return applyProc(proc, params+(halt.eval(tm, cfg),), tm, tm, cfg)
+    return applyProc(proc, params+(makeHalt().eval(tm, cfg),), tm, tm, cfg)
 
 def freshCVar(alpha=alphaGen(['k'])): return Var(Name(next(alpha)))
 def freshUVar(alpha=alphaGen(['u'])): return Var(Name(next(alpha)))
@@ -239,17 +260,16 @@ def dLetStar(bnds, body):
 def dProg(dexpr):
     haltBnd = Name('halt'); return UProc((haltBnd,), dexpr.toCPS(Var(haltBnd)))
 
-def garbageCollect(state): return state
-def search(seen, todo):
-    while todo:
-        state = garbageCollect(todo.pop())
-        cfg = seen.get(state.ctx)
+def garbageCollect(state): return state.garbageCollect()
+def search(seen, unseen):
+    while unseen:
+        state = garbageCollect(unseen.pop()); cfg = seen.get(state.ctx)
         if cfg is not None:
             if cfg.contains(state.cfg): continue
             cfg = cfg.join(state.cfg)
-            state = garbageCollect(State(state.ctx, cfg))
+            state = garbageCollect(State(state.ctx, cfg)) # context widening
         else: cfg = state.cfg
-        seen[state.ctx] = cfg; todo.extend(state.next())
+        seen[state.ctx] = cfg; unseen.extend(state.next())
     return seen
 def searchProg(proc, mx=0):
     return search({}, [progState(proc, (), AbstractTime((), mx))])
