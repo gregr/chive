@@ -97,29 +97,32 @@ def strSet(st):
 def unionReduce(xs): return reduce(set.union, xs, set())
 ################################################################
 # interpreter
-class Env:
+class Mapping:
     def __init__(self, dat=None):
         if dat is None: dat = {}
         self.data = dat
-    def __eq__(self, env): return self.data == env.data
-    def __hash__(self): return hash(self.data)
     def __str__(self): return strDict(self.data)
-    def __repr__(self): return '<Env %s>'%str(self)
+    def __repr__(self): return '<%s %s>'%(self.__class__.__name__, str(self))
+    def _getDefault(self): return None
+    def _combineVal(self, key, val): return val
     def get(self, key):
         val = self.data.get(key)
-        if val is None: return set()
+        if val is None: return self._getDefault()
         return val
     def insert(self, kvs):
         dat = self.data.copy()
-        dat.update((key, self.get(key)|val) for (key, val) in kvs)
-        return Env(dat)
+        dat.update((key, self._combineVal(key, val)) for key, val in kvs)
+        return self.__class__(dat)
+    def join(self, other): return self.insert(other.data.items())
+    def only(self, keys):
+        dat = dict((key, val) for key, val in self.data.items() if key in keys)
+        return self.__class__(dat)
+class Env(Mapping):
+    def _getDefault(self): return set()
+    def _combineVal(self, key, val): return self.get(key)|val
     def contains(self, env):
         return all(self.get(key).issuperset(val)
                    for (key,val) in env.data.items())
-    def join(self, env): return self.insert(env.data.items())
-    def only(self, keys):
-        dat = dict((key, val) for key, val in self.data.items() if key in keys)
-        return Env(dat)
 class ConcreteTime:
     def __init__(self, count): self.count = count
     def advance(self, code): return ConcreteTime(self.count+1)
@@ -151,12 +154,27 @@ def reachable(cfg, bnds):
         seen |= bnds
     return seen
 class Config:
-    def __init__(self, store): self.store = store
-    def __str__(self): return str(self.store)
+    def __init__(self, store, count): self.store = store; self.count = count
+    def __str__(self): return '(%s %s)'%str(self.store), str(self.count)
     def __repr__(self): return '<Config %s>'%str(self)
     def contains(self, cfg): return self.store.contains(cfg.store)
-    def join(self, cfg): return Config(self.store.join(cfg.store))
-    def only(self, bnds): return Config(self.store.only(bnds))
+    def join(self, cfg):
+        return Config(self.store.join(cfg.store), self.addCounts(cfg))
+    def only(self, bnds):
+        return Config(self.store.only(bnds), self.count.only(bnds))
+    def addCounts(self, cfg):
+        newCounts = []
+        for bnd, cnt in self.count.data.items():
+            if cnt == 1:
+                val = cfg.store.get(bnd)
+                if val:
+                    val0 = self.store.get(bnd)
+                    if val != val0: cnt+=1; print(val, '!=', val0)
+                    else: cnt = cfg.count.get(bnd)
+            newCounts.append((bnd, cnt))
+        return cfg.count.insert(newCounts)
+def newConfig(vals=None, counts=None):
+    return Config(Env(vals), Mapping(counts))
 class State:
     def __init__(self, ctx, cfg): self.ctx = ctx; self.cfg = cfg
     def next(self): return self.ctx.code.eval(self.ctx.time, self.cfg)
@@ -167,6 +185,8 @@ class State:
 
 class Expr:
     def __init__(self): self.lab = Label()
+    def __eq__(self, expr): return self.lab == expr.lab
+    def __hash__(self): return hash(self.lab)
     def __str__(self): raise NotImplementedError
     def __repr__(self): return '<%s %s>'%(self.__class__.__name__, str(self))
     def frees(self): raise NotImplementedError
@@ -200,8 +220,9 @@ def applyProc(proc, paramss, ptm, ntm, cfg):
     bvs = zip((Binding(bv, ntm) for bv in proc.binders), paramss)
     fvs = ((Binding(fv, ntm), cfg.store.get(Binding(fv, ptm)))
            for fv in proc.frees())
-    ncfg = Config(cfg.store.insert(chain(bvs, fvs)))
-    return State(Context(proc.code, ntm), ncfg)
+    bindings = tuple(chain(bvs, fvs))
+    ncfg = newConfig(dict(bindings), dict((bnd, 1) for bnd, _ in bindings))
+    return State(Context(proc.code, ntm), ncfg.join(cfg))
 
 class VExpr(Expr):
     def eval(self, tm, cfg): raise NotImplementedError
@@ -224,7 +245,7 @@ class CProc(Proc):
     strTag = 'cproc'
     def advance(self, ctx, tm): return tm
 def progState(proc, params, tm):
-    cfg = Config(Env())
+    cfg = newConfig()
     return applyProc(proc, params+(makeHalt().eval(tm, cfg),), tm, tm, cfg)
 
 def freshCVar(alpha=alphaGen(['k'])): return Var(Name(next(alpha)))
@@ -273,7 +294,7 @@ def search(seen, unseen):
     return seen
 def searchProg(proc, mx=0):
     return search({}, [progState(proc, (), AbstractTime((), mx))])
-def summary(seen): return reduce(Config.join, seen.values(), Config(Env()))
+def summary(seen): return reduce(Config.join, seen.values(), newConfig())
 ################################################################
 # testing
 #  (let* ((id (lambda (x) x))
@@ -290,4 +311,9 @@ testProg = dProg(dLetStar([(dvID.name, DProc((dvX.name,), dvX)),
                           dvB))
 test = searchProg(testProg, 1)
 testSum = summary(test)
+divider = '================================================================'
+def printDivd(msg): print(divider+'\n= '+msg+'\n'+divider)
+printDivd('store summary')
 print(strDict(testSum.store.data, '\n'))
+printDivd('count summary')
+print(strDict(testSum.count.data, '\n'))
