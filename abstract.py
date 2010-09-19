@@ -163,6 +163,49 @@ nrePowCard = 2**len(nres)
 nreSetCat = tuple(tuple(nreCatComp(lhs, rhs) for rhs in range(nrePowCard))
                   for lhs in range(nrePowCard))
 nreSetInverse = tuple(nreInverseComp(nreSet) for nreSet in range(nrePowCard))
+class FrameString:
+    def __init__(self, byLab=None):
+        if byLab is None: byLab = {}
+        self.byLab = byLab
+    def inverse(self):
+        return FrameString(dict((lab, dict((tm, nreSetInverse[nreSet])
+                                           for tm, nreSet in byTime.items()))
+                                for lab, byTime in self.byLab.items()))
+    def cat(self, fs):
+        byLab = {}
+        for lab, byTmL in self.byLab.items():
+            byTmR = fs.byLab.getdefault(lab, {})
+            byLab[lab] = dict((tm, nreSetCat[lhs][byTmR.getdefault(tm, nreE)])
+                              for tm, lhs in byTmL.items())
+        for lab, byTmR in fs.byLab.items():
+            byTmL = self.byLab.get(lab)
+            if byTmL is not None:
+                byTm = byLab[lab]
+                for tm, rhs in byTmR.items():
+                    if tm not in byTmL: byTm[tm] = rhs
+            else: byLab[lab] = dict((tm, rhs) for tm, rhs in byTmR.items())
+        return FrameString(byLab)
+    def joinEmptyTime(self, tm):
+        changed = False
+        for lab, byTime in self.byLab.items():
+            nreSet = byTime.get(tm)
+            if nreSet is not None:
+                if not changed: byLab = self.byLab.copy(); changed = True
+                byTime = byTime.copy(); byLab[lab] = byTime
+                byTime[tm] = nreSet|nreE
+        if not changed: return self
+        return FrameString(byLab)
+class FrameLog:
+    def __init__(self, byTime=None):
+        if byTime is None: byTime = {}
+        self.byTime = byTime
+    def update(self, fs, newTm=None):
+        byTime = dict((tm, fstr.cat(fs)) for tm, fstr in self.byTime.items())
+        if newTm is not None:
+            fs = byTime.get(newTm)
+            if fs is None: byTime[newTm] = FrameString()
+            else: fs.joinEmptyTime(newTm)
+        return FrameLog(byTime)
 ################################################################
 # interpreter
 class ConcreteTime:
