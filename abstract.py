@@ -95,8 +95,6 @@ def strSet(st):
     if isinstance(st, set): return '#{%s}'%' '.join(str(el) for el in st)
     return str(st)
 def unionReduce(xs): return reduce(set.union, xs, set())
-################################################################
-# interpreter
 class Mapping:
     def __init__(self, dat=None):
         if dat is None: dat = {}
@@ -105,6 +103,7 @@ class Mapping:
     def __repr__(self): return '<%s %s>'%(self.__class__.__name__, str(self))
     def _getDefault(self): return None
     def _combineVal(self, key, val): return val
+    def single(self, val): return val
     def get(self, key):
         val = self.data.get(key)
         if val is None: return self._getDefault()
@@ -120,9 +119,52 @@ class Mapping:
 class Env(Mapping):
     def _getDefault(self): return set()
     def _combineVal(self, key, val): return self.get(key)|val
+    def single(self, val): return {val}
     def contains(self, env):
         return all(self.get(key).issuperset(val)
                    for (key,val) in env.data.items())
+################################################################
+# frame strings
+nres = tuple(1 << idx for idx in range(6))
+nreE, nreB, nreK, nreBs, nreKs, nreKsBs = nres
+# empty, push(bra), pop(ket), pushes, pops, pops and pushes
+nreStrs = {nreE:'e', nreB:'<|', nreK:'|>', nreBs:'<|<|+', nreKs:'|>|>+',
+           nreKsBs:'|>+<|+'}
+def nreSetStr(nreSet): return ', '.join(nreStrs[nre] for nre in nresIn(nreSet))
+from operator import or_
+nreAll = reduce(or_, nres, 0)
+nreAllKs = nreK|nreKs|nreKsBs
+nreInverse = {nreE:nreE, nreB:nreK, nreBs:nreKs, nreK:nreB, nreKs:nreBs,
+              nreKsBs:nreKsBs}
+nreCatMaps = (
+    (nreE, (nreE, nreB, nreBs, nreK, nreKs, nreKsBs)),
+    (nreB, (nreB, nreBs, nreBs, nreE, nreK|nreKs, nreBs|nreKsBs)),
+    (nreBs, (nreBs, nreBs, nreBs, nreB|nreBs, nreAll&~nreKsBs, nreBs|nreKsBs)),
+    (nreK, (nreK, nreE|nreKsBs, nreB|nreBs|nreKsBs, nreKs, nreKs, nreKsBs)),
+    (nreKs, (nreKs, nreAllKs, nreAll, nreKs, nreKs, nreKsBs)),
+    (nreKsBs, (nreKsBs, nreKsBs, nreKsBs, nreAllKs, nreAllKs, nreAll))
+    ); nreCatMaps = dict(nreCatMaps)
+nreCat = dict((key, dict((1 << idx, val) for idx, val in enumerate(tab)))
+              for key, tab in nreCatMaps.items())
+def nresIn(nreSet):
+    for nre in nres:
+        if nreSet&nre: yield nre
+def nreCatComp(lhs, rhs):
+    acc = 0
+    for nre0 in nresIn(lhs):
+        for nre1 in nresIn(rhs): acc |= nreCat[nre0][nre1]
+    return acc
+def nreInverseComp(nreSet):
+    acc = 0
+    for nre in nresIn(nreSet): acc |= nreInverse[nre]
+    return acc
+nrePowCard = 2**len(nres)
+# precompute all cat and inverse results
+nreSetCat = tuple(tuple(nreCatComp(lhs, rhs) for rhs in range(nrePowCard))
+                  for lhs in range(nrePowCard))
+nreSetInverse = tuple(nreInverseComp(nreSet) for nreSet in range(nrePowCard))
+################################################################
+# interpreter
 class ConcreteTime:
     def __init__(self, count): self.count = count
     def advance(self, code): return ConcreteTime(self.count+1)
@@ -144,23 +186,29 @@ Binding = namedTup('Binding', 'name time')
 Context = namedTup('Context', 'code time')
 def advance(ctx): return ctx.time.advance(ctx.code)
 def touchedClosure(clo):
-    return set(Binding(name, clo.time) for name in clo.proc.frees())
+    return set(Binding(name, clo.time) for name in clo.proc.frees()), clo.time
+def zip2(xs):
+    ys = tuple(zip(*xs))
+    if not ys: ys = ((), ())
+    return ys
 def touchedBinding(cfg, bnd):
-    return unionReduce(touchedClosure(clo) for clo in cfg.store.get(bnd))
+    bts = zip2(touchedClosure(clo) for clo in cfg.store.get(bnd))
+    return unionReduce(bts[0]), set(bts[1])
 def reachable(cfg, bnds):
-    seen = set(bnds)
+    seenBnds = set(bnds); seenTms = set()
     while bnds:
-        bnds = unionReduce(touchedBinding(cfg, bnd) for bnd in bnds) - seen
-        seen |= bnds
-    return seen
+        bts = zip2(touchedBinding(cfg, bnd) for bnd in bnds)
+        bnds = unionReduce(bts[0]) - seenBnds
+        seenBnds |= bnds; seenTms |= unionReduce(bts[1])
+    return seenBnds, seenTms
 class CountConfig:
     def __init__(self, store, count): self.store = store; self.count = count
     def __str__(self): return '(%s %s)'%str(self.store), str(self.count)
-    def __repr__(self): return '<Config %s>'%str(self)
+    def __repr__(self): return '<%s %s>'%(self.__class__.__name__, str(self))
     def contains(self, cfg): return self.store.contains(cfg.store)
     def join(self, cfg):
         return self.__class__(self.store.join(cfg.store), self.addCounts(cfg))
-    def only(self, bnds):
+    def only(self, bnds, tms):
         return self.__class__(self.store.only(bnds), self.count.only(bnds))
     def addCounts(self, cfg):
         newCounts = []
@@ -169,7 +217,7 @@ class CountConfig:
                 val = cfg.store.get(bnd)
                 if val:
                     val0 = self.store.get(bnd)
-                    if val != val0: cnt+=1; print(val, '!=', val0)
+                    if val != val0: cnt+=1
                     else: cnt = cfg.count.get(bnd)
             newCounts.append((bnd, cnt))
         return cfg.count.insert(newCounts)
@@ -184,7 +232,7 @@ class State:
     def reachable(self):
         return reachable(self.cfg, self.ctx.code.touched(self.ctx.time))
     def garbageCollect(self):
-        return State(self.ctx, self.cfg.only(self.reachable()))
+        return State(self.ctx, self.cfg.only(*self.reachable()))
 
 class Expr:
     def __init__(self): self.lab = Label()
@@ -233,13 +281,15 @@ class Var(VExpr):
     def __str__(self): return str(self.name)
     def frees(self): return {self.name}
     def eval(self, tm, cfg): return cfg.store.get(Binding(self.name, tm))
+class UVar(Var): pass
+class CVar(Var): pass
 class Proc(VExpr):
     def __init__(self, binders, code):
         super().__init__(); self.binders = binders; self.code = code
     def __str__(self):
         return '(%s %s %s)'%(self.strTag, strTup(self.binders), str(self.code))
     def frees(self): return self.code.frees()-set(self.binders)
-    def eval(self, tm, cfg): return {Closure(self, tm)}
+    def eval(self, tm, cfg): return cfg.store.single(Closure(self, tm))
 class UProc(Proc):
     strTag = 'uproc'
     def advance(self, ctx, tm): return advance(ctx)
@@ -250,8 +300,8 @@ def progState(proc, params, tm):
     cfg = newConfig()
     return applyProc(proc, params+(makeHalt().eval(tm, cfg),), tm, tm, cfg)
 
-def freshCVar(alpha=alphaGen(['k'])): return Var(Name(next(alpha)))
-def freshUVar(alpha=alphaGen(['u'])): return Var(Name(next(alpha)))
+def freshUVar(alpha=alphaGen(['u'])): return UVar(Name(next(alpha)))
+def freshCVar(alpha=alphaGen(['k'])): return CVar(Name(next(alpha)))
 class DExpr(Expr):
     def toCPS(self, ce): raise NotImplementedError
 class DVar(DExpr):
