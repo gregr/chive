@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+class Repr:
+    def __str__(self): return ''
+    def __repr__(self): return '<%s %s>'%(self.__class__.__name__, self)
 ################################################################
 # types
-class Type:
+class Type(Repr):
     def contains(self, ty, tenv=None): return self is ty
-    def __repr__(self): return '<%s %s>'%(self.__class__.__name__, self)
 
 class BasicType(Type): pass
 
@@ -95,12 +97,11 @@ def strSet(st):
     if isinstance(st, set): return '#{%s}'%' '.join(str(el) for el in st)
     return str(st)
 def unionReduce(xs): return reduce(set.union, xs, set())
-class Mapping:
+class Mapping(Repr):
     def __init__(self, dat=None):
         if dat is None: dat = {}
         self.data = dat
     def __str__(self): return strDict(self.data)
-    def __repr__(self): return '<%s %s>'%(self.__class__.__name__, str(self))
     def _getDefault(self): return None
     def _combineVal(self, key, val): return val
     def single(self, val): return val
@@ -116,6 +117,11 @@ class Mapping:
     def only(self, keys):
         dat = dict((key, val) for key, val in self.data.items() if key in keys)
         return self.__class__(dat)
+class Measure(Mapping):
+    def _getDefault(self): return 0
+    def _combineVal(self, key, val): return min(2, self.get(key)+val)
+    def join(self, other, adjust):
+        return self.insert(map(adjust, other.data.items()))
 class Env(Mapping):
     def _getDefault(self): return set()
     def _combineVal(self, key, val): return self.get(key)|val
@@ -160,23 +166,39 @@ def nreInverseComp(nreSet):
     return acc
 nrePowCard = 2**len(nres)
 # precompute all cat and inverse results
-nreSetCat = tuple(tuple(nreCatComp(lhs, rhs) for rhs in range(nrePowCard))
-                  for lhs in range(nrePowCard))
+nreSetCatMap = tuple(tuple(nreCatComp(lhs, rhs) for rhs in range(nrePowCard))
+                     for lhs in range(nrePowCard))
 nreSetInverse = tuple(nreInverseComp(nreSet) for nreSet in range(nrePowCard))
-class FrameString:
+def nreSetCat(lhs, rhs, eager=False):
+    if lhs==nreK and rhs==nreB and eager: return nreE
+    return nreSetCatMap[lhs][rhs]
+class FrameString(Repr):
     def __init__(self, byLab=None):
         if byLab is None: byLab = {}
         self.byLab = byLab
+    def __str__(self):
+        repDict = {}
+        for lab, byTm in self.byLab.items():
+            for tm, nreSet in byTm.items():
+                repDict[(lab, tm)] = nreSetStr(nreSet)
+        return '\n'+strDict(repDict, '\n')
+    def get(self, lab, tm):
+        byTm = self.byLab.get(lab)
+        if byTm is not None: return byTm.get(tm, nreE)
+        return nreE
     def inverse(self):
         return FrameString(dict((lab, dict((tm, nreSetInverse[nreSet])
                                            for tm, nreSet in byTime.items()))
                                 for lab, byTime in self.byLab.items()))
-    def cat(self, fs):
+    def cat(self, fs, fcnts):
         byLab = {}
         for lab, byTmL in self.byLab.items():
-            byTmR = fs.byLab.getdefault(lab, {})
-            byLab[lab] = dict((tm, nreSetCat[lhs][byTmR.getdefault(tm, nreE)])
-                              for tm, lhs in byTmL.items())
+            byTmR = fs.byLab.get(lab, {})
+            newByTm = {}; byLab[lab] = newByTm
+            for tm, lhs in byTmL.items():
+                nreNew = nreSetCat(lhs, byTmR.get(tm, nreE),
+                                   (fcnts.get((lab,tm))<2))
+                if nreNew != nreE: newByTm[tm] = nreNew
         for lab, byTmR in fs.byLab.items():
             byTmL = self.byLab.get(lab)
             if byTmL is not None:
@@ -184,6 +206,16 @@ class FrameString:
                 for tm, rhs in byTmR.items():
                     if tm not in byTmL: byTm[tm] = rhs
             else: byLab[lab] = dict((tm, rhs) for tm, rhs in byTmR.items())
+        return FrameString(byLab)
+    def join(self, fs):
+        byLab = self.byLab.copy()
+        for lab, byTm1 in fs.byLab.items():
+            byTm0 = byLab.get(lab)
+            if byTm0 is not None:
+                byTm0 = byTm0.copy(); byLab[lab] = byTm0
+                for tm, nreSet in byTm1.items():
+                    byTm0[tm] = byTm0.get(tm, nreE)|nreSet
+            else: byLab[lab] = byTm1
         return FrameString(byLab)
     def joinEmptyTime(self, tm):
         changed = False
@@ -195,17 +227,45 @@ class FrameString:
                 byTime[tm] = nreSet|nreE
         if not changed: return self
         return FrameString(byLab)
-class FrameLog:
+    def only(self, tms):
+        changed = False
+        for lab, byTime in self.byLab.items():
+            for tm in byTime:
+                if tm not in tms:
+                    if not changed: byLab = self.byLab.copy(); changed = True
+                    byTime = dict((tm, nreSet) for tm, nreSet in byTime.items()
+                                  if tm in tms)
+                    byLab[lab] = byTime; break
+        if not changed: return self
+        return FrameString(byLab)
+def pushFrame(lab, time): return FrameString({lab: {time: nreB}})
+class FrameLog(Repr):
     def __init__(self, byTime=None):
         if byTime is None: byTime = {}
         self.byTime = byTime
-    def update(self, fs, newTm=None):
-        byTime = dict((tm, fstr.cat(fs)) for tm, fstr in self.byTime.items())
+    def __str__(self): return strDict(self.byTime)
+    def get(self, tm):
+        fs = self.byTime.get(tm)
+        if fs is None: return FrameString()
+        return fs
+    def join(self, flog):
+        byTime = self.byTime.copy()
+        for tm, fs1 in flog.byTime.items():
+            fs0 = byTime.get(tm)
+            if fs0 is not None: byTime[tm] = fs0.join(fs1)
+            else: byTime[tm] = fs1
+        return FrameLog(byTime)
+    def update(self, fs, fcnts, newTm=None):
+        byTime = dict((tm, fstr.cat(fs, fcnts))
+                      for tm, fstr in self.byTime.items())
         if newTm is not None:
             fs = byTime.get(newTm)
             if fs is None: byTime[newTm] = FrameString()
             else: fs.joinEmptyTime(newTm)
         return FrameLog(byTime)
+    def only(self, tms):
+        return FrameLog(dict((tm, fs.only(tms))
+                             for tm, fs in self.byTime.items()))
 ################################################################
 # interpreter
 class ConcreteTime:
@@ -218,7 +278,7 @@ class AbstractTime:
     def __eq__(self, tm): return self.codes == tm.codes
     def __hash__(self): return hash(self.codes)
     def __str__(self): return strTup(self.codes)
-    def __repr__(self): return '<m=%d %s>'%(self.mx, str(self))
+    def __repr__(self): return '<m=%d %s>'%(self.mx, self)
     def advance(self, code):
         codes = (self.codes+(code,)); codes = codes[max(0,len(codes)-self.mx):]
         return AbstractTime(codes, self.mx)
@@ -244,31 +304,70 @@ def reachable(cfg, bnds):
         bnds = unionReduce(bts[0]) - seenBnds
         seenBnds |= bnds; seenTms |= unionReduce(bts[1])
     return seenBnds, seenTms
-class CountConfig:
-    def __init__(self, store, count): self.store = store; self.count = count
-    def __str__(self): return '(%s %s)'%str(self.store), str(self.count)
-    def __repr__(self): return '<%s %s>'%(self.__class__.__name__, str(self))
+class AbstractConfig(Repr):
+    def __init__(self, store): self.store = store
+    def __str__(self): return '%s'%str(self.store)
     def contains(self, cfg): return self.store.contains(cfg.store)
-    def join(self, cfg):
-        return self.__class__(self.store.join(cfg.store), self.addCounts(cfg))
-    def only(self, bnds, tms):
-        return self.__class__(self.store.only(bnds), self.count.only(bnds))
-    def addCounts(self, cfg):
-        newCounts = []
-        for bnd, cnt in self.count.data.items():
-            if cnt == 1:
-                val = cfg.store.get(bnd)
-                if val:
-                    val0 = self.store.get(bnd)
-                    if val != val0: cnt+=1
-                    else: cnt = cfg.count.get(bnd)
-            newCounts.append((bnd, cnt))
-        return cfg.count.insert(newCounts)
-    def joinBindings(self, bindings):
-        count = Mapping(dict((bnd, 1) for bnd, _ in bindings))
-        return self.join(self.__class__(Env(dict(bindings)), count))
-def newConfig(vals=None, counts=None):
-    return CountConfig(Env(vals), Mapping(counts))
+    def join(self, cfg, *args):
+        return self.__class__(self.store.join(cfg.store), *args)
+    def only(self, bnds, tms, *args):
+        return self.__class__(self.store.only(bnds), *args)
+    def update(self, tm, clo, bvs, fvs, *args):
+        return self.join(self.__class__(Env(dict(chain(bvs, fvs))), *args))
+class CountConfig(AbstractConfig):
+    def __init__(self, store, count):
+        super().__init__(store); self.count = count
+    def __str__(self): return '(%s %s)'%(super().__str__(), str(self.count))
+    def join(self, cfg, *args):
+        count = self.count.join(cfg.count, adjEqBinding(self.store, cfg.store))
+        return super().join(cfg, count)
+    def only(self, bnds, tms, *args):
+        return super().only(bnds, tms, self.count.only(bnds))
+    def update(self, tm, clo, bvs, fvs, *args):
+        count = Mapping(dict((bnd, 1) for bnd, _ in chain(bvs, fvs)))
+        return super().update(tm, clo, bvs, fvs, count)
+def adjEqBinding(env0, env1):
+    def adjust(kv):
+        bnd, cnt = kv
+        if cnt == 1 and env0.get(bnd) == env1.get(bnd): cnt = 0
+        return bnd, cnt
+    return adjust
+class FrameConfig(AbstractConfig):
+    def __init__(self, store, flog, fcount):
+        super().__init__(store); self.flog = flog; self.fcount = fcount
+    def __str__(self): return '(%s %s %s)'%(super().__str__(), str(self.flog),
+                                            str(self.fcount))
+    def join(self, cfg, *args):
+        fcount = self.fcount.join(cfg.fcount, adjEqFrame(self.flog, cfg.flog))
+        return super().join(cfg, self.flog.join(cfg.flog), fcount)
+    def update(self, tm, clo, bvs, fvs, *args):
+        fchange = youngest(self.flog, clo, (val for _, val in bvs)).inverse()
+        flog = self.flog.update(fchange, self.fcount)
+        countKey = (clo.proc.lab, clo.time)
+        curCount = self.fcount.get(countKey)
+        fcount = self.fcount.insert(((countKey, min(2, curCount+1)),))
+        flog = flog.update(pushFrame(*countKey), fcount, tm)
+        return super().update(tm, clo, bvs, fvs, flog, fcount)
+    def only(self, bnds, tms, *args):
+        flog = self.flog.only(tms)
+        labTms = unionReduce(set((lab, tm) for lab, byTm in
+                                 flog.get(tm).byLab.items()
+                                 if tm in byTm) for tm in tms)
+        return super().only(bnds, tms, flog, self.fcount.only(labTms))
+def youngest(flog, clo, params):
+    vals = unionReduce(params); vals.add(clo)
+    return reduce(FrameString.join, (flog.get(val.time) for val in vals
+                                     if isCont(val)), FrameString())
+def adjEqFrame(fl0, fl1):
+    def adjust(kv):
+        key, cnt = kv; lab, tm = key
+        if cnt==1 and fl0.get(tm).get(lab,tm)==fl1.get(tm).get(lab,tm): cnt = 0
+        return key, cnt
+    return adjust
+# def newConfig(vals=None, counts=None):
+#     return CountConfig(Env(vals), Measure(counts))
+# def newFrameConfig(): return FrameConfig(Env(), FrameLog(), Measure())
+def newConfig(): return FrameConfig(Env(), FrameLog(), Measure())
 class State:
     def __init__(self, ctx, cfg): self.ctx = ctx; self.cfg = cfg
     def next(self): return self.ctx.code.eval(self.ctx.time, self.cfg)
@@ -277,12 +376,13 @@ class State:
     def garbageCollect(self):
         return State(self.ctx, self.cfg.only(*self.reachable()))
 
-class Expr:
-    def __init__(self): self.lab = Label()
+class Expr(Repr):
+    def __init__(self, lab=None):
+        if lab is None: lab = Label()
+        self.lab = lab
     def __eq__(self, expr): return self.lab == expr.lab
     def __hash__(self): return hash(self.lab)
     def __str__(self): raise NotImplementedError
-    def __repr__(self): return '<%s %s>'%(self.__class__.__name__, str(self))
     def frees(self): raise NotImplementedError
 def accFrees(xs): return unionReduce(x.frees() for x in xs)
 
@@ -290,15 +390,15 @@ class CExpr(Expr):
     def touched(self, tm): return set(Binding(nm, tm) for nm in self.frees())
     def eval(self, tm, cfg): raise NotImplementedError
 class Halt(CExpr):
-    def __init__(self, resultName='halt-result'):
-        super().__init__(); self.result = Name(resultName)
+    def __init__(self, resultName='halt-result', *args):
+        super().__init__(*args); self.result = Name(resultName)
     def __str__(self): return '*HALT!*'
     def frees(self): return set((self.result,))
     def eval(self, tm, cfg): return ()
 def makeHalt(): hlt = Halt(); return CProc((hlt.result,), hlt)
 class Call(CExpr):
-    def __init__(self, proc, params):
-        super().__init__(); self.proc = proc; self.params = params
+    def __init__(self, proc, params, *args):
+        super().__init__(*args); self.proc = proc; self.params = params
     def __str__(self):
         return '(call %s %s)'%(str(self.proc), strTup(self.params))
     def frees(self): return self.proc.frees()|accFrees(self.params)
@@ -306,66 +406,70 @@ class Call(CExpr):
         clos = self.proc.eval(tm, cfg)
         paramss = tuple(pm.eval(tm, cfg) for pm in self.params)
         nexts = []
-        for (proc, ptm) in clos:
-            ntm = proc.advance(Context(self, tm), ptm)
-            nexts.append(applyProc(proc, paramss, ptm, ntm, cfg))
+        for clo in clos:
+            ntm = clo.proc.advance(Context(self, tm), clo.time)
+            nexts.append(applyProc(tm, clo, paramss, ntm, cfg))
         return nexts
-def applyProc(proc, paramss, ptm, ntm, cfg):
-    bvs = zip((Binding(bv, ntm) for bv in proc.binders), paramss)
-    fvs = ((Binding(fv, ntm), cfg.store.get(Binding(fv, ptm)))
-           for fv in proc.frees())
-    bindings = tuple(chain(bvs, fvs))
-    return State(Context(proc.code, ntm), cfg.joinBindings(bindings))
+def applyProc(tm, clo, paramss, ntm, cfg):
+    proc, ptm = clo
+    bvs = tuple(zip((Binding(bv, ntm) for bv in proc.binders), paramss))
+    fvs = tuple((Binding(fv, ntm), cfg.store.get(Binding(fv, ptm)))
+                for fv in proc.frees())
+    return State(Context(proc.code, ntm), cfg.update(tm, clo, bvs, fvs))
 
 class VExpr(Expr):
     def eval(self, tm, cfg): raise NotImplementedError
 class Var(VExpr):
-    def __init__(self, name): super().__init__(); self.name = name
+    def __init__(self, name, *args): super().__init__(*args); self.name = name
     def __str__(self): return str(self.name)
     def frees(self): return {self.name}
     def eval(self, tm, cfg): return cfg.store.get(Binding(self.name, tm))
 class UVar(Var): pass
 class CVar(Var): pass
 class Proc(VExpr):
-    def __init__(self, binders, code):
-        super().__init__(); self.binders = binders; self.code = code
+    def __init__(self, binders, code, *args):
+        super().__init__(*args); self.binders = binders; self.code = code
     def __str__(self):
         return '(%s %s %s)'%(self.strTag, strTup(self.binders), str(self.code))
     def frees(self): return self.code.frees()-set(self.binders)
     def eval(self, tm, cfg): return cfg.store.single(Closure(self, tm))
+    def isCont(self): return False
 class UProc(Proc):
     strTag = 'uproc'
     def advance(self, ctx, tm): return advance(ctx)
 class CProc(Proc):
     strTag = 'cproc'
     def advance(self, ctx, tm): return tm
+    def isCont(self): return True
+def isCont(val): return isinstance(val, Closure) and val.proc.isCont()
 def progState(proc, params, tm):
-    cfg = newConfig()
-    return applyProc(proc, params+(makeHalt().eval(tm, cfg),), tm, tm, cfg)
+    cfg = newConfig(); clo = Closure(proc, tm)
+    return applyProc(tm, clo, params+(makeHalt().eval(tm, cfg),), tm, cfg)
 
 def freshUVar(alpha=alphaGen(['u'])): return UVar(Name(next(alpha)))
 def freshCVar(alpha=alphaGen(['k'])): return CVar(Name(next(alpha)))
 class DExpr(Expr):
     def toCPS(self, ce): raise NotImplementedError
 class DVar(DExpr):
-    def __init__(self, name): super().__init__(); self.name = name
+    def __init__(self, name, *args): super().__init__(*args); self.name = name
     def __str__(self): return str(self.name)
-    def toCPS(self, ce): return Call(ce, (Var(self.name),))
+    def toCPS(self, ce): return Call(ce, (UVar(self.name, self.lab),))
 class DProc(DExpr):
-    def __init__(self, binders, body):
-        super().__init__(); self.binders = binders; self.body = body
+    def __init__(self, binders, body, *args):
+        super().__init__(*args); self.binders = binders; self.body = body
     def __str__(self):
         return '(dproc %s %s)'%(strTup(self.binders), str(self.body))
     def toCPS(self, ce):
         cv = freshCVar()
-        return Call(ce, (UProc(self.binders+(cv.name,), self.body.toCPS(cv)),))
+        uproc = UProc(self.binders+(cv.name,), self.body.toCPS(cv), self.lab)
+        return Call(ce, (uproc,))
 class DApply(DExpr):
-    def __init__(self, proc, params):
-        super().__init__(); self.proc = proc; self.params = params
+    def __init__(self, proc, params, *args):
+        super().__init__(*args); self.proc = proc; self.params = params
     def __str__(self): return '(%s %s)'%(str(self.proc), strTup(self.params))
     def toCPS(self, ce):
         uvp = freshUVar(); uvs = tuple(freshUVar() for _ in self.params)
-        call = Call(uvp, uvs+(ce,))
+        call = Call(uvp, uvs+(ce,), self.lab)
         for uv, param in reversed(tuple(zip(uvs, self.params))):
             call = param.toCPS(CProc((uv.name,), call))
         return self.proc.toCPS(CProc((uvp.name,), call))
@@ -389,7 +493,8 @@ def search(seen, unseen):
     return seen
 def searchProg(proc, mx=0):
     return search({}, [progState(proc, (), AbstractTime((), mx))])
-def summary(seen): return reduce(CountConfig.join, seen.values(), newConfig())
+def summary(seen):
+    cfg = newConfig(); return reduce(cfg.__class__.join, seen.values(), cfg)
 ################################################################
 # testing
 #  (let* ((id (lambda (x) x))
@@ -410,5 +515,7 @@ divider = '================================================================'
 def printDivd(msg): print(divider+'\n= '+msg+'\n'+divider)
 printDivd('store summary')
 print(strDict(testSum.store.data, '\n'))
+printDivd('frame summary')
+print(strDict(testSum.flog.byTime, '\n'+'-'*64+'\n'))
 printDivd('count summary')
-print(strDict(testSum.count.data, '\n'))
+print(strDict(testSum.fcount.data, '\n'))
