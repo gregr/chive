@@ -304,6 +304,8 @@ def reachable(cfg, bnds):
         bnds = unionReduce(bts[0]) - seenBnds
         seenBnds |= bnds; seenTms |= unionReduce(bts[1])
     return seenBnds, seenTms
+thickDiv = '='*64; thinDiv = '-'*64
+def printDivd(msg): print(thickDiv+'\n= '+msg+'\n'+thickDiv)
 class AbstractConfig(Repr):
     def __init__(self, store): self.store = store
     def __str__(self): return '%s'%str(self.store)
@@ -314,6 +316,8 @@ class AbstractConfig(Repr):
         return self.__class__(self.store.only(bnds), *args)
     def update(self, tm, clo, bvs, fvs, *args):
         return self.join(self.__class__(Env(dict(chain(bvs, fvs))), *args))
+    def print(self):
+        printDivd('store summary'); print(strDict(self.store.data, '\n'))
 class CountConfig(AbstractConfig):
     def __init__(self, store, count):
         super().__init__(store); self.count = count
@@ -326,6 +330,9 @@ class CountConfig(AbstractConfig):
     def update(self, tm, clo, bvs, fvs, *args):
         count = Mapping(dict((bnd, 1) for bnd, _ in chain(bvs, fvs)))
         return super().update(tm, clo, bvs, fvs, count)
+    def print(self):
+        super().print(); printDivd('count summary')
+        print(strDict(testSum.count.data, '\n'))
 def adjEqBinding(env0, env1):
     def adjust(kv):
         bnd, cnt = kv
@@ -354,6 +361,9 @@ class FrameConfig(AbstractConfig):
                                  flog.get(tm).byLab.items()
                                  if tm in byTm) for tm in tms)
         return super().only(bnds, tms, flog, self.fcount.only(labTms))
+    def print(self):
+        super().print(); printDivd('frame summary')
+        print(strDict(testSum.flog.byTime, '\n'+thinDiv+'\n'))
 def youngest(flog, clo, params):
     vals = unionReduce(params); vals.add(clo)
     return reduce(FrameString.join, (flog.get(val.time) for val in vals
@@ -364,9 +374,7 @@ def adjEqFrame(fl0, fl1):
         if cnt==1 and fl0.get(tm).get(lab,tm)==fl1.get(tm).get(lab,tm): cnt = 0
         return key, cnt
     return adjust
-# def newConfig(vals=None, counts=None):
-#     return CountConfig(Env(vals), Measure(counts))
-# def newFrameConfig(): return FrameConfig(Env(), FrameLog(), Measure())
+#def newConfig(): return CountConfig(Env(), Measure())
 def newConfig(): return FrameConfig(Env(), FrameLog(), Measure())
 class State:
     def __init__(self, ctx, cfg): self.ctx = ctx; self.cfg = cfg
@@ -511,11 +519,4 @@ testProg = dProg(dLetStar([(dvID.name, DProc((dvX.name,), dvX)),
                           dvB))
 test = searchProg(testProg, 1)
 testSum = summary(test)
-divider = '================================================================'
-def printDivd(msg): print(divider+'\n= '+msg+'\n'+divider)
-printDivd('store summary')
-print(strDict(testSum.store.data, '\n'))
-printDivd('frame summary')
-print(strDict(testSum.flog.byTime, '\n'+'-'*64+'\n'))
-printDivd('count summary')
-print(strDict(testSum.fcount.data, '\n'))
+testSum.print()
