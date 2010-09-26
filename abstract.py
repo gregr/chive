@@ -129,13 +129,15 @@ class Measure(Mapping):
     def _getDefault(self): return 0
     def join(self, other, adjust):
         return self.insert(map(adjust, other.data.items()))
+    def contains(self, measure):
+        return all(self.get(key) >= val for key, val in measure.data.items())
 class Env(Mapping):
     _combine = staticmethod(lambda _, old, new: old|new)
     def _getDefault(self): return set()
     def single(self, val): return {val}
     def contains(self, env):
         return all(self.get(key).issuperset(val)
-                   for (key, val) in env.data.items())
+                   for key, val in env.data.items())
 ################################################################
 # frame strings
 nres = tuple(1 << idx for idx in range(6))
@@ -191,6 +193,15 @@ class FrameString(Repr):
             for tm, nreSet in byTm.items():
                 repDict[(lab, tm)] = nreSetStr(nreSet)
         return '\n'+strDict(repDict, '\n')
+    def contains(self, fs):
+        if not all(lab in self.byLab for lab in fs.byLab): return False
+        for lab, byTm in self.byLab.items():
+            byTm1 = fs.byLab.get(lab)
+            if byTm1 is not None:
+                if not (all(tm in byTm for tm in byTm1) and
+                        all(nreSet==(nreSet|byTm1.get(tm, nreE))
+                            for tm, nreSet in byTm.items())): return False
+        return True
     def get(self, lab, tm):
         byTm = self.byLab.get(lab)
         if byTm is not None: return byTm.get(tm, nreE)
@@ -238,18 +249,16 @@ class FrameLog(Repr):
         if byTime is None: byTime = {}
         self.byTime = byTime
     def __str__(self): return strDict(self.byTime)
+    def contains(self, flog):
+        return (all(tm in self.byTime for tm in flog.byTime) and
+                all(fs.contains(flog.get(tm))
+                    for tm, fs in self.byTime.items()))
     def get(self, tm):
         fs = self.byTime.get(tm)
         if fs is None: return nullFS
         return fs
     def join(self, flog):
         return FrameLog(dictJoin(self.byTime, flog.byTime, combineFLogFs))
-        # byTime = self.byTime.copy()
-        # for tm, fs1 in flog.byTime.items():
-        #     fs0 = byTime.get(tm)
-        #     if fs0 is not None: byTime[tm] = fs0.join(fs1)
-        #     else: byTime[tm] = fs1
-        # return FrameLog(byTime)
     def update(self, fs, fcnts, newTm=None):
         byTime = dict((tm, fstr.cat(fs, fcnts))
                       for tm, fstr in self.byTime.items())
@@ -304,7 +313,7 @@ def printDivd(msg): print(thickDiv+'\n= '+msg+'\n'+thickDiv)
 class AbstractConfig(Repr):
     def __init__(self, env): self.env = env
     def __str__(self): return '%s'%str(self.env)
-    def contains(self, cfg): return self.env.contains(cfg.env) # todo
+    def contains(self, cfg): return self.env.contains(cfg.env)
     def join(self, cfg, *args):
         return self.__class__(self.env.join(cfg.env), *args)
     def only(self, bnds, tms, *args):
@@ -317,6 +326,8 @@ class CountConfig(AbstractConfig):
     def __init__(self, env, count):
         super().__init__(env); self.count = count
     def __str__(self): return '(%s %s)'%(super().__str__(), str(self.count))
+    def contains(self, cfg):
+        return self.count.contains(cfg.count) and super().contains(cfg)
     def join(self, cfg, *args):
         count = self.count.join(cfg.count, adjEqBinding(self.env, cfg.env))
         return super().join(cfg, count)
@@ -341,6 +352,8 @@ class FrameConfig(AbstractConfig):
         super().__init__(env); self.flog = flog; self.fcount = fcount
     def __str__(self): return '(%s %s %s)'%(super().__str__(), str(self.flog),
                                             str(self.fcount))
+    def contains(self, cfg):
+        return self.flog.contains(cfg.flog) and super().contains(cfg)
     def join(self, cfg, *args):
         fcount = self.fcount.join(cfg.fcount, adjEqFrame(self.flog, cfg.flog))
         return super().join(cfg, self.flog.join(cfg.flog), fcount)
