@@ -92,47 +92,54 @@ _Name.__str__ = strName
 def strTup(tup): return '(%s)'%' '.join(str(el) for el in tup)
 def strDict(dct, joiner=' '):
     return '{%s}'%joiner.join('(%s => %s)'%(key, strSet(val))
-                           for key, val in dct.items())
+                              for key, val in dct.items())
 def strSet(st):
     if isinstance(st, set): return '#{%s}'%' '.join(str(el) for el in st)
     return str(st)
 def unionReduce(xs): return reduce(set.union, xs, set())
+def dictInsert(d1, kvs, combine):
+    nd = d1.copy()
+    for key, val in kvs:
+        val1 = d1.get(key)
+        if val1 is not None: val = combine(key, val1, val)
+        if val is not None: nd[key] = val
+        else: del nd[key]
+    return nd
+def dictJoin(d1, d2, combine): return dictInsert(d1, d2.items(), combine)
 class Mapping(Repr):
+    _combine = staticmethod(lambda _, __, val: val)
     def __init__(self, dat=None):
         if dat is None: dat = {}
         self.data = dat
     def __str__(self): return strDict(self.data)
     def _getDefault(self): return None
-    def _combineVal(self, key, val): return val
     def single(self, val): return val
     def get(self, key):
         val = self.data.get(key)
         if val is None: return self._getDefault()
         return val
     def insert(self, kvs):
-        dat = self.data.copy()
-        dat.update((key, self._combineVal(key, val)) for key, val in kvs)
-        return self.__class__(dat)
+        return self.__class__(dictInsert(self.data, kvs, self._combine))
     def join(self, other): return self.insert(other.data.items())
     def only(self, keys):
         dat = dict((key, val) for key, val in self.data.items() if key in keys)
         return self.__class__(dat)
 class Measure(Mapping):
+    _combine = staticmethod(lambda _, old, new: min(2, old+new))
     def _getDefault(self): return 0
-    def _combineVal(self, key, val): return min(2, self.get(key)+val)
     def join(self, other, adjust):
         return self.insert(map(adjust, other.data.items()))
 class Env(Mapping):
+    _combine = staticmethod(lambda _, old, new: old|new)
     def _getDefault(self): return set()
-    def _combineVal(self, key, val): return self.get(key)|val
     def single(self, val): return {val}
     def contains(self, env):
         return all(self.get(key).issuperset(val)
-                   for (key,val) in env.data.items())
+                   for (key, val) in env.data.items())
 ################################################################
 # frame strings
 nres = tuple(1 << idx for idx in range(6))
-nreE, nreB, nreK, nreBs, nreKs, nreKsBs = nres
+nreE, nreB, nreBs, nreK, nreKs, nreKsBs = nres
 # empty, push(bra), pop(ket), pushes, pops, pops and pushes
 nreStrs = {nreE:'e', nreB:'<|', nreK:'|>', nreBs:'<|<|+', nreKs:'|>|>+',
            nreKsBs:'|>+<|+'}
@@ -172,6 +179,8 @@ nreSetInverse = tuple(nreInverseComp(nreSet) for nreSet in range(nrePowCard))
 def nreSetCat(lhs, rhs, eager=False):
     if lhs==nreK and rhs==nreB and eager: return nreE
     return nreSetCatMap[lhs][rhs]
+def combineTmNre(_, nre0, nre1): return nre0|nre1
+def combineFsLab(_, byTm0, byTm1): return dictJoin(byTm0, byTm1, combineTmNre)
 class FrameString(Repr):
     def __init__(self, byLab=None):
         if byLab is None: byLab = {}
@@ -191,32 +200,15 @@ class FrameString(Repr):
                                            for tm, nreSet in byTime.items()))
                                 for lab, byTime in self.byLab.items()))
     def cat(self, fs, fcnts):
-        byLab = {}
-        for lab, byTmL in self.byLab.items():
-            byTmR = fs.byLab.get(lab, {})
-            newByTm = {}; byLab[lab] = newByTm
-            for tm, lhs in byTmL.items():
-                nreNew = nreSetCat(lhs, byTmR.get(tm, nreE),
-                                   (fcnts.get((lab,tm))<2))
-                if nreNew != nreE: newByTm[tm] = nreNew
-        for lab, byTmR in fs.byLab.items():
-            byTmL = self.byLab.get(lab)
-            if byTmL is not None:
-                byTm = byLab[lab]
-                for tm, rhs in byTmR.items():
-                    if tm not in byTmL: byTm[tm] = rhs
-            else: byLab[lab] = dict((tm, rhs) for tm, rhs in byTmR.items())
-        return FrameString(byLab)
+        def combine(lab, byTmL, byTmR):
+            def combineTm(tm, lhs, rhs):
+                nreNew = nreSetCat(lhs, rhs, (fcnts.get((lab, tm))<2))
+                if nreNew == nreE: return None
+                return nreNew
+            dictJoin(byTmL, byTmR, combineTm)
+        return FrameString(dictJoin(self.byLab, fs.byLab, combine))
     def join(self, fs):
-        byLab = self.byLab.copy()
-        for lab, byTm1 in fs.byLab.items():
-            byTm0 = byLab.get(lab)
-            if byTm0 is not None:
-                byTm0 = byTm0.copy(); byLab[lab] = byTm0
-                for tm, nreSet in byTm1.items():
-                    byTm0[tm] = byTm0.get(tm, nreE)|nreSet
-            else: byLab[lab] = byTm1
-        return FrameString(byLab)
+        return FrameString(dictJoin(self.byLab, fs.byLab, combineFsLab))
     def joinEmptyTime(self, tm):
         changed = False
         for lab, byTime in self.byLab.items():
@@ -238,7 +230,9 @@ class FrameString(Repr):
                     byLab[lab] = byTime; break
         if not changed: return self
         return FrameString(byLab)
+nullFS = FrameString()
 def pushFrame(lab, time): return FrameString({lab: {time: nreB}})
+def combineFLogFs(_, fs0, fs1): return fs0.join(fs1)
 class FrameLog(Repr):
     def __init__(self, byTime=None):
         if byTime is None: byTime = {}
@@ -246,26 +240,27 @@ class FrameLog(Repr):
     def __str__(self): return strDict(self.byTime)
     def get(self, tm):
         fs = self.byTime.get(tm)
-        if fs is None: return FrameString()
+        if fs is None: return nullFS
         return fs
     def join(self, flog):
-        byTime = self.byTime.copy()
-        for tm, fs1 in flog.byTime.items():
-            fs0 = byTime.get(tm)
-            if fs0 is not None: byTime[tm] = fs0.join(fs1)
-            else: byTime[tm] = fs1
-        return FrameLog(byTime)
+        return FrameLog(dictJoin(self.byTime, flog.byTime, combineFLogFs))
+        # byTime = self.byTime.copy()
+        # for tm, fs1 in flog.byTime.items():
+        #     fs0 = byTime.get(tm)
+        #     if fs0 is not None: byTime[tm] = fs0.join(fs1)
+        #     else: byTime[tm] = fs1
+        # return FrameLog(byTime)
     def update(self, fs, fcnts, newTm=None):
         byTime = dict((tm, fstr.cat(fs, fcnts))
                       for tm, fstr in self.byTime.items())
         if newTm is not None:
             fs = byTime.get(newTm)
-            if fs is None: byTime[newTm] = FrameString()
+            if fs is None: byTime[newTm] = nullFS
             else: fs.joinEmptyTime(newTm)
         return FrameLog(byTime)
     def only(self, tms):
         return FrameLog(dict((tm, fs.only(tms))
-                             for tm, fs in self.byTime.items()))
+                             for tm, fs in self.byTime.items() if tm in tms))
 ################################################################
 # interpreter
 class ConcreteTime:
@@ -295,7 +290,7 @@ def zip2(xs):
     if not ys: ys = ((), ())
     return ys
 def touchedBinding(cfg, bnd):
-    bts = zip2(touchedClosure(clo) for clo in cfg.store.get(bnd))
+    bts = zip2(touchedClosure(clo) for clo in cfg.env.get(bnd))
     return unionReduce(bts[0]), set(bts[1])
 def reachable(cfg, bnds):
     seenBnds = set(bnds); seenTms = set()
@@ -307,32 +302,34 @@ def reachable(cfg, bnds):
 thickDiv = '='*64; thinDiv = '-'*64
 def printDivd(msg): print(thickDiv+'\n= '+msg+'\n'+thickDiv)
 class AbstractConfig(Repr):
-    def __init__(self, store): self.store = store
-    def __str__(self): return '%s'%str(self.store)
-    def contains(self, cfg): return self.store.contains(cfg.store)
+    def __init__(self, env): self.env = env
+    def __str__(self): return '%s'%str(self.env)
+    def contains(self, cfg): return self.env.contains(cfg.env) # todo
     def join(self, cfg, *args):
-        return self.__class__(self.store.join(cfg.store), *args)
+        return self.__class__(self.env.join(cfg.env), *args)
     def only(self, bnds, tms, *args):
-        return self.__class__(self.store.only(bnds), *args)
+        return self.__class__(self.env.only(bnds), *args)
     def update(self, tm, clo, bvs, fvs, *args):
-        return self.join(self.__class__(Env(dict(chain(bvs, fvs))), *args))
+        return self.__class__(self.env.join(Env(dict(chain(bvs, fvs)))), *args)
     def print(self):
-        printDivd('store summary'); print(strDict(self.store.data, '\n'))
+        printDivd('env'); print(strDict(self.env.data, '\n'))
 class CountConfig(AbstractConfig):
-    def __init__(self, store, count):
-        super().__init__(store); self.count = count
+    def __init__(self, env, count):
+        super().__init__(env); self.count = count
     def __str__(self): return '(%s %s)'%(super().__str__(), str(self.count))
     def join(self, cfg, *args):
-        count = self.count.join(cfg.count, adjEqBinding(self.store, cfg.store))
+        count = self.count.join(cfg.count, adjEqBinding(self.env, cfg.env))
         return super().join(cfg, count)
     def only(self, bnds, tms, *args):
         return super().only(bnds, tms, self.count.only(bnds))
     def update(self, tm, clo, bvs, fvs, *args):
-        count = Mapping(dict((bnd, 1) for bnd, _ in chain(bvs, fvs)))
-        return super().update(tm, clo, bvs, fvs, count)
+        newEnv = Env(dict(chain(bvs, fvs)))
+        count = Measure(dict((bnd, 1) for bnd, _ in chain(bvs, fvs)))
+        count = self.count.join(count, adjEqBinding(self.env, newEnv))
+        return self.__class__(self.env.join(newEnv), count)
     def print(self):
-        super().print(); printDivd('count summary')
-        print(strDict(testSum.count.data, '\n'))
+        super().print(); printDivd('count')
+        print(strDict(self.count.data, '\n'))
 def adjEqBinding(env0, env1):
     def adjust(kv):
         bnd, cnt = kv
@@ -340,8 +337,8 @@ def adjEqBinding(env0, env1):
         return bnd, cnt
     return adjust
 class FrameConfig(AbstractConfig):
-    def __init__(self, store, flog, fcount):
-        super().__init__(store); self.flog = flog; self.fcount = fcount
+    def __init__(self, env, flog, fcount):
+        super().__init__(env); self.flog = flog; self.fcount = fcount
     def __str__(self): return '(%s %s %s)'%(super().__str__(), str(self.flog),
                                             str(self.fcount))
     def join(self, cfg, *args):
@@ -349,11 +346,19 @@ class FrameConfig(AbstractConfig):
         return super().join(cfg, self.flog.join(cfg.flog), fcount)
     def update(self, tm, clo, bvs, fvs, *args):
         fchange = youngest(self.flog, clo, (val for _, val in bvs)).inverse()
+#        print('fchange:', fchange)
         flog = self.flog.update(fchange, self.fcount)
+        # printDivd('frame log')
+        # print('before')
+        # print(strDict(self.flog.byTime, '\n'+thinDiv+'\n'))
+        # print('after')
+        # print(strDict(flog.byTime, '\n'+thinDiv+'\n'))
         countKey = (clo.proc.lab, clo.time)
         curCount = self.fcount.get(countKey)
         fcount = self.fcount.insert(((countKey, min(2, curCount+1)),))
         flog = flog.update(pushFrame(*countKey), fcount, tm)
+        # print('after')
+        # print(strDict(flog.byTime, '\n'+thinDiv+'\n'))
         return super().update(tm, clo, bvs, fvs, flog, fcount)
     def only(self, bnds, tms, *args):
         flog = self.flog.only(tms)
@@ -362,20 +367,21 @@ class FrameConfig(AbstractConfig):
                                  if tm in byTm) for tm in tms)
         return super().only(bnds, tms, flog, self.fcount.only(labTms))
     def print(self):
-        super().print(); printDivd('frame summary')
-        print(strDict(testSum.flog.byTime, '\n'+thinDiv+'\n'))
+        super().print(); printDivd('frame log')
+        print(strDict(self.flog.byTime, '\n'+thinDiv+'\n'))
 def youngest(flog, clo, params):
-    vals = unionReduce(params); vals.add(clo)
-    return reduce(FrameString.join, (flog.get(val.time) for val in vals
-                                     if isCont(val)), FrameString())
+    vals = unionReduce(params); vals.add(clo); vals = filter(isCont, vals)
+    return reduce(FrameString.join, set(flog.get(val.time) for val in vals),
+                  nullFS)
 def adjEqFrame(fl0, fl1):
     def adjust(kv):
         key, cnt = kv; lab, tm = key
         if cnt==1 and fl0.get(tm).get(lab,tm)==fl1.get(tm).get(lab,tm): cnt = 0
         return key, cnt
     return adjust
-#def newConfig(): return CountConfig(Env(), Measure())
-def newConfig(): return FrameConfig(Env(), FrameLog(), Measure())
+def newCountConfig(): return CountConfig(Env(), Measure())
+def newFrameConfig(tm0):
+    return FrameConfig(Env(), FrameLog({tm0: nullFS}), Measure())
 class State:
     def __init__(self, ctx, cfg): self.ctx = ctx; self.cfg = cfg
     def next(self): return self.ctx.code.eval(self.ctx.time, self.cfg)
@@ -421,7 +427,7 @@ class Call(CExpr):
 def applyProc(tm, clo, paramss, ntm, cfg):
     proc, ptm = clo
     bvs = tuple(zip((Binding(bv, ntm) for bv in proc.binders), paramss))
-    fvs = tuple((Binding(fv, ntm), cfg.store.get(Binding(fv, ptm)))
+    fvs = tuple((Binding(fv, ntm), cfg.env.get(Binding(fv, ptm)))
                 for fv in proc.frees())
     return State(Context(proc.code, ntm), cfg.update(tm, clo, bvs, fvs))
 
@@ -431,7 +437,7 @@ class Var(VExpr):
     def __init__(self, name, *args): super().__init__(*args); self.name = name
     def __str__(self): return str(self.name)
     def frees(self): return {self.name}
-    def eval(self, tm, cfg): return cfg.store.get(Binding(self.name, tm))
+    def eval(self, tm, cfg): return cfg.env.get(Binding(self.name, tm))
 class UVar(Var): pass
 class CVar(Var): pass
 class Proc(VExpr):
@@ -440,7 +446,7 @@ class Proc(VExpr):
     def __str__(self):
         return '(%s %s %s)'%(self.strTag, strTup(self.binders), str(self.code))
     def frees(self): return self.code.frees()-set(self.binders)
-    def eval(self, tm, cfg): return cfg.store.single(Closure(self, tm))
+    def eval(self, tm, cfg): return cfg.env.single(Closure(self, tm))
     def isCont(self): return False
 class UProc(Proc):
     strTag = 'uproc'
@@ -450,8 +456,8 @@ class CProc(Proc):
     def advance(self, ctx, tm): return tm
     def isCont(self): return True
 def isCont(val): return isinstance(val, Closure) and val.proc.isCont()
-def progState(proc, params, tm):
-    cfg = newConfig(); clo = Closure(proc, tm)
+def progState(proc, params, tm, cfg):
+    clo = Closure(proc, tm)
     return applyProc(tm, clo, params+(makeHalt().eval(tm, cfg),), tm, cfg)
 
 def freshUVar(alpha=alphaGen(['u'])): return UVar(Name(next(alpha)))
@@ -489,20 +495,21 @@ def dProg(dexpr):
     haltBnd = Name('halt'); return UProc((haltBnd,), dexpr.toCPS(Var(haltBnd)))
 
 def garbageCollect(state): return state.garbageCollect()
-def search(seen, unseen):
+def search(seen, unseen, widen=True):
     while unseen:
         state = garbageCollect(unseen.pop()); cfg = seen.get(state.ctx)
+        print('context:', state.ctx); state.cfg.print()
         if cfg is not None:
             if cfg.contains(state.cfg): continue
             cfg = cfg.join(state.cfg)
-            state = garbageCollect(State(state.ctx, cfg)) # context widening
+            if widen: state = garbageCollect(State(state.ctx, cfg))
         else: cfg = state.cfg
         seen[state.ctx] = cfg; unseen.extend(state.next())
     return seen
-def searchProg(proc, mx=0):
-    return search({}, [progState(proc, (), AbstractTime((), mx))])
+def searchProg(proc, tm, cfg, widen=True):
+    return search({}, [progState(proc, (), tm, cfg)], widen)
 def summary(seen):
-    cfg = newConfig(); return reduce(cfg.__class__.join, seen.values(), cfg)
+    return reduce(tuple(seen.values())[0].__class__.join, seen.values())
 ################################################################
 # testing
 #  (let* ((id (lambda (x) x))
@@ -517,6 +524,8 @@ testProg = dProg(dLetStar([(dvID.name, DProc((dvX.name,), dvX)),
                            (dvB.name,
                             DApply(dvID, (DProc((dvY.name,), dvY),)))],
                           dvB))
-test = searchProg(testProg, 1)
+testTm0 = AbstractTime((), 1); widen = False
+#test = searchProg(testProg, testTm0, newCountConfig(), widen)
+test = searchProg(testProg, testTm0, newFrameConfig(testTm0), widen)
 testSum = summary(test)
 testSum.print()
