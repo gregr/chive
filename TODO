@@ -13,9 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================
-abstract values / consistent typing ideas
-concrete and abstract CPS-interpreter
-m/k-CFA
+integrated concrete and abstract interpreter
 
 ================================================================
 = debugging
@@ -71,6 +69,18 @@ restart lists need to be segmented by interleaved handler pushes
 
 conditions: signals/restarts
 type-error hook
+
+================================================================
+= syntax
+================================================================
+parser support for the following:
+f x y =
+        stmt1
+        stmt2
+        ...
+        expr
+macros that can expand to a sequence of declarations
+comments as a reader macro
 
 ================================================================
 = general
