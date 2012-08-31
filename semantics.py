@@ -463,7 +463,6 @@ def primIntToFloat(ctx0, ii): return final(toFloat(float(fromInt(ii))))
 def primFloatToInt(ctx0, ff): return final(toInt(int(fromFloat(ff))))
 ################################################################
 # interaction
-from lex import LexError
 from syntax import ParseError, Parser
 from data import Env, makeStream, unit
 def interact(thread, mod):
