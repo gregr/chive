@@ -448,7 +448,7 @@ class ExportInterface(Interface):
         self.vns = set(map(EnvKey, valueSyms))#|syntaxNames
         self.tns = set(map(EnvKey, typeSyms))
 #        self.sns = syntaxNames
-        self.readerStrs = set(readerStrs)
+        self.rstrs = set(readerStrs)
     def valNames(self, nspace): return self.vns
     def tyNames(self, nspace): return self.tns
     def valResolve(self, nspace, sym):
@@ -461,7 +461,7 @@ class ExportInterface(Interface):
         if EnvKey(sym) in names: return nspace.tyResolve(sym)
         else: typeErr(None, "cannot resolve type '%s'; exports: '%s'"
                       %(EnvKey(sym), names))
-    def readerStrs(self, nspace): return self.readerStrs
+    def readerStrs(self, nspace): return self.rstrs
 class CompoundInterface(Interface):
     def __init__(self, ifaces): self.ifaces = ifaces
     def _union(self, nspace, attr):
